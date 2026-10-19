@@ -6,7 +6,7 @@ jugable con táctil, teclado/mouse y gamepad en celular, tablet y PC.
 
 ## Fases (estado)
 - [x] Fase 0 — arranque: repo, Vite+TS, CLAUDE.md, este plan
-- [ ] Fase 1 — campo a escala, FUEL con física, robot swerve manejable (teclado/gamepad/táctil), cámaras piloto y seguimiento
+- [x] Fase 1 — campo a escala, FUEL con física, robot swerve manejable (teclado/gamepad/táctil), cámaras piloto y seguimiento
 - [ ] Fase 2 — reloj, SHIFTS, luces/estado de HUBS, conteo y salidas del HUB, puntuación, HUD, sonidos
 - [ ] Fase 3 — intake, hopper, shooter balístico, pase, CORRAL/CHUTE/DEPOT, HUMAN PLAYER
 - [ ] Fase 4 — TOWER y climb, árbitro (sección 6 del prompt), RP, resultados

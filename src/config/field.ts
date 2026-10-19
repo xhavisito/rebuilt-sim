@@ -112,13 +112,16 @@ export const DS_BASE_HEIGHT = inch(36.8);
 export const DS_GLASS_HEIGHT = inch(42);
 export const DS_TOTAL_HEIGHT = DS_BASE_HEIGHT + DS_GLASS_HEIGHT;
 export const DS_SHELF_DEPTH = inch(12.25);
-/** Rangos y_WPILib (in) de cada DRIVER STATION azul (vista superior WPILib). */
-export const DS_RANGES_Y_IN: Record<1 | 2 | 3, [number, number]> = {
-  1: [245.0, FIELD_WIDTH_IN],
-  2: [174.0, 242.0],
-  3: [53.0, 122.0],
-};
 export const TOWER_WALL_Y_IN: [number, number] = [TOWER_CENTER_Y_IN - 49.25 / 2, TOWER_CENTER_Y_IN + 49.25 / 2];
+/**
+ * Rangos y_WPILib (in) de cada DRIVER STATION azul (vista superior WPILib), contiguos:
+ * OUTPOST [0,53] · DS3 · TOWER WALL · DS2 · DS1. TODO: verificar con CAD oficial
+ */
+export const DS_RANGES_Y_IN: Record<1 | 2 | 3, [number, number]> = {
+  1: [243.5, FIELD_WIDTH_IN],
+  2: [TOWER_WALL_Y_IN[1], 243.5],
+  3: [53.0, TOWER_WALL_Y_IN[0]],
+};
 
 // ---------------------------------------------------------------- OUTPOST (§5.9.2)
 export const OUTPOST_CENTER_Y_IN = 26.219; // tag 29, centrado con CHUTE y CORRAL
