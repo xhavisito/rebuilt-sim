@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.tmp/
+shots/
+*.log
+.DS_Store
+# El manual oficial se queda local (es de FIRST; no lo redistribuimos)
+docs/2026GameManual.pdf
+docs/manual.txt
