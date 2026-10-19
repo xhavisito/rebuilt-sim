@@ -5,6 +5,7 @@
 import type { RobotSpec } from '../config/robots';
 import type { Alliance, StationNumber } from '../core/types';
 import type { ShotSolution } from '../physics/ballistics';
+import { ClimbState } from './Climber';
 import { RobotPhysics, type DriveCommand } from '../physics/RobotPhysics';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { RobotView } from '../render/RobotView';
@@ -61,8 +62,11 @@ export class Robot {
   corralSide = 1;
   lastKind: 'shot' | 'pass' = 'shot';
   lastShotKind: 'shot' | 'pass' | 'corral' = 'shot';
-  /** En la TOWER (Fase 4). */
+  /** En la TOWER. */
   climbing = false;
+  readonly climb = new ClimbState();
+  /** Nivel/puntos de TOWER evaluados (para resultados). */
+  towerResult = { auto: 0, teleop: 0, level: 0 };
   /** Estadísticas del match (MVP). */
   stats = { fuelScored: 0, fuelShot: 0, towerPts: 0, fouls: 0, intaked: 0 };
 

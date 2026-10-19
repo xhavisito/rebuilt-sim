@@ -9,6 +9,8 @@ import type { RobotSpec } from '../config/robots';
 import type { Settings } from '../config/settings';
 import { formatTimer, robotsEnabled, timerSeconds } from '../core/clock';
 import { Match, type MatchEvent } from '../core/match';
+import { scoreAutoTower, scoreTeleopTower, type ClimbSnapshot } from '../core/tower';
+import { Referee } from '../referee/Referee';
 import { Rng } from '../core/rng';
 import { defaultStart } from '../core/startRules';
 import { ALLIANCES, type Alliance, type EventType, type Phase, type StationNumber } from '../core/types';
@@ -20,6 +22,7 @@ import { CameraRig, CAMERA_MODES } from '../render/CameraRig';
 import type { FieldView } from '../render/FieldView';
 import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
+import { climbSlots, type TowerOccupancy } from './Climber';
 import { HumanPlayer, type HpContext } from './HumanPlayer';
 import { runIntake, runShooter, type MechContext } from './Mechanisms';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
@@ -77,6 +80,11 @@ export class GameSession {
   /** null en práctica libre. */
   readonly match: Match | null;
   readonly humanPlayers: Record<Alliance, HumanPlayer>;
+  readonly referee: Referee | null;
+  readonly towerOcc: Record<Alliance, TowerOccupancy> = {
+    red: { front: -1, left: -1, right: -1 },
+    blue: { front: -1, left: -1, right: -1 },
+  };
   hooks: SessionHooks = {};
   /** Tiempo simulado total (s). */
   simTime = 0;
@@ -113,8 +121,14 @@ export class GameSession {
       red: new HumanPlayer('red', cfg.humanPlayers?.red ?? 'ai'),
       blue: new HumanPlayer('blue', cfg.humanPlayers?.blue ?? 'ai'),
     };
+    this.referee = this.match ? new Referee({ robots: this.robots, match: this.match, fuel: this.fuel, pw: this.pw, humanPlayers: this.humanPlayers }) : null;
+    if (this.referee) this.referee.enabled = cfg.fouls;
     this.fuel.cb = {
-      onHubEnter: (i, hub) => this.onHubEnter(i, hub),
+      onHubEnter: (i, hub) => {
+        this.referee?.onHubEnter(i, hub);
+        this.onHubEnter(i, hub);
+      },
+      onOut: (i) => this.referee?.onOut(i),
     };
     this.fuelView = new FuelView(this.fuel, renderer.preset.fuelDetail);
     this.fuelView.setShadows(renderer.preset.fuelShadows);
@@ -164,6 +178,64 @@ export class GameSession {
     this.hooks.fuelScored?.(hub, counted, this.fuel.pos[o], this.fuel.pos[o + 1], this.fuel.pos[o + 2]);
   }
 
+  /** Estado de un robot para los criterios de LEVEL (§6.5.2). */
+  private climbSnapshot(r: Robot): ClimbSnapshot {
+    const y = r.phys.curPos.y;
+    const hanging = r.climbing && r.climb.attached;
+    return {
+      robot: r.index,
+      alliance: r.alliance,
+      touchingFloorOrBase: !(hanging && y > 0.03),
+      bumperBottom: y + F.BUMPER_ZONE_LOW,
+      touchingOwnRungOrUpright: hanging,
+      touchingIllegal: false,
+      ineligible: this.referee?.g414.has(r.index) ?? false,
+      g420Level3: this.referee?.g420Level3.has(r.index) ?? false,
+    };
+  }
+
+  /** Evalúa la TOWER: AUTO al llegar a 0:00; TELEOP 3 s tras 0:00 o al quedar todos en reposo. */
+  evaluateTower(which: 'auto' | 'teleop'): void {
+    const m = this.match;
+    if (!m) return;
+    if (which === 'teleop') {
+      if (m.teleopTowerDone) return;
+      this.referee?.evaluateG414();
+    }
+    const snaps = this.robots.map((r) => this.climbSnapshot(r));
+    const res = which === 'auto' ? scoreAutoTower(snaps) : scoreTeleopTower(snaps);
+    if (which === 'auto') m.setAutoTower(res);
+    else m.setTeleopTower(res);
+    for (const r of this.robots) {
+      const pr = res.perRobot.get(r.index);
+      if (!pr) continue;
+      r.towerResult[which] = pr.points;
+      if (which === 'teleop') r.towerResult.level = pr.level;
+      r.stats.towerPts += pr.points;
+    }
+  }
+
+  /** Climb: engancharse al puesto libre más cercano de la TOWER propia y subir/bajar. */
+  private runClimb(r: Robot, dt: number): void {
+    if (r.spec.climb.maxLevel === 0) return;
+    if (!r.climbing && r.cmd.climbUp) {
+      const occ = this.towerOcc[r.alliance];
+      const p = r.phys.curPos;
+      let best: ReturnType<typeof climbSlots>[number] | null = null;
+      let bestD = 1.3;
+      for (const sl of climbSlots(r.alliance, r.phys.outerL, r.phys.outerW)) {
+        if (occ[sl.id] !== -1 && occ[sl.id] !== r.index) continue;
+        const d = Math.hypot(sl.x - p.x, sl.z - p.z);
+        if (d < bestD) {
+          best = sl;
+          bestD = d;
+        }
+      }
+      if (best) r.climb.begin(r, best, occ);
+    }
+    if (r.climbing) r.climb.update(r, dt, r.cmd.climbUp, r.cmd.climbDown, 3);
+  }
+
   /** Los HUMAN PLAYERS pueden meter FUEL en AUTO (excepción de G402) y en TELEOP. */
   private hpCanAct(): boolean {
     const p = this.match?.phase;
@@ -178,7 +250,11 @@ export class GameSession {
       time: this.match?.t ?? this.simTime,
       autoAim: isPlayer ? this.settings.drive.autoAim : true,
       shootOnMove: isPlayer ? this.settings.drive.shootOnMove : true,
-      onLaunch: (rb, _i, kind) => this.hooks.launch?.(rb, kind, rb.control.type === 'player'),
+      onLaunch: (rb, i, kind) => {
+        this.referee?.onLaunch(rb, i, kind);
+        this.hooks.launch?.(rb, kind, rb.control.type === 'player');
+      },
+      onIntake: (rb, i) => this.referee?.onIntake(rb, i),
     };
   }
 
@@ -207,6 +283,8 @@ export class GameSession {
   /** Reacciona a eventos del reloj del match. */
   private onMatchEvent(e: MatchEvent): void {
     if (e.type === 'phase' && (e.phase === 'POST' || e.phase === 'DONE')) this.field.setLeds(false);
+    if (e.type === 'evalAutoTower') this.evaluateTower('auto');
+    if (e.type === 'evalTeleopTower') this.evaluateTower('teleop');
     this.hooks.matchEvent?.(e);
   }
 
@@ -370,6 +448,7 @@ export class GameSession {
       } else r.cmd = idleCommand();
       r.phys.drive(r.cmd.drive, dt);
       if (r.enabled) {
+        this.runClimb(r, dt);
         const ctx = this.mechContext(r);
         runIntake(r, ctx, dt);
         runShooter(r, ctx, dt);
@@ -378,13 +457,30 @@ export class GameSession {
     if (this.hpCanAct()) for (const a of ALLIANCES) this.humanPlayers[a].update(dt, this.hpContext(this.humanPlayers[a]));
     this.fuel.prePhysics(dt);
     this.pw.step();
-    this.pw.events.drainCollisionEvents(() => {});
+    this.pw.events.drainCollisionEvents((h1, h2, started) => {
+      if (!started) return;
+      const a = this.pw.tagOf(h1);
+      const b = this.pw.tagOf(h2);
+      // Último robot que tocó cada FUEL (G405)
+      const t = this.match?.t ?? this.simTime;
+      if (a?.kind === 'robot' && b?.kind === 'fuel') {
+        this.fuel.lastTouch[b.index] = a.robot;
+        this.fuel.lastTouchTime[b.index] = t;
+      } else if (b?.kind === 'robot' && a?.kind === 'fuel') {
+        this.fuel.lastTouch[a.index] = b.robot;
+        this.fuel.lastTouchTime[a.index] = t;
+      }
+    });
     this.pw.events.drainContactForceEvents((ev) => this.onContactForce(ev.collider1(), ev.collider2(), ev.maxForceMagnitude()));
     this.fuel.postPhysics(dt);
+    this.referee?.step(dt);
     for (const r of this.robots) {
       r.phys.snapshot();
       r.animate(dt);
     }
+    // TOWER de TELEOP: también se evalúa en cuanto todos los robots quedan en reposo
+    if (m?.phase === 'POST' && !m.teleopTowerDone && this.robots.every((r) => Math.hypot(r.phys.velocity().x, r.phys.velocity().z) < 0.05))
+      this.evaluateTower('teleop');
     this.simTime += dt;
   }
 
@@ -396,6 +492,8 @@ export class GameSession {
     const rb = b?.kind === 'robot' ? this.robots[b.robot] : undefined;
     const r = ra ?? rb;
     if (!r || a?.kind === 'fuel' || b?.kind === 'fuel') return;
+    if (ra && rb) this.referee?.onRobotForce(ra, rb, force);
+    for (const x of [ra, rb]) if (x?.climbing && force > 1500) x.climb.hit(x, Math.min(1, force / 6000), this.rng);
     const strength = Math.min(1, force / 6000);
     if (strength < 0.15) return;
     const slotOf = (x?: Robot) => (x && x.control.type === 'player' ? x.control.slot : -1);
@@ -445,7 +543,7 @@ export class GameSession {
       const rc = this.cfg.robots[i];
       const halfX = F.inch(rc.spec.lengthIn / 2 + rc.spec.bumperIn);
       const st = defaultStart(rc.alliance, rc.station, halfX);
-      r.phys.setKinematic(false);
+      r.climb.release(r);
       r.phys.teleport(st.x, st.z + (rc.startOffsetZ ?? 0), st.heading);
       r.intakeOn = false;
       r.climbHeight = 0;

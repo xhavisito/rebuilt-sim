@@ -11,8 +11,11 @@ import { InputManager } from '../input/InputManager';
 import { TouchControls } from '../input/TouchControls';
 import { FieldView } from '../render/FieldView';
 import { Renderer, type Quality } from '../render/Renderer';
+import { buildResults } from '../game/results';
+import { RULES } from '../core/fouls';
 import { Hud } from '../ui/Hud';
-import { getLang, setLang, t, type TKey } from '../ui/i18n';
+import { attachChartHover, renderResults } from '../ui/Results';
+import { getLang, setLang, t, tx, type TKey } from '../ui/i18n';
 
 export class App {
   settings: Settings;
@@ -216,19 +219,45 @@ export class App {
       case 'warning':
         if (e.alliance === player?.alliance) this.audio.beep(true);
         break;
-      case 'end': {
-        const mm = this.session?.match;
-        if (mm) {
-          const r = mm.score('red');
-          const b = mm.score('blue');
-          const w = r === b ? t('tie') : t('winner', { a: t(r > b ? 'red' : 'blue') });
-          this.toast(`${w} ${r} – ${b}`, 'good');
+      case 'end':
+        // pequeña pausa para ver las luces de "campo seguro" antes de los resultados
+        setTimeout(() => this.showResults(), 1500);
+        break;
+      case 'foul': {
+        const f = e.foul;
+        const team = this.session?.robots[f.robot]?.spec.teamNumber;
+        this.toast(`${f.rule} – ${RULES[f.rule].title} · ${f.severity} FOUL${team ? ` (${team})` : ''}`, f.severity === 'MAJOR' ? 'major' : 'minor');
+        this.audio.whistle();
+        if (f.robot >= 0 && this.session?.robots[f.robot]?.isPlayer) {
+          this.input.rumble(0, 0.4, 150);
+          this.toast(tx(RULES[f.rule]));
         }
+        break;
+      }
+      case 'card': {
+        const c = e.card;
+        const team = this.session?.robots[c.robot]?.spec.teamNumber;
+        this.toast(`${c.card === 'RED' ? t('redCard') : t('yellow')} · ${team} (${c.rule})`, c.card === 'RED' ? 'card-red' : 'card-yellow');
         break;
       }
       default:
         break;
     }
+  }
+
+  /** Pantalla de resultados del match. */
+  showResults(): void {
+    const s = this.session;
+    if (!s) return;
+    const res = buildResults(s);
+    if (!res) return;
+    this.openOverlay(renderResults(res), (a) => {
+      if (a === 'rematch') this.startMatch();
+      else this.startPractice();
+    });
+    attachChartHover(this.overlay, res);
+    const p = s.playerRobot(0);
+    if (p) this.audio.speak(res.winner === 'tie' ? t('tie') : t('winner', { a: t(res.winner) }), getLang());
   }
 
   // ------------------------------------------------------------------ pausa / overlay
@@ -339,6 +368,19 @@ export class App {
   }
 
   private updateHud(s: GameSession): void {
+    // Contadores de PIN (G418) encima del robot pineado
+    const pins = s.referee?.activePins() ?? [];
+    const cam = s.rigs[0].camera;
+    this.hud.setPins(
+      pins
+        .map((p) => {
+          const v = s.robots[p.victim].view.group.position.clone();
+          v.y += 1.0;
+          v.project(cam);
+          return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight, seconds: p.seconds, z: v.z };
+        })
+        .filter((p) => p.z < 1),
+    );
     const r = s.playerRobot(0);
     if (r) this.touch.setActive('intake', r.intakeOn);
     const rig = s.rigs[0];
@@ -357,7 +399,7 @@ export class App {
             camera: t(`cam_${rig.mode}` as TKey),
             intakeOn: r.intakeOn,
             autoAim: this.settings.drive.autoAim,
-            climb: null,
+            climb: r.climbing ? `CLIMB L${r.climb.level()}${r.climb.attached ? '' : '…'}` : null,
             outpost: (() => {
               const hp = s.humanPlayers[r.alliance];
               const f = s.fuel;
