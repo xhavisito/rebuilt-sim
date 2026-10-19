@@ -86,7 +86,7 @@ function chart(res: MatchResults): string {
     </table></details>`;
 }
 
-export function renderResults(res: MatchResults): string {
+export function renderResults(res: MatchResults, tournament = false): string {
   const lang = getLang();
   const title =
     res.winner === 'tie' ? t('tie') : t('winner', { a: t(res.winner) });
@@ -137,8 +137,7 @@ export function renderResults(res: MatchResults): string {
     <h3>${t('foulList')}</h3>
     <ul class="fouls">${fouls}${cards}</ul>
     <div class="actions">
-      <button data-a="rematch" class="primary">${t('rematch')}</button>
-      <button data-a="menu">${t('quit')}</button>
+      ${tournament ? `<button data-a="continue" class="primary">${t('continueTournament')}</button>` : `<button data-a="rematch" class="primary">${t('rematch')}</button><button data-a="menu">${t('quit')}</button>`}
     </div>
   </div>`;
 }

@@ -9,7 +9,7 @@ import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import * as F from '../config/field';
 import { fieldParts, type FieldPart, type MatKey } from '../config/fieldLayout';
 import type { Alliance, HubLight } from '../core/types';
-import { aprilTagTexture } from './apriltag';
+import { aprilTagAtlas } from './apriltag';
 import { carpetTexture, diamondPlate, netTexture, orangePeelBump, textTexture } from './textures';
 
 /** Intensidad emisiva de las barras DMX (alta para que el bloom por luminancia las tome). */
@@ -255,17 +255,24 @@ export class FieldView {
 
   // ------------------------------------------------------------------ AprilTags
   private buildAprilTags(): void {
-    const geo = new THREE.PlaneGeometry(F.APRILTAG_PANEL, F.APRILTAG_PANEL);
+    // Los 32 tags en una sola malla con un atlas (1 draw call)
+    const atlas = aprilTagAtlas();
+    const geos: THREE.BufferGeometry[] = [];
     for (const [id, x, y, z, yaw] of F.APRILTAGS_IN) {
       const p = F.wpiToWorld(x, y);
       const r = (yaw * Math.PI) / 180;
       const dir = new THREE.Vector3(Math.cos(r), 0, -Math.sin(r));
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: aprilTagTexture(id), roughness: 0.6 }));
-      m.position.set(p.x + dir.x * 0.004, F.inch(z), p.z + dir.z * 0.004);
-      m.rotation.y = Math.atan2(dir.x, dir.z);
-      m.name = `apriltag-${id}`;
-      this.group.add(m);
+      const g = new THREE.PlaneGeometry(F.APRILTAG_PANEL, F.APRILTAG_PANEL);
+      const [u0, v0, u1, v1] = atlas.uv(id);
+      const uv = g.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
+      g.rotateY(Math.atan2(dir.x, dir.z));
+      g.translate(p.x + dir.x * 0.004, F.inch(z), p.z + dir.z * 0.004);
+      geos.push(g);
     }
+    const m = new THREE.Mesh(mergeGeometries(geos)!, new THREE.MeshStandardMaterial({ map: atlas.texture, roughness: 0.6 }));
+    m.name = 'apriltags';
+    this.group.add(m);
   }
 
   // ------------------------------------------------------------------ luces del HUB
@@ -342,52 +349,54 @@ export class FieldView {
   // ------------------------------------------------------------------ DRIVER STATIONS
   private buildDriverStationDetails(a: Alliance): void {
     const s = F.allianceSign(a);
-    const shelfMat = this.mat('alu');
+    const shelves: THREE.BufferGeometry[] = [];
+    const signBoxes: THREE.BufferGeometry[] = [];
+    const statusLeds: THREE.BufferGeometry[] = [];
+    const amberLeds: THREE.BufferGeometry[] = [];
+    const yRot = a === 'blue' ? Math.PI / 2 : -Math.PI / 2;
     for (const ds of [1, 2, 3] as const) {
       const c = F.driverStationCenter(a, ds);
       const [y0, y1] = F.DS_RANGES_Y_IN[ds];
       const w = F.inch(y1 - y0);
       // Repisa (lado de la ALLIANCE AREA)
-      const shelf = new THREE.Mesh(new THREE.BoxGeometry(F.DS_SHELF_DEPTH, 0.025, Math.min(w, F.inch(69))), shelfMat);
-      shelf.position.set(c.x + s * (0.06 + F.DS_SHELF_DEPTH / 2), F.DS_BASE_HEIGHT, c.z);
-      shelf.castShadow = true;
-      this.group.add(shelf);
-      // Letrero de equipo (cara al campo con número en color de alianza)
-      const sign = new THREE.Mesh(
-        new THREE.BoxGeometry(0.04, 0.22, 0.62),
-        new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 }),
+      shelves.push(
+        new THREE.BoxGeometry(F.DS_SHELF_DEPTH, 0.025, Math.min(w, F.inch(69))).translate(c.x + s * (0.06 + F.DS_SHELF_DEPTH / 2), F.DS_BASE_HEIGHT, c.z),
       );
-      sign.position.set(c.x + s * 0.02, F.DS_TOTAL_HEIGHT + 0.18, c.z);
-      this.group.add(sign);
+      // Letrero de equipo (cara al campo con número en color de alianza)
+      signBoxes.push(new THREE.BoxGeometry(0.04, 0.22, 0.62).translate(c.x + s * 0.02, F.DS_TOTAL_HEIGHT + 0.18, c.z));
       const face = new THREE.Mesh(
         new THREE.PlaneGeometry(0.6, 0.2),
         new THREE.MeshBasicMaterial({ map: textTexture('----', { fg: '#' + ALLIANCE_COLOR[a].toString(16).padStart(6, '0') }) }),
       );
       face.position.set(c.x - s * 0.001, F.DS_TOTAL_HEIGHT + 0.18, c.z);
-      face.rotation.y = a === 'blue' ? Math.PI / 2 : -Math.PI / 2;
+      face.rotation.y = yRot;
       this.group.add(face);
       this.signs[a].push(face);
       // LED stack: 2 LEDs de alianza + 1 ámbar
       for (let k = 0; k < 3; k++) {
-        const led = new THREE.MeshStandardMaterial({
-          color: 0x222222,
-          emissive: k < 2 ? ALLIANCE_COLOR[a] : 0xffa000,
-          emissiveIntensity: k < 2 ? 1.5 : 0,
-        });
-        const l = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 10), led);
-        l.position.set(c.x + s * 0.02, F.DS_TOTAL_HEIGHT + 0.32 + k * 0.055, c.z);
-        this.group.add(l);
-        this.leds[a].push(led);
+        const g = new THREE.CylinderGeometry(0.03, 0.03, 0.05, 10).translate(c.x + s * 0.02, F.DS_TOTAL_HEIGHT + 0.32 + k * 0.055, c.z);
+        (k < 2 ? statusLeds : amberLeds).push(g);
       }
       // Timer (solo DS2)
       if (ds === 2) {
         const tm = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.16), new THREE.MeshBasicMaterial({ map: textTexture('0:00') }));
-        tm.position.set(c.x - s * 0.002, F.DS_TOTAL_HEIGHT + 0.48, c.z + 0.0);
-        tm.rotation.y = face.rotation.y;
+        tm.position.set(c.x - s * 0.002, F.DS_TOTAL_HEIGHT + 0.48, c.z);
+        tm.rotation.y = yRot;
         this.group.add(tm);
         this.timerMesh.push(tm);
       }
     }
+    const add = (geos: THREE.BufferGeometry[], mat: THREE.Material, shadow = false) => {
+      const m = new THREE.Mesh(mergeGeometries(geos)!, mat);
+      m.castShadow = shadow;
+      this.group.add(m);
+    };
+    add(shelves, this.mat('alu'), true);
+    add(signBoxes, this.mat('dark'));
+    const led = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: ALLIANCE_COLOR[a], emissiveIntensity: 1.5 });
+    add(statusLeds, led);
+    add(amberLeds, new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffa000, emissiveIntensity: 0 }));
+    this.leds[a].push(led);
   }
 
   /** Pone los números de equipo en los letreros (DS1..3). */
@@ -415,9 +424,6 @@ export class FieldView {
 
   /** LED de estado: encendido sólido durante el match. */
   setLeds(enabled: boolean): void {
-    for (const a of ['red', 'blue'] as Alliance[])
-      this.leds[a].forEach((m, i) => {
-        if (i % 3 < 2) m.emissiveIntensity = enabled ? 1.8 : 0.15;
-      });
+    for (const a of ['red', 'blue'] as Alliance[]) for (const m of this.leds[a]) m.emissiveIntensity = enabled ? 1.8 : 0.15;
   }
 }

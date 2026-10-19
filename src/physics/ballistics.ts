@@ -53,8 +53,25 @@ export function simulate2D(
   return { y, vy, t, reached: false };
 }
 
+/**
+ * Memo de soluciones: los robots tiran desde lugares parecidos todo el tiempo. La clave
+ * cuantiza distancia y desnivel a 2.5 cm (error despreciable frente a la abertura del HUB).
+ */
+const MEMO = new Map<string, { speed: number; t: number; vy: number } | null>();
+const Q = 40;
+
 /** Velocidad necesaria con un ángulo fijo para pasar por (dist, h). null si no se puede. */
 export function speedForAngle(pitch: number, dist: number, h: number, y0: number, spin: number, maxSpeed: number): { speed: number; t: number; vy: number } | null {
+  const key = `${Math.round(pitch * 1000)}|${Math.round(dist * Q)}|${Math.round((h - y0) * Q)}|${spin}|${maxSpeed}`;
+  const hit = MEMO.get(key);
+  if (hit !== undefined) return hit;
+  const res = speedForAngleRaw(pitch, Math.round(dist * Q) / Q, Math.round((h - y0) * Q) / Q, 0, spin, maxSpeed);
+  if (MEMO.size > 20000) MEMO.clear();
+  MEMO.set(key, res);
+  return res;
+}
+
+function speedForAngleRaw(pitch: number, dist: number, h: number, y0: number, spin: number, maxSpeed: number): { speed: number; t: number; vy: number } | null {
   let lo = 1;
   let hi = maxSpeed;
   const at = (s: number) => simulate2D(s, pitch, spin, dist, y0);

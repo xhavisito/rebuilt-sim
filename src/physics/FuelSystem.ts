@@ -67,6 +67,8 @@ export class FuelSystem {
   readonly pos: Float32Array;
   readonly prev: Float32Array;
   readonly color: Float32Array;
+  /** Tiempo que lleva cada FUEL casi quieto en el piso (para dormirlo antes que Rapier). */
+  private slowT: Float32Array;
 
   /** FUEL en vuelo (con arrastre). */
   private airborne = new Set<number>();
@@ -98,6 +100,7 @@ export class FuelSystem {
     this.pos = new Float32Array(total * 3);
     this.prev = new Float32Array(total * 3);
     this.color = new Float32Array(total);
+    this.slowT = new Float32Array(total);
     const w = pw.world;
     for (let i = 0; i < total; i++) {
       const body = w.createRigidBody(
@@ -184,15 +187,20 @@ export class FuelSystem {
     }
     // NEUTRAL ZONE: caja de 206 × 72 in con divisor de 2 in en z = 0 (§6.3.4.1)
     const remaining = this.count - next;
-    const sp = F.inch(6.0);
-    const rows = 12; // a lo largo de X
-    const perHalf = 17; // a lo largo de Z en cada mitad
+    // Rejilla con FUEL separados unos milímetros (no se tocan): así una "isla" de contacto
+    // no despierta los ~400 cuerpos a la vez cuando un robot entra al montón (rendimiento).
+    // Supuesto: 16 por mitad × 12–13 filas (≈ 74–81 in de fondo en vez de 72 in).
+    const spZ = F.inch(6.35);
+    const spX = F.inch(6.2);
+    const perHalf = 16; // a lo largo de Z en cada mitad
+    const rows = Math.max(12, Math.min(13, Math.ceil(remaining / (2 * perHalf)))); // a lo largo de X
+    const sp = spX;
     const cells: Array<[number, number]> = [];
     for (let r = 0; r < rows; r++)
       for (const side of [-1, 1])
         for (let k = 0; k < perHalf; k++) {
-          const x = (r - (rows - 1) / 2) * sp;
-          const z = side * (F.NEUTRAL_BOX_GAP / 2 + sp / 2 + k * sp);
+          const x = (r - (rows - 1) / 2) * spX;
+          const z = side * (F.NEUTRAL_BOX_GAP / 2 + spZ / 2 + k * spZ);
           cells.push([x, z]);
         }
     this.rng.shuffle(cells);
@@ -378,6 +386,17 @@ export class FuelSystem {
         }
         return;
       }
+      // ---- Dormir pronto los FUEL casi quietos (Rapier tarda ~2 s): ahorra mucho CPU
+      if (t.y < groundY && hsp < 0.05 && Math.abs(v.y) < 0.05) {
+        this.slowT[i] += dt;
+        if (this.slowT[i] > 0.4) {
+          b.setLinvel({ x: 0, y: 0, z: 0 }, false);
+          b.setAngvel({ x: 0, y: 0, z: 0 }, false);
+          b.sleep();
+          this.slowT[i] = 0;
+          return;
+        }
+      } else this.slowT[i] = 0;
       // ---- Rodadura sobre alfombra
       if (t.y < groundY && hsp > 0.02) {
         const dv = Math.min(hsp, ROLL_DECEL * dt);

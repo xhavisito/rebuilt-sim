@@ -28,15 +28,19 @@ export interface QualityPreset {
   crowd: number;
   /** Paso de física (Hz). */
   physicsHz: number;
+  /** Iteraciones del solver de Rapier. */
+  solverIterations: number;
+  /** Máximo de pasos de física por frame (si se excede, la simulación se frena un poco). */
+  maxSteps: number;
   /** Detalle de la esfera de FUEL (IcosahedronGeometry detail). */
   fuelDetail: number;
 }
 
 export const QUALITY: Record<Quality, QualityPreset> = {
-  low: { maxPixelRatio: 1, renderScale: 0.7, shadows: false, shadowMapSize: 512, fuelShadows: false, bloom: false, ao: false, aa: 'none', crowd: 0, physicsHz: 60, fuelDetail: 1 },
-  medium: { maxPixelRatio: 1.5, renderScale: 0.85, shadows: true, shadowMapSize: 1024, fuelShadows: false, bloom: true, ao: false, aa: 'fxaa', crowd: 0.35, physicsHz: 60, fuelDetail: 1 },
-  high: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, fuelShadows: true, bloom: true, ao: false, aa: 'msaa', crowd: 0.7, physicsHz: 120, fuelDetail: 2 },
-  ultra: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 4096, fuelShadows: true, bloom: true, ao: true, aa: 'msaa', crowd: 1, physicsHz: 120, fuelDetail: 2 },
+  low: { maxPixelRatio: 1, renderScale: 0.7, shadows: false, shadowMapSize: 512, fuelShadows: false, bloom: false, ao: false, aa: 'none', crowd: 0, physicsHz: 60, solverIterations: 2, maxSteps: 3, fuelDetail: 1 },
+  medium: { maxPixelRatio: 1.5, renderScale: 0.85, shadows: true, shadowMapSize: 1024, fuelShadows: false, bloom: true, ao: false, aa: 'fxaa', crowd: 0.35, physicsHz: 60, solverIterations: 2, maxSteps: 4, fuelDetail: 1 },
+  high: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, fuelShadows: true, bloom: true, ao: false, aa: 'msaa', crowd: 0.7, physicsHz: 120, solverIterations: 4, maxSteps: 6, fuelDetail: 2 },
+  ultra: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 4096, fuelShadows: true, bloom: true, ao: true, aa: 'msaa', crowd: 1, physicsHz: 120, solverIterations: 4, maxSteps: 6, fuelDetail: 2 },
 };
 
 export interface Viewport {

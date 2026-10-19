@@ -28,35 +28,43 @@ export function tagMatrix(id: number): boolean[][] {
   return m;
 }
 
-const cache = new Map<number, THREE.Texture>();
-
-/** Textura del panel de policarbonato de 10.5 in con el tag de 8.125 in y su etiqueta. */
-export function aprilTagTexture(id: number): THREE.Texture {
-  const hit = cache.get(id);
-  if (hit) return hit;
-  const px = 12;
-  const size = 128;
+/**
+ * Atlas con los 32 tags (8 × 4 celdas de 128 px) para dibujarlos todos en una sola malla.
+ * Devuelve la textura y el rectángulo UV de cada id.
+ */
+export function aprilTagAtlas(): { texture: THREE.Texture; uv: (id: number) => [number, number, number, number] } {
+  const cols = 8;
+  const rows = 4;
+  const cell = 128;
   const c = document.createElement('canvas');
-  c.width = c.height = size;
+  c.width = cols * cell;
+  c.height = rows * cell;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, size, size);
-  const m = tagMatrix(id);
-  const off = (size - 10 * px) / 2;
-  for (let y = 0; y < 10; y++)
-    for (let x = 0; x < 10; x++) {
-      if (!m[y][x]) {
-        g.fillStyle = '#000';
-        g.fillRect(off + x * px, off + y * px, px, px);
-      }
-    }
-  g.fillStyle = '#333';
-  g.font = 'bold 7px Arial';
-  g.fillText(String(id), 2, size - 2);
+  for (let id = 1; id <= 32; id++) {
+    const k = id - 1;
+    const ox = (k % cols) * cell;
+    const oy = Math.floor(k / cols) * cell;
+    const px = 12;
+    g.fillStyle = '#fff';
+    g.fillRect(ox, oy, cell, cell);
+    const m = tagMatrix(id);
+    const off = (cell - 10 * px) / 2;
+    g.fillStyle = '#000';
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (!m[y][x]) g.fillRect(ox + off + x * px, oy + off + y * px, px, px);
+    g.fillStyle = '#333';
+    g.font = 'bold 7px Arial';
+    g.fillText(String(id), ox + 2, oy + cell - 2);
+  }
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
   t.colorSpace = THREE.SRGBColorSpace;
-  cache.set(id, t);
-  return t;
+  return {
+    texture: t,
+    uv: (id: number) => {
+      const k = id - 1;
+      const u0 = (k % cols) / cols;
+      const v1 = 1 - Math.floor(k / cols) / rows;
+      return [u0, v1 - 1 / rows, u0 + 1 / cols, v1];
+    },
+  };
 }

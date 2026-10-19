@@ -85,7 +85,6 @@ export class RobotView {
     // ---- BUMPERS (tela del color de alianza + número de equipo, R4xx)
     const bh = BUMPER_TOP - BUMPER_ZONE_LOW;
     const by = BUMPER_ZONE_LOW + bh / 2;
-    const bumperMat = new THREE.MeshStandardMaterial({ color: ALLIANCE_COLOR[this.alliance], roughness: 0.85 });
     const numTex = textTexture(String(spec.teamNumber), {
       w: 256,
       h: 64,
@@ -93,32 +92,19 @@ export class RobotView {
       fg: '#ffffff',
     });
     const sideMat = new THREE.MeshStandardMaterial({ map: numTex, roughness: 0.85 });
-    // laterales con número (caras ±Z)
-    for (const s of [-1, 1]) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(2 * (hl + bt), bh, bt), [
-        bumperMat,
-        bumperMat,
-        bumperMat,
-        bumperMat,
-        s > 0 ? sideMat : bumperMat,
-        s < 0 ? sideMat : bumperMat,
-      ]);
-      m.position.set(0, by, s * (hw + bt / 2));
+    // Una sola malla de BUMPERS: el número va en la cara exterior de cada segmento y las
+    // demás caras toman un píxel del fondo (color de alianza) vía UV → 1 draw call.
+    const bumperBox = (w: number, d: number, x: number, z: number, outwardFace: number) => {
+      const g = new THREE.BoxGeometry(w, bh, d);
+      const uv = g.getAttribute('uv');
+      for (let f = 0; f < 6; f++) if (f !== outwardFace) for (let k = 0; k < 4; k++) uv.setXY(f * 4 + k, 0.01, 0.5);
+      const m = new THREE.Mesh(g, sideMat);
+      m.position.set(x, by, z);
       add(m);
-    }
-    // frente y atrás
-    for (const s of [-1, 1]) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(bt, bh, 2 * hw), [
-        s > 0 ? sideMat : bumperMat,
-        s < 0 ? sideMat : bumperMat,
-        bumperMat,
-        bumperMat,
-        bumperMat,
-        bumperMat,
-      ]);
-      m.position.set(s * (hl + bt / 2), by, 0);
-      add(m);
-    }
+    };
+    // caras de BoxGeometry: 0:+x 1:−x 2:+y 3:−y 4:+z 5:−z
+    for (const sgn of [-1, 1]) bumperBox(2 * (hl + bt), bt, 0, sgn * (hw + bt / 2), sgn > 0 ? 4 : 5);
+    for (const sgn of [-1, 1]) bumperBox(bt, 2 * hw, sgn * (hl + bt / 2), 0, sgn > 0 ? 0 : 1);
 
     // ---- Chasis: belly pan + marco de tubo
     add(box(2 * hl - 0.02, 0.01, 2 * hw - 0.02, dark, 0, inch(2.6), 0));
@@ -142,16 +128,13 @@ export class RobotView {
     ]) {
       const mod = new THREE.Group();
       mod.position.set(x, 0, z);
-      const housing = box(inch(4.2), inch(3), inch(4.2), spec.drivetrain === 'swerve' ? accent : dark, 0, inch(5.5), 0);
-      add(housing, mod);
+      // la carcasa del módulo es estática respecto al robot → se fusiona con el chasis
+      add(box(inch(4.2), inch(3), inch(4.2), spec.drivetrain === 'swerve' ? accent : dark, x, inch(5.5), z));
       const steer = new THREE.Group();
       mod.add(steer);
       const wheel = new THREE.Mesh(wheelGeo, tread);
       wheel.position.y = wheelR;
       add(wheel, steer);
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(inch(1), inch(1), inch(1.6), 10).rotateX(Math.PI / 2), alu);
-      hub.position.y = wheelR;
-      steer.add(hub);
       this.wheels.push(steer);
       this.wheelSpinners.push(wheel);
       g.add(mod);
@@ -259,6 +242,8 @@ export class RobotView {
     this.marker.visible = false;
     g.add(this.marker);
     mergeStaticChildren(g, new Set([this.marker, this.hopperBalls, rslMesh]));
+    mergeStaticChildren(this.intake, new Set([this.intakeRoller]));
+    mergeStaticChildren(this.turret, new Set([this.flywheel]));
     // Solo el cuerpo fusionado proyecta sombra (las piezas móviles chicas no: ahorra draw calls)
     g.traverse((o) => {
       if ((o as THREE.Mesh).isMesh && o.parent !== g) o.castShadow = false;

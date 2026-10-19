@@ -145,6 +145,7 @@ export class Hud {
         m.phase === 'TRANSITION' && fi ? t('inactiveFirst', { a: `${fi === 'red' ? '🔴' : '🔵'} HUB ${t(fi)}`.toUpperCase() }) : '';
       e.banner.className = `banner ${fi && m.phase === 'TRANSITION' ? fi : ''}`;
     }
+    e.player.style.display = player ? '' : 'none';
     if (player) {
       const key = JSON.stringify(player);
       if (key !== this.lastKey) {

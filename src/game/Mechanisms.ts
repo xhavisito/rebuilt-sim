@@ -17,6 +17,8 @@ export interface MechContext {
   time: number;
   autoAim: boolean;
   shootOnMove: boolean;
+  /** IA/AUTO: no dispara hasta estar alineado (un humano dispara donde apunta). */
+  requireAlign?: boolean;
   /** Se llama al capturar un FUEL (para G408: FUEL que sale del HUB). */
   onIntake?(robot: Robot, index: number): void;
   onLaunch?(robot: Robot, index: number, kind: 'shot' | 'pass' | 'corral'): void;
@@ -153,6 +155,10 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
 
   if (!(wantShoot || wantPass) || r.spinUp < 1 || r.shootCooldown > 0) return;
   if (ctx.fuel.robotCount(r.index) === 0) return;
+  if (ctx.requireAlign && solution && kind !== 'corral') {
+    const aimYaw = s.type === 'turret' ? h + r.turretYaw : h;
+    if (Math.abs(wrap(solution.yaw - aimYaw)) > 0.09) return;
+  }
 
   // ---- Lanzamiento
   const yawShooter = s.type === 'turret' ? h + r.turretYaw : h;

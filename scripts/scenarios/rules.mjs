@@ -1,7 +1,6 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
-const server = spawn('npx', ['vite', 'preview', '--port', '4191', '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
-await new Promise((r) => server.stdout.on('data', (d) => String(d).includes('4191') && r()));
+import { startServer } from './_server.mjs';
+const server = await startServer(4191);
 const browser = await chromium.launch({ args: ['--use-angle=vulkan', '--enable-gpu'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.log('PAGEERR', e.message));
@@ -10,6 +9,8 @@ await page.goto('http://localhost:4191/?mode=match&cam=broadcast');
 await page.waitForFunction(() => !document.getElementById('loading'));
 await page.waitForTimeout(3600);
 const E = (f) => page.evaluate(f);
+// Escenario determinista: sin IA ni rutinas de AUTO (los robots quedan quietos)
+await E(() => { const s = window.app.session; s.ais.clear(); s.autos.clear(); });
 // Robots: 0..2 rojos, 3..5 azules. Jugador = azul DS2 (índice 4).
 // AUTO: el robot azul 3 (DS1) trepa L1 en su TOWER (climber manual vía cmd)
 await E(() => { const s = window.app.session; const r = s.robots[3]; const tw = { x: -8.27 + 1.07 + r.phys.outerL + 0.05, z: 0.29 }; r.phys.teleport(tw.x, tw.z, Math.PI); window.__climb3 = true; const orig = s.step; });
@@ -40,4 +41,4 @@ await E(() => { window.app.session.match.t = 161; });
 await page.waitForTimeout(9000);
 console.log('END', await E(() => { const m = window.app.session.match; return JSON.stringify({ phase: m.phase, tower: m.tower, score: [m.score('red'), m.score('blue')], overlay: !document.querySelector('.overlay').classList.contains('hidden') && !!document.querySelector('.results') }); }));
 await page.screenshot({ path: 'shots/p4-results.png', fullPage: false });
-await browser.close(); server.kill();
+await browser.close(); server.close();

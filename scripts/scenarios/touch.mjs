@@ -1,12 +1,11 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
-const server = spawn('npx', ['vite', 'preview', '--port', '4198', '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
-await new Promise((r) => server.stdout.on('data', (d) => String(d).includes('4198') && r()));
+import { startServer } from './_server.mjs';
+const server = await startServer(4198);
 const browser = await chromium.launch({ args: ['--use-angle=vulkan', '--enable-gpu'] });
 const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
 const page = await ctx.newPage();
 page.on('pageerror', (e) => console.log('ERR', e.message));
-await page.goto('http://localhost:4198/');
+await page.goto('http://localhost:4198/?mode=practice');
 await page.waitForFunction(() => !document.getElementById('loading'));
 await page.waitForTimeout(800);
 const pos = () => page.evaluate(() => { const p = window.app.session.robots[0].phys.curPos; return [p.x.toFixed(2), p.z.toFixed(2)]; });
@@ -25,4 +24,4 @@ console.log('multitouch state', await page.evaluate(() => JSON.stringify(window.
 await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 await page.waitForTimeout(200);
 console.log('released', await page.evaluate(() => JSON.stringify(window.app.touch.state)));
-await browser.close(); server.kill();
+await browser.close(); server.close();

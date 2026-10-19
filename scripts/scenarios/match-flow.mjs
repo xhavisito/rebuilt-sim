@@ -1,7 +1,6 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
-const server = spawn('npx', ['vite', 'preview', '--port', '4197', '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
-await new Promise((r) => server.stdout.on('data', (d) => String(d).includes('4197') && r()));
+import { startServer } from './_server.mjs';
+const server = await startServer(4197);
 const browser = await chromium.launch({ args: ['--use-angle=vulkan', '--enable-gpu'] });
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const logs = [];
@@ -29,4 +28,4 @@ await page.waitForTimeout(800);
 await page.screenshot({ path: 'shots/match-shift1.png' });
 console.log('SHIFT1', await page.evaluate(() => { const m = window.app.session.match; return JSON.stringify({ phase: m.phase, red: m.light('red'), blue: m.light('blue'), score: [m.score('red'), m.score('blue')] }); }));
 console.log('LOGS', logs);
-await browser.close(); server.kill();
+await browser.close(); server.close();

@@ -51,7 +51,16 @@ export class PhysicsWorld {
     this.dt = 1 / hz;
     this.world.timestep = this.dt;
     this.world.numSolverIterations = 4;
+    // Margen de contactos predictivos 5 mm (default 2 cm): el FUEL en reposo separado unos
+    // milímetros no forma una sola "isla" que despierte cientos de cuerpos a la vez.
+    // Los FUEL rápidos usan CCD, así que no atraviesan paredes.
+    this.world.integrationParameters.normalizedPredictionDistance = 0.005;
     this.events = new RAPIER.EventQueue(true);
+  }
+
+  /** Iteraciones del solver (2 en calidad baja/media: suficiente para pelotas de espuma). */
+  setIterations(n: number): void {
+    this.world.numSolverIterations = n;
   }
 
   setRate(hz: number): void {

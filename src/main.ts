@@ -28,8 +28,12 @@ async function boot(): Promise<void> {
     app.applyQuality();
   }
   if (params.get('fps') === '1') app.settings.showFps = true;
-  if (params.get('mode') === 'match') app.startMatch();
-  else app.startPractice();
+  const mode = params.get('mode');
+  if (mode === 'match') app.startMatch(params.get('spectate') === '1');
+  else if (mode === 'practice') app.startPractice();
+  else app.quitToMenu();
+  const speed = Number(params.get('speed'));
+  if (app.session && speed > 0) app.session.timeScale = speed;
   const cam = params.get('cam');
   if (cam) app.session?.rigs[0]?.setMode(cam as never);
   app.start();

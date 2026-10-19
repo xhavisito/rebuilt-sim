@@ -10,7 +10,7 @@ jugable con táctil, teclado/mouse y gamepad en celular, tablet y PC.
 - [x] Fase 2 — reloj, SHIFTS, luces/estado de HUBS, conteo y salidas del HUB, puntuación, HUD, sonidos
 - [x] Fase 3 — intake, hopper, shooter balístico, pase, CORRAL/CHUTE/DEPOT, HUMAN PLAYER
 - [x] Fase 4 — TOWER y climb, árbitro (sección 6 del prompt), RP, resultados
-- [ ] Fase 5 — IA (5 robots + HP), modos de juego, diseñador de AUTO, editor de robots
+- [x] Fase 5 — IA (5 robots + HP), modos de juego, diseñador de AUTO, editor de robots
 - [ ] Fase 6 — pulido gráfico, presets de calidad, PWA/offline, móvil, README
 - [ ] Fase 7 — GitHub Actions → GitHub Pages
 
@@ -116,7 +116,9 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 9. **Árbitro heurístico** (las reglas son "como las percibe un REFEREE"): se documenta cada
    umbral en `src/referee/Referee.ts` (p. ej. embestida = velocidad de cierre > 3 m/s con
    extensión dentro del perímetro rival).
-10. **G412** no es alcanzable por diseño: el climber solo engancha RUNGS/UPRIGHTS.
+10. **G410 y G412** no son alcanzables por diseño: ninguna extensión del robot simulado puede
+    levantar los BUMPERS (la intake no colisiona con la alfombra) y el climber solo engancha
+    RUNGS/UPRIGHTS. Se documentan; el árbitro no los cobra.
 11. **Tarjetas** (G211): PIN > 15 s, ≥ 5 FUEL sacados del campo, ≥ 3 ráfagas de G407.
 12. **Umbral del CORRAL**: una cuña de 0.12 m (solo colisiona con FUEL) frente al umbral de 1.88 in
     permite que el FUEL empujado entre al CORRAL (en la realidad la espuma se comprime). // TODO CAD

@@ -1,13 +1,12 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
-const server = spawn('npx', ['vite', 'preview', '--port', '4196', '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
-await new Promise((r) => server.stdout.on('data', (d) => String(d).includes('4196') && r()));
+import { startServer } from './_server.mjs';
+const server = await startServer(4196);
 const browser = await chromium.launch({ args: ['--use-angle=vulkan', '--enable-gpu'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const logs = [];
 page.on('pageerror', (e) => logs.push('PAGEERR ' + e.message));
 page.on('console', (m) => m.type() === 'error' && logs.push(m.text()));
-await page.goto('http://localhost:4196/?cam=chase');
+await page.goto('http://localhost:4196/?mode=practice&cam=chase');
 await page.waitForFunction(() => !document.getElementById('loading'));
 const st = () => page.evaluate(() => { const s = window.app.session, r = s.robots[0]; return { pos: [r.phys.curPos.x.toFixed(2), r.phys.curPos.z.toFixed(2)], hopper: s.fuel.robotCount(0), shot: r.stats.fuelShot, scored: r.stats.fuelScored, chute: s.fuel.chute.blue.length, corral: s.fuel.corral.blue.length, door: s.humanPlayers.blue.doorOpen }; });
 // 1) intake en la NEUTRAL ZONE
@@ -38,4 +37,4 @@ await page.keyboard.down('KeyG'); await page.waitForTimeout(1500); await page.ke
 await page.waitForTimeout(1500);
 console.log('corral', JSON.stringify(await st()));
 console.log('LOGS', logs);
-await browser.close(); server.kill();
+await browser.close(); server.close();

@@ -2,7 +2,14 @@
  * Orquestador: ajustes, renderer, campo persistente, entrada, audio, HUD, sesión activa y bucle.
  */
 import { AudioEngine } from '../audio/Audio';
-import { presetById, ROBOT_PRESETS } from '../config/robots';
+import { DIFFICULTY } from '../ai/RobotAI';
+import * as THREE from 'three';
+import { robotById, ROBOT_PRESETS } from '../config/robots';
+import type { Tournament, TMatch } from '../core/tournament';
+import { AutoDesigner } from '../ui/AutoDesigner';
+import { Screens, type LocalPlayer } from '../ui/Menu';
+import { RobotEditor } from '../ui/RobotEditor';
+import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
 import { loadSettings, saveSettings, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
 import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
@@ -28,11 +35,22 @@ export class App {
   session: GameSession | null = null;
   private last = performance.now();
   private fpsEl: HTMLElement;
-  private fpsAcc = { frames: 0, time: 0, fps: 60 };
+  private fpsAcc = { frames: 0, time: 0, fps: 60, sim: 0, gpu: 0 };
   private toastEl: HTMLElement;
   private overlay: HTMLElement;
   private countdown = -1;
   private countdownShown = -1;
+  readonly screens: Screens;
+  private designer: AutoDesigner;
+  private editor: RobotEditor;
+  private tourney: TournamentScreen;
+  private menuCam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
+  private menuAngle = 0;
+  /** Evento `beforeinstallprompt` (PWA) guardado para el botón "Instalar app". */
+  installPrompt: (Event & { prompt: () => Promise<void> }) | null = null;
+  /** Match de torneo en curso. */
+  private tournamentCtx: { tt: Tournament; match: TMatch } | null = null;
+  private doneLayoutBtn: HTMLButtonElement | null = null;
 
   constructor(
     private appEl: HTMLElement,
@@ -68,7 +86,114 @@ export class App {
       if (document.hidden && this.session && !this.session.paused) this.togglePause();
     });
     this.hud.setColorblind(this.settings.colorblind);
+    this.screens = new Screens(this, uiEl);
+    const back = () => this.screens.main();
+    this.designer = new AutoDesigner(this.screens.root, back, (id, st) => {
+      this.settings.match.autoRoutine = id;
+      this.settings.match.station = st;
+      this.save();
+      this.startMatch();
+    });
+    this.editor = new RobotEditor(this.screens.root, back, (id) => {
+      this.settings.match.robotId = id;
+      this.save();
+      this.screens.setup('match');
+    });
+    this.tourney = new TournamentScreen(this.screens.root, this.settings, back, (tt, m) => this.playTournamentMatch(tt, m));
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.installPrompt = e as Event & { prompt: () => Promise<void> };
+    });
+    // Pide girar el teléfono a horizontal
+    const rot = document.createElement('div');
+    rot.className = 'rotate-hint active';
+    rot.innerHTML = `<div class="ph"></div><div>${t('rotatePhone')}</div>`;
+    document.body.appendChild(rot);
+    for (const a of ALLIANCES) this.field.setHubLight(a, 'active', 0);
     this.applyQuality();
+  }
+
+  // ------------------------------------------------------------------ menús
+  /** Sale de la sesión y muestra el menú principal (con el campo girando de fondo). */
+  quitToMenu(): void {
+    this.session?.dispose();
+    this.session = null;
+    this.tournamentCtx = null;
+    this.audio.stopMusic();
+    this.closeOverlay();
+    this.hud.setVisible(false);
+    this.touch.setEnabled(false);
+    this.input.slots = [{ type: 'any' }];
+    for (const a of ALLIANCES) this.field.setHubLight(a, 'active', 0);
+    this.renderer.setQuality(this.renderer.quality, this.menuCam);
+    this.screens.main();
+  }
+
+  private openScreen(): void {
+    this.session?.dispose();
+    this.session = null;
+    this.hud.setVisible(false);
+    this.touch.setEnabled(false);
+    this.closeOverlay();
+    this.screens.root.classList.remove('hidden');
+    this.screens.root.scrollTop = 0;
+  }
+
+  openAutoDesigner(): void {
+    this.openScreen();
+    this.designer.open(this.settings.match.autoRoutine);
+  }
+
+  openRobotEditor(): void {
+    this.openScreen();
+    this.editor.open(this.settings.match.robotId);
+  }
+
+  openTournament(): void {
+    this.openScreen();
+    this.tourney.open();
+  }
+
+  relabel(): void {
+    this.touch.relabel();
+  }
+
+  toggleFullscreen(): void {
+    const d = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+    const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+    if (document.fullscreenElement || d.webkitFullscreenElement) {
+      (document.exitFullscreen?.() ?? d.webkitExitFullscreen?.())?.catch?.(() => {});
+      return;
+    }
+    const p = el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
+    Promise.resolve(p)
+      .then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.('landscape'))
+      .catch(() => {});
+  }
+
+  install(): void {
+    void this.installPrompt?.prompt();
+    this.installPrompt = null;
+  }
+
+  /** Modo "editar layout táctil": arrastra los botones y toca "Listo". */
+  editTouchLayout(done: () => void): void {
+    this.screens.hide();
+    this.touch.setEnabled(true);
+    this.touch.setEditing(true);
+    const b = document.createElement('button');
+    b.className = 'btn primary done-layout';
+    b.textContent = t('doneLayout');
+    b.addEventListener('click', () => {
+      this.touch.setEditing(false);
+      this.touch.setEnabled(false);
+      b.remove();
+      this.doneLayoutBtn = null;
+      this.screens.root.classList.remove('hidden');
+      done();
+    });
+    this.uiEl.appendChild(b);
+    this.doneLayoutBtn = b;
   }
 
   save(): void {
@@ -95,6 +220,9 @@ export class App {
   startSession(cfg: SessionConfig): void {
     this.session?.dispose();
     this.audio.stopMusic();
+    this.screens.hide();
+    this.doneLayoutBtn?.remove();
+    if (cfg.mode !== 'local') this.input.slots = [{ type: 'any' }];
     const s = new GameSession(cfg, this.renderer, this.field, this.settings);
     this.session = s;
     s.hooks = {
@@ -135,7 +263,15 @@ export class App {
     const m = this.settings.match;
     this.startSession({
       mode: 'practice',
-      robots: [{ spec: presetById(m.robotId), alliance: m.alliance, station: m.station, control: { type: 'player', slot: 0 } }],
+      robots: [
+        {
+          spec: robotById(m.robotId),
+          alliance: m.alliance,
+          station: m.station,
+          control: { type: 'player', slot: 0 },
+          startOffsetZ: m.startOffset * (m.alliance === 'blue' ? 1 : -1),
+        },
+      ],
       humanPlayers: { [m.alliance]: m.humanPlayer },
       fuelTotal: m.fuel,
       eventType: m.eventType,
@@ -145,27 +281,128 @@ export class App {
   }
 
   /** Match 3 vs 3: el jugador en su DRIVER STATION, los demás robots con presets variados. */
-  startMatch(): void {
+  startMatch(spectate = false): void {
     const m = this.settings.match;
     const robots: RobotSlotConfig[] = [];
     let k = 0;
     for (const a of ALLIANCES)
       for (const ds of [1, 2, 3] as StationNumber[]) {
-        const isPlayer = a === m.alliance && ds === m.station;
-        const spec = isPlayer ? presetById(m.robotId) : structuredClone(ROBOT_PRESETS[k++ % ROBOT_PRESETS.length]);
-        if (!isPlayer) spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
-        robots.push({ spec, alliance: a, station: ds, control: isPlayer ? { type: 'player', slot: 0 } : { type: 'ai' } });
+        const isPlayer = !spectate && a === m.alliance && ds === m.station;
+        const spec = isPlayer ? robotById(m.robotId) : structuredClone(ROBOT_PRESETS[k++ % ROBOT_PRESETS.length]);
+        if (!isPlayer) {
+          spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
+          spec.shooter.accuracy = Math.min(0.97, spec.shooter.accuracy * DIFFICULTY[m.difficulty].accuracy);
+        }
+        robots.push({
+          spec,
+          alliance: a,
+          station: ds,
+          control: isPlayer ? { type: 'player', slot: 0 } : { type: 'ai' },
+          autoRoutine: isPlayer ? m.autoRoutine : undefined,
+          startOffsetZ: isPlayer ? m.startOffset * (a === 'blue' ? 1 : -1) : 0,
+        });
       }
     this.startSession({
       mode: 'match',
       robots,
       humanPlayers: { [m.alliance]: m.humanPlayer },
       aiAccuracy: { easy: 0.6, normal: 0.78, hard: 0.88, einstein: 0.95 }[m.difficulty],
+      aiDifficulty: m.difficulty,
       fuelTotal: m.fuel,
       eventType: m.eventType,
       fouls: m.fouls,
       seed: (Math.random() * 2 ** 32) >>> 0,
     });
+  }
+
+  /** Multijugador local: 2–4 jugadores, cada uno con su dispositivo. */
+  startLocal(players: LocalPlayer[], shared: boolean, fillAi: boolean): void {
+    const m = this.settings.match;
+    this.input.slots = players.map((p) => p.device);
+    const robots: RobotSlotConfig[] = [];
+    const used = new Set<string>();
+    players.forEach((p, slot) => {
+      const st = ([1, 2, 3] as StationNumber[]).find((d) => !used.has(`${p.alliance}${d}`));
+      if (!st) return;
+      used.add(`${p.alliance}${st}`);
+      robots.push({ spec: robotById(p.robotId), alliance: p.alliance, station: st, control: { type: 'player', slot } });
+    });
+    let k = 0;
+    if (fillAi)
+      for (const a of ALLIANCES)
+        for (const d of [1, 2, 3] as StationNumber[])
+          if (!used.has(`${a}${d}`)) {
+            const spec = structuredClone(ROBOT_PRESETS[k++ % ROBOT_PRESETS.length]);
+            spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
+            robots.push({ spec, alliance: a, station: d, control: { type: 'ai' } });
+          }
+    this.startSession({
+      mode: 'local',
+      robots,
+      humanPlayers: {},
+      aiDifficulty: m.difficulty,
+      fuelTotal: m.fuel,
+      eventType: m.eventType,
+      fouls: m.fouls,
+      sharedCamera: shared,
+      seed: (Math.random() * 2 ** 32) >>> 0,
+    });
+  }
+
+  /** Juega un match del torneo con los equipos del calendario. */
+  playTournamentMatch(tt: Tournament, match: TMatch): void {
+    const m = this.settings.match;
+    const robots: RobotSlotConfig[] = [];
+    for (const [a, ids] of [
+      ['red', match.red],
+      ['blue', match.blue],
+    ] as const)
+      ids.forEach((ti, k) => {
+        const team = tt.teams[ti];
+        const spec = robotById(team.specId);
+        spec.teamNumber = team.team;
+        if (!team.isPlayer) spec.shooter.accuracy = Math.min(0.97, spec.shooter.accuracy * (0.85 + 0.2 * team.strength));
+        robots.push({
+          spec,
+          alliance: a,
+          station: (k + 1) as StationNumber,
+          control: team.isPlayer ? { type: 'player', slot: 0 } : { type: 'ai' },
+          autoRoutine: team.isPlayer ? m.autoRoutine : undefined,
+        });
+      });
+    this.startSession({
+      mode: 'tournament',
+      robots,
+      humanPlayers: { [robots.find((r) => r.control.type === 'player')!.alliance]: m.humanPlayer },
+      aiDifficulty: m.difficulty,
+      fuelTotal: m.fuel,
+      eventType: tt.eventType,
+      fouls: m.fouls,
+      playoff: match.kind !== 'qual',
+      seed: (Math.random() * 2 ** 32) >>> 0,
+    });
+    this.tournamentCtx = { tt, match };
+  }
+
+  /** Guarda el resultado del match jugado en el torneo y vuelve a su pantalla. */
+  private finishTournamentMatch(): void {
+    const c = this.tournamentCtx;
+    const s = this.session;
+    if (!c || !s?.match) return;
+    const mm = s.match;
+    const robotsOf = (a: Alliance) => s.robots.filter((r) => r.alliance === a).map((r) => r.index);
+    const side = (a: Alliance) => ({
+      score: mm.allianceDisqualified(a, robotsOf) ? 0 : mm.score(a),
+      noFoul: mm.fuelPoints(a) + mm.towerPoints(a),
+      autoFuel: mm.fuel[a].auto,
+      tower: mm.towerPoints(a),
+      rp: mm.rp(a, s.robots.some((r) => r.alliance === a && r.isPlayer && mm.disqualified.has(r.index))).total,
+    });
+    const target = (c.match.kind === 'qual' ? c.tt.quals : c.tt.playoffs).find((x) => x.id === c.match.id);
+    if (target) target.result = { red: side('red'), blue: side('blue') };
+    saveTournament(c.tt);
+    this.tournamentCtx = null;
+    this.openTournament();
   }
 
   private onMatchEvent(e: MatchEvent): void {
@@ -251,9 +488,11 @@ export class App {
     if (!s) return;
     const res = buildResults(s);
     if (!res) return;
-    this.openOverlay(renderResults(res), (a) => {
-      if (a === 'rematch') this.startMatch();
-      else this.startPractice();
+    const inTournament = !!this.tournamentCtx;
+    this.openOverlay(renderResults(res, inTournament), (a) => {
+      if (a === 'continue') this.finishTournamentMatch();
+      else if (a === 'rematch') this.restart();
+      else this.quitToMenu();
     });
     attachChartHover(this.overlay, res);
     const p = s.playerRobot(0);
@@ -261,6 +500,15 @@ export class App {
   }
 
   // ------------------------------------------------------------------ pausa / overlay
+  /** Reinicia con la misma configuración. */
+  restart(): void {
+    const s = this.session;
+    if (!s) return;
+    if (s.cfg.mode === 'practice') this.startPractice();
+    else if (s.cfg.mode === 'match') this.startMatch(!s.players().length);
+    else this.startSession({ ...s.cfg, seed: (Math.random() * 2 ** 32) >>> 0 });
+  }
+
   togglePause(): void {
     const s = this.session;
     if (!s) return;
@@ -273,15 +521,17 @@ export class App {
     this.openOverlay(
       `<div class="dialog"><h2>${t('paused')}</h2>
         <button data-a="resume" class="primary">${t('resume')}</button>
-        <button data-a="restart">${t('restart')}</button>
-        <button data-a="practice">${t('practice')}</button>
-        <button data-a="match">${t('match')}</button>
+        ${this.session?.cfg.mode === 'practice' ? `<button data-a="reset">${t('resetField')}</button>` : ''}
+        ${this.tournamentCtx ? '' : `<button data-a="restart">${t('restart')}</button>`}
+        <button data-a="quit">${t('quit')}</button>
       </div>`,
       (a) => {
         if (a === 'resume') this.togglePause();
-        else if (a === 'restart') this.session?.cfg.mode === 'practice' ? this.startPractice() : this.startMatch();
-        else if (a === 'practice') this.startPractice();
-        else if (a === 'match') this.startMatch();
+        else if (a === 'reset') {
+          this.session?.resetField();
+          this.togglePause();
+        } else if (a === 'restart') this.restart();
+        else if (a === 'quit') this.quitToMenu();
       },
     );
   }
@@ -323,25 +573,40 @@ export class App {
   private tick(dt: number): void {
     const inputs = this.input.poll();
     const s = this.session;
-    if (inputs[0]?.pressed.has('pause')) this.togglePause();
+    if (s && inputs[0]?.pressed.has('pause')) this.togglePause();
     if (s) {
       this.runCountdown(dt, s);
+      const t0 = performance.now();
       s.update(dt, inputs);
+      const t1 = performance.now();
       const views = s.frame(dt);
       this.renderer.render(views);
+      const t2 = performance.now();
+      this.fpsAcc.sim += t1 - t0;
+      this.fpsAcc.gpu += t2 - t1;
       this.updateHud(s);
+    } else {
+      // Menú: el campo gira lentamente de fondo
+      this.menuAngle += dt * 0.06;
+      this.menuCam.position.set(Math.cos(this.menuAngle) * 13, 6.5, Math.sin(this.menuAngle) * 9);
+      this.menuCam.lookAt(0, 0.4, 0);
+      this.renderer.render([{ camera: this.menuCam, x: 0, y: 0, w: 1, h: 1 }]);
     }
     const f = this.fpsAcc;
     f.frames++;
     f.time += dt;
     if (f.time >= 0.5) {
       f.fps = f.frames / f.time;
+      const perf = { sim: f.sim / f.frames, render: f.gpu / f.frames };
+      (window as unknown as { __perf: typeof perf }).__perf = perf;
+      f.sim = 0;
+      f.gpu = 0;
       f.frames = 0;
       f.time = 0;
       this.fpsEl.style.display = this.settings.showFps ? '' : 'none';
       if (this.settings.showFps) {
         const info = this.renderer.info.render;
-        this.fpsEl.textContent = `${f.fps.toFixed(0)} FPS · ${this.renderer.quality} · ${info.calls} draws · ${(info.triangles / 1000).toFixed(0)}k tris · phys ${s?.physicsSteps ?? 0}`;
+        this.fpsEl.textContent = `${f.fps.toFixed(0)} FPS · ${this.renderer.quality} · ${info.calls} draws · ${(info.triangles / 1000).toFixed(0)}k tris · sim ${((window as unknown as { __perf: { sim: number } }).__perf?.sim ?? 0).toFixed(1)} ms · render ${((window as unknown as { __perf: { render: number } }).__perf?.render ?? 0).toFixed(1)} ms`;
       }
     }
     (window as unknown as { __fps: number }).__fps = f.fps;

@@ -11,6 +11,10 @@ import { formatTimer, robotsEnabled, timerSeconds } from '../core/clock';
 import { Match, type MatchEvent } from '../core/match';
 import { scoreAutoTower, scoreTeleopTower, type ClimbSnapshot } from '../core/tower';
 import { Referee } from '../referee/Referee';
+import { RobotAI, type AiContext } from '../ai/RobotAI';
+import { AutoExecutor } from '../auto/AutoExecutor';
+import { routineById } from '../auto/AutoRoutine';
+import type { Difficulty } from '../config/settings';
 import { Rng } from '../core/rng';
 import { defaultStart } from '../core/startRules';
 import { ALLIANCES, type Alliance, type EventType, type Phase, type StationNumber } from '../core/types';
@@ -36,6 +40,8 @@ export interface RobotSlotConfig {
   control: ControlKind;
   /** Desplazamiento lateral de la posición inicial (m). */
   startOffsetZ?: number;
+  /** Rutina de AUTO (id). */
+  autoRoutine?: string;
 }
 
 export interface SessionConfig {
@@ -52,6 +58,7 @@ export interface SessionConfig {
   humanPlayers?: Partial<Record<Alliance, 'ai' | 'player'>>;
   /** Precisión de la IA (0–1) según dificultad. */
   aiAccuracy?: number;
+  aiDifficulty?: Difficulty;
 }
 
 /** Notificaciones hacia la App (audio, HUD, efectos). */
@@ -86,9 +93,13 @@ export class GameSession {
     blue: { front: -1, left: -1, right: -1 },
   };
   hooks: SessionHooks = {};
+  readonly ais = new Map<number, RobotAI>();
+  readonly autos = new Map<number, AutoExecutor>();
   /** Tiempo simulado total (s). */
   simTime = 0;
   paused = false;
+  /** Escala de tiempo (depuración / pruebas: ?speed=3). */
+  timeScale = 1;
   private acc = 0;
   private alpha = 0;
   private stepsLastFrame = 0;
@@ -101,6 +112,7 @@ export class GameSession {
   ) {
     this.rng = new Rng(cfg.seed);
     this.pw = new PhysicsWorld(renderer.preset.physicsHz);
+    this.pw.setIterations(renderer.preset.solverIterations);
     buildFieldColliders(this.pw);
     // Robots
     cfg.robots.forEach((rc, i) => {
@@ -154,6 +166,16 @@ export class GameSession {
     }
     renderer.scene.add(this.group);
     field.setLeds(false);
+    // IA para los robots de la computadora
+    const aiCtx: AiContext = {
+      robots: this.robots,
+      fuel: this.fuel,
+      match: this.match,
+      rng: this.rng,
+      towerOcc: this.towerOcc,
+      pinSeconds: (i) => this.referee?.activePins().find((p) => p.pinner === i)?.seconds ?? 0,
+    };
+    for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
   }
 
   /** Fase actual del match ('AUTO'… o null en práctica). */
@@ -164,6 +186,13 @@ export class GameSession {
   /** Arranca el reloj del match (después de la cuenta regresiva de la App). */
   beginMatch(): void {
     if (this.match && !this.match.running) {
+      // Rutinas de AUTO: la elegida para el jugador; la IA según su posición y diseño
+      this.robots.forEach((r, i) => {
+        const rc = this.cfg.robots[i];
+        let id = rc.autoRoutine;
+        if (!id) id = r.spec.climb.maxLevel > 0 && r.station === 3 ? 'climb-l1' : r.station === 1 ? 'depot' : 'default-score';
+        if (r.control.type !== 'none') this.autos.set(i, new AutoExecutor(r, routineById(id)));
+      });
       this.match.start();
       this.field.setLeds(true);
     }
@@ -250,6 +279,7 @@ export class GameSession {
       time: this.match?.t ?? this.simTime,
       autoAim: isPlayer ? this.settings.drive.autoAim : true,
       shootOnMove: isPlayer ? this.settings.drive.shootOnMove : true,
+      requireAlign: !isPlayer || this.match?.phase === 'AUTO',
       onLaunch: (rb, i, kind) => {
         this.referee?.onLaunch(rb, i, kind);
         this.hooks.launch?.(rb, kind, rb.control.type === 'player');
@@ -420,14 +450,15 @@ export class GameSession {
     this.handlePressed(inputs);
     if (this.paused) return;
     const dt = this.pw.dt;
-    this.acc += Math.min(frameDt, 0.1);
+    this.acc += Math.min(frameDt, 0.1) * this.timeScale;
     let steps = 0;
-    while (this.acc >= dt && steps < 8) {
+    const maxSteps = this.renderer.preset.maxSteps * Math.max(1, Math.ceil(this.timeScale));
+    while (this.acc >= dt && steps < maxSteps) {
       this.step(dt, inputs);
       this.acc -= dt;
       steps++;
     }
-    if (steps === 8) this.acc = 0; // evita la espiral de la muerte en equipos lentos
+    if (steps === maxSteps) this.acc = 0; // evita la espiral de la muerte en equipos lentos
     this.stepsLastFrame = steps;
     this.alpha = this.acc / dt;
   }
@@ -440,7 +471,8 @@ export class GameSession {
     for (const r of this.robots) {
       r.enabled = enabled && !r.disabled;
       if (!r.enabled) r.cmd = idleCommand(); // deshabilitado: frena (brake mode)
-      else if (auto) r.cmd = idleCommand(); // AUTO: sin control del piloto (rutinas en Fase 5)
+      else if (auto) r.cmd = this.autos.get(r.index)?.update(dt, this.fuel, this.robots) ?? idleCommand(); // AUTO: sin piloto
+      else if (this.ais.has(r.index)) r.cmd = this.ais.get(r.index)!.update(dt);
       else if (r.control.type === 'player') {
         const slot = r.control.slot;
         const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];

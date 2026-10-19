@@ -4,6 +4,7 @@
  * R105 extensión ≤ 12 in · R106 un solo lado · R107 altura ≤ 30 in siempre.
  */
 import { inch, MAX_EXTENSION, MAX_HEIGHT, MAX_PERIMETER, TRENCH_CLEAR_HEIGHT } from './field';
+import { loadJSON, saveJSON } from './settings';
 
 export type Drivetrain = 'swerve' | 'tank';
 export type ShooterType = 'fixed' | 'turret';
@@ -256,4 +257,26 @@ export const ROBOT_PRESETS: RobotSpec[] = [
 
 export function presetById(id: string): RobotSpec {
   return structuredClone(ROBOT_PRESETS.find((p) => p.id === id) ?? ROBOT_PRESETS[1]);
+}
+
+// ------------------------------------------------------------------ robots personalizados
+
+const CUSTOM_KEY = 'rebuilt-sim.robots.v1';
+
+export function loadCustomRobots(): RobotSpec[] {
+  return loadJSON<RobotSpec[]>(CUSTOM_KEY, []);
+}
+
+export function saveCustomRobots(list: RobotSpec[]): void {
+  saveJSON(CUSTOM_KEY, list);
+}
+
+/** Presets + robots del editor. */
+export function allRobots(): RobotSpec[] {
+  return [...ROBOT_PRESETS, ...loadCustomRobots()];
+}
+
+/** Busca por id en presets y personalizados (copia). */
+export function robotById(id: string): RobotSpec {
+  return structuredClone(allRobots().find((r) => r.id === id) ?? ROBOT_PRESETS[1]);
 }

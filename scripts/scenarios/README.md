@@ -11,5 +11,6 @@ el estado relevante (y capturas en `shots/`).
 | `mechanisms.mjs` | Intake, tiro con auto-aim, disparo en movimiento, CHUTE y CORRAL |
 | `human-player.mjs` | Lanzamientos del HUMAN PLAYER al HUB e intake desde el DEPOT |
 | `rules.mjs` | Climb L1 en AUTO, G403, PIN (G418), G420 + LEVEL 3, pantalla de resultados |
+| `modes.mjs` | Torneo (jugar → resultados → continuar) y multijugador local con 2 dispositivos |
 
 Uso: `npm run e2e` (todos) o `node scripts/scenarios/rules.mjs`.

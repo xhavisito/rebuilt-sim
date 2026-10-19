@@ -35,6 +35,8 @@ export interface Settings {
     robotId: string;
     autoRoutine: string;
     humanPlayer: 'ai' | 'player';
+    /** Desplazamiento lateral de la posición inicial (m), validado con G303. */
+    startOffset: number;
   };
 }
 
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
     robotId: 'balanced',
     autoRoutine: 'default-score',
     humanPlayer: 'ai',
+    startOffset: 0,
   },
 };
 
