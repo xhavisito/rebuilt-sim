@@ -4,6 +4,7 @@
 import { AudioEngine } from '../audio/Audio';
 import { DIFFICULTY } from '../ai/RobotAI';
 import * as THREE from 'three';
+import * as F from '../config/field';
 import { robotById, ROBOT_PRESETS } from '../config/robots';
 import type { Tournament, TMatch } from '../core/tournament';
 import { AutoDesigner } from '../ui/AutoDesigner';
@@ -17,7 +18,13 @@ import { GameSession, type RobotSlotConfig, type SessionConfig } from '../game/G
 import { InputManager } from '../input/InputManager';
 import { TouchControls } from '../input/TouchControls';
 import { FieldView } from '../render/FieldView';
-import { Renderer, type Quality } from '../render/Renderer';
+import { Effects } from '../render/Effects';
+import { ALLIANCE_COLOR } from '../render/FieldView';
+import { QUALITY_ORDER, Renderer, type Quality } from '../render/Renderer';
+import { Stadium } from '../render/Stadium';
+import { FLAG_SHOT, FuelState } from '../physics/FuelSystem';
+import { formatTimer, timerSeconds } from '../core/clock';
+import { loadJSON, saveJSON } from '../config/settings';
 import { buildResults } from '../game/results';
 import { RULES } from '../core/fouls';
 import { Hud } from '../ui/Hud';
@@ -32,7 +39,12 @@ export class App {
   readonly touch: TouchControls;
   readonly audio: AudioEngine;
   readonly hud: Hud;
+  readonly effects = new Effects();
+  readonly stadium = new Stadium();
   session: GameSession | null = null;
+  /** Medición de FPS para la calidad "Auto". */
+  private autoQ = { t: 0, frames: 0, steps: 0 };
+  private clock = 0;
   private last = performance.now();
   private fpsEl: HTMLElement;
   private fpsAcc = { frames: 0, time: 0, fps: 60, sim: 0, gpu: 0 };
@@ -60,7 +72,11 @@ export class App {
     setLang(this.settings.lang);
     this.renderer = new Renderer(appEl);
     this.field = new FieldView();
-    this.renderer.scene.add(this.field.group);
+    this.renderer.scene.add(this.field.group, this.stadium.group, this.effects.points);
+    this.renderer.onQualityChange.push((p) => {
+      this.stadium.setDensity(p.crowd);
+      this.effects.setViewportHeight(window.innerHeight * Math.min(window.devicePixelRatio || 1, p.maxPixelRatio) * p.renderScale);
+    });
     this.input = new InputManager(this.settings, this.renderer.renderer.domElement);
     this.audio = new AudioEngine(this.settings);
     this.hud = new Hud(uiEl, () => this.togglePause());
@@ -80,7 +96,10 @@ export class App {
       this.save();
     });
     this.input.onDeviceChange.push((d) => this.touch.setEnabled(d === 'touch' && !!this.session));
-    window.addEventListener('resize', () => this.renderer.resize());
+    window.addEventListener('resize', () => {
+      this.renderer.resize();
+      this.renderer.onQualityChange.forEach((cb) => cb(this.renderer.preset));
+    });
     document.addEventListener('visibilitychange', () => {
       // Pausa automática al perder el foco
       if (document.hidden && this.session && !this.session.paused) this.togglePause();
@@ -212,6 +231,8 @@ export class App {
 
   /** Calidad inicial para "Auto": móviles → media, escritorio → alta. Luego se ajusta midiendo FPS. */
   guessQuality(): Quality {
+    const remembered = loadJSON<Quality | null>('rebuilt-sim.autoQuality', null);
+    if (remembered && QUALITY_ORDER.includes(remembered)) return remembered;
     const mobile = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
     return mobile ? 'medium' : 'high';
   }
@@ -228,8 +249,13 @@ export class App {
     s.hooks = {
       toast: (k) => this.toast(t(k)),
       matchEvent: (e) => this.onMatchEvent(e),
-      fuelScored: (_hub, counted) => {
-        if (counted) this.audio.score();
+      fuelScored: (hub, counted) => {
+        if (!counted) return;
+        this.audio.score();
+        const c = F.hubCenter(hub);
+        this.effects.emit(c.x, F.HUB_RIM_HEIGHT + 0.1, c.z, 14, { color: ALLIANCE_COLOR[hub], speed: 2.4, up: 1.5, life: 0.7, size: 0.07, gravity: 4 });
+        this.effects.emit(c.x, F.HUB_RIM_HEIGHT + 0.1, c.z, 6, { color: 0xffd54f, speed: 2, up: 2, life: 0.8, size: 0.06, gravity: 4 });
+        this.stadium.cheer(0.08);
       },
       launch: (_r, _kind, isPlayer) => {
         if (isPlayer) this.audio.shoot();
@@ -237,8 +263,9 @@ export class App {
       hpAction: (a, what) => {
         if (what === 'door') this.toast(s.humanPlayers[a].doorOpen ? t('chuteOpen') : t('chuteClosed'));
       },
-      impact: (strength, slot) => {
+      impact: (strength, slot, x, y, z) => {
         this.audio.hit(strength);
+        this.effects.emit(x, y, z, Math.round(6 + 14 * strength), { color: 0xffb74d, speed: 2.5 + 3 * strength, spread: 1.2, life: 0.35, size: 0.03, gravity: 9 });
         if (slot >= 0) {
           s.rigs[Math.min(slot, s.rigs.length - 1)]?.addShake(strength * 0.12);
           this.input.rumble(slot, strength, 120);
@@ -256,6 +283,8 @@ export class App {
     this.hud.setVisible(true);
     this.closeOverlay();
     if (s.match) this.countdown = 3.2;
+    this.effects.clear();
+    this.autoQ = { t: 0, frames: 0, steps: 0 };
   }
 
   /** Práctica libre con el robot elegido. */
@@ -457,6 +486,7 @@ export class App {
         if (e.alliance === player?.alliance) this.audio.beep(true);
         break;
       case 'end':
+        this.stadium.cheer(1);
         // pequeña pausa para ver las luces de "campo seguro" antes de los resultados
         setTimeout(() => this.showResults(), 1500);
         break;
@@ -573,6 +603,14 @@ export class App {
   private tick(dt: number): void {
     const inputs = this.input.poll();
     const s = this.session;
+    this.clock += dt;
+    this.stadium.update(dt, this.clock);
+    this.effects.update(dt);
+    if (s) {
+      this.updateArenaScreen(s);
+      this.emitTrails(s);
+      this.autoQuality(dt, s);
+    }
     if (s && inputs[0]?.pressed.has('pause')) this.togglePause();
     if (s) {
       this.runCountdown(dt, s);
@@ -610,6 +648,46 @@ export class App {
       }
     }
     (window as unknown as { __fps: number }).__fps = f.fps;
+  }
+
+  /** Pantalla gigante con el marcador. */
+  private updateArenaScreen(s: GameSession): void {
+    const m = s.match;
+    if (!m) this.stadium.setScreen(t('practiceMode'), '', '');
+    else this.stadium.setScreen(formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t)), String(m.score('red')), String(m.score('blue')));
+  }
+
+  /** Estela sutil de los FUEL disparados (cada 2 frames). */
+  private trailFrame = 0;
+  private emitTrails(s: GameSession): void {
+    if (this.renderer.quality === 'low' || s.paused || (this.trailFrame++ & 1)) return;
+    const f = s.fuel;
+    for (let i = 0; i < f.count; i++)
+      if (f.state[i] === FuelState.Field && f.flags[i] & FLAG_SHOT) this.effects.trail(f.pos[i * 3], f.pos[i * 3 + 1], f.pos[i * 3 + 2]);
+  }
+
+  /**
+   * Calidad "Auto": mide FPS entre los segundos 2 y 6 de cada sesión; si el promedio es
+   * menor a 42, baja un nivel (hasta 2 veces) y lo recuerda para la próxima vez.
+   */
+  private autoQuality(dt: number, s: GameSession): void {
+    if (this.settings.quality !== 'auto' || s.paused || this.autoQ.steps >= 2) return;
+    const a = this.autoQ;
+    a.t += dt;
+    if (a.t < 2) return;
+    a.frames++;
+    if (a.t < 6) return;
+    const fps = a.frames / (a.t - 2);
+    const i = QUALITY_ORDER.indexOf(this.renderer.quality);
+    if (fps < 42 && i > 0) {
+      const q = QUALITY_ORDER[i - 1];
+      this.renderer.setQuality(q, s.rigs[0].camera);
+      saveJSON('rebuilt-sim.autoQuality', q);
+      this.toast(t('qualityAuto', { q: t(`q_${q}` as TKey) }));
+      a.steps++;
+      a.t = 0;
+      a.frames = 0;
+    } else a.steps = 2;
   }
 
   /** Cuenta regresiva 3-2-1 antes de arrancar el match. */

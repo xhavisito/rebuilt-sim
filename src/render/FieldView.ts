@@ -212,9 +212,17 @@ export class FieldView {
       mesh.name = `field-${gr.mat}`;
       this.group.add(mesh);
     }
-    // Detalles del HUB: franjas de color de alianza en el cuerpo
+    // Detalles del HUB: embudo hexagonal interior y franjas de color de alianza
+    const funnelMat = new THREE.MeshStandardMaterial({ color: 0x2a2e36, roughness: 0.7, side: THREE.DoubleSide });
     for (const a of ['red', 'blue'] as Alliance[]) {
       const c = F.hubCenter(a);
+      const R = F.HUB_OPENING_HEX / 2;
+      const depth = F.HUB_RIM_HEIGHT - F.HUB_INNER_FLOOR;
+      const funnel = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.005, R * 0.62, depth, 6, 1, true), funnelMat);
+      funnel.rotation.y = Math.PI / 6; // vértices hacia ±X, como la abertura
+      funnel.rotation.y = 0;
+      funnel.position.set(c.x, F.HUB_INNER_FLOOR + depth / 2, c.z);
+      this.group.add(funnel);
       const stripe = new THREE.Mesh(
         new THREE.BoxGeometry(F.HUB_SIZE + 0.01, 0.12, F.HUB_SIZE + 0.01),
         this.mat('towerA', a),

@@ -118,9 +118,10 @@ export class CameraRig {
       }
       case 'broadcast': {
         const cx = THREE.MathUtils.clamp(tgt.x * 0.55, -5, 5);
-        desiredPos.set(cx, 7.5, F.HALF_W + 9.5);
-        desiredLook.set(cx * 1.05, 0, -0.4);
-        fov = 46;
+        // Elevada sobre la primera fila de gradas (lado +Z), mirando el campo en diagonal
+        desiredPos.set(cx, 7.8, F.HALF_W + 4.2);
+        desiredLook.set(cx * 1.05, 0, -0.6);
+        fov = 56;
         break;
       }
       case 'free': {

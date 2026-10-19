@@ -5,6 +5,7 @@ import './ui/styles.css';
 import { App } from './app/App';
 import { initRapier } from './physics/PhysicsWorld';
 import { t } from './ui/i18n';
+import { registerServiceWorker } from './pwa/register';
 
 const bar = document.getElementById('loading-bar') as HTMLElement;
 const text = document.getElementById('loading-text') as HTMLElement;
@@ -37,6 +38,7 @@ async function boot(): Promise<void> {
   const cam = params.get('cam');
   if (cam) app.session?.rigs[0]?.setMode(cam as never);
   app.start();
+  registerServiceWorker(() => app.toast(t('offlineReady'), 'good'));
   progress(1, t('loadingReady'));
   const loading = document.getElementById('loading')!;
   loading.style.opacity = '0';

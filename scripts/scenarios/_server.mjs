@@ -5,6 +5,8 @@ export async function startServer(port, outDir = 'dist') {
   const proc = spawn(process.execPath, ['node_modules/vite/bin/vite.js', 'preview', '--port', String(port), '--strictPort', '--outDir', outDir], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  // Cierra el servidor aunque el escenario falle
+  process.on('exit', () => proc.kill());
   await new Promise((resolve, reject) => {
     const to = setTimeout(() => reject(new Error(`vite preview no arrancó en ${port}`)), 20000);
     const onData = (d) => {
