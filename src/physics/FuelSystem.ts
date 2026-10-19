@@ -333,7 +333,7 @@ export class FuelSystem {
   /** Después de `world.step`: sincroniza posiciones y detecta HUB, CORRAL y fuera de campo. */
   postPhysics(dt: number): void {
     this.time += dt;
-    const R = F.HUB_OPENING_HEX / 2 - F.FUEL_RADIUS * 0.3;
+    const R = F.HUB_OPENING_R - F.FUEL_RADIUS * 0.3;
     const fz = R * Math.cos(Math.PI / 6);
     const sqrt3 = Math.sqrt(3);
     const hubX = Math.abs(F.HUB_CENTER_X_BLUE);

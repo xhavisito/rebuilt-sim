@@ -10,26 +10,36 @@ page.on('console', (m) => m.type() === 'error' && logs.push(m.text()));
 await page.goto('http://localhost:4199/?mode=practice');
 await page.waitForFunction(() => !document.getElementById('loading'));
 await page.evaluate(() => { const r = window.app.session.robots[0]; r.phys.teleport(-2.6, 1.2, 0.5); r.intakeOn = true; });
-for (const mode of ['driver', 'third', 'onboard', 'chase', 'top', 'broadcast']) {
+for (const mode of ['driver', 'third', 'onboard', 'top', 'broadcast']) {
   await page.evaluate((m) => window.app.session.rigs[0].setMode(m), mode);
   await page.waitForTimeout(500);
   await page.screenshot({ path: `shots/cam-${mode}.png` });
 }
-// Tercera persona: W avanza hacia donde mira el robot, aunque no mire al campo contrario
+// Tercera persona (estilo MoSim): no gira con el robot y W siempre va hacia el campo contrario
 await page.evaluate(() => {
   const s = window.app.session;
   s.rigs[0].setMode('third');
   for (let i = 0; i < s.fuel.count; i++) if (s.fuel.state[i] === 0) s.fuel.store(i, 6, -1);
   s.robots[0].phys.teleport(-5, 0, Math.PI / 2); // mirando a −Z
 });
-await page.waitForTimeout(400);
+await page.waitForTimeout(1200);
+const dir = () => page.evaluate(() => { const c = window.app.session.rigs[0].camera; const v = c.getWorldDirection(new c.position.constructor()); return Math.atan2(v.z, v.x); });
+const d0 = await dir();
+await page.keyboard.down('KeyQ');
+await page.waitForTimeout(900);
+await page.keyboard.up('KeyQ');
+const d1 = await dir();
+const camFixed = Math.abs(d1 - d0) < 0.02;
+console.log('third: giro del robot no gira la cámara', (d0 * 57.3).toFixed(1), '→', (d1 * 57.3).toFixed(1), camFixed ? 'OK' : 'FAIL');
+await page.evaluate(() => window.app.session.robots[0].phys.teleport(-6.5, -2.5, Math.PI / 2));
+await page.waitForTimeout(200);
 await page.keyboard.down('KeyW');
 await page.waitForTimeout(700);
 await page.keyboard.up('KeyW');
 const mv = await page.evaluate(() => ({ ...window.app.session.robots[0].phys.curPos }));
-const relOk = Math.abs(mv.x + 5) < 0.3 && mv.z < -0.8;
-console.log('third W from (-5,0) facing -Z →', mv.x.toFixed(2), mv.z.toFixed(2), relOk ? 'OK' : 'FAIL');
-if (!relOk) process.exitCode = 1;
+const relOk = mv.x > -5.6 && Math.abs(mv.z + 2.5) < 0.3;
+console.log('third: W desde (-6.5,-2.5) mirando a −Z →', mv.x.toFixed(2), mv.z.toFixed(2), relOk ? 'OK' : 'FAIL');
+if (!relOk || !camFixed) process.exitCode = 1;
 // Botón de cámara del HUD
 const before = await page.evaluate(() => window.app.session.rigs[0].mode);
 await page.click('.cam-btn');

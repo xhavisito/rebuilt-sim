@@ -1,17 +1,17 @@
 /**
- * Cámaras: piloto (DRIVER STATION), tercera persona (detrás del robot, gira con él),
- * a bordo (POV del robot), seguimiento (detrás, alineada al campo), superior,
- * transmisión TV y libre. La rueda del mouse acerca/aleja las cámaras que siguen al robot.
+ * Cámaras: tercera persona (estilo MoSim: detrás del robot con orientación fija hacia el
+ * campo contrario), piloto (DRIVER STATION), a bordo (POV del robot), superior, transmisión
+ * TV y libre. La rueda del mouse acerca/aleja la tercera persona.
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as F from '../config/field';
 import type { Alliance, StationNumber } from '../core/types';
 
-export type CameraMode = 'driver' | 'third' | 'onboard' | 'chase' | 'top' | 'broadcast' | 'free';
-export const CAMERA_MODES: CameraMode[] = ['driver', 'third', 'onboard', 'chase', 'top', 'broadcast', 'free'];
+export type CameraMode = 'driver' | 'third' | 'onboard' | 'top' | 'broadcast' | 'free';
+export const CAMERA_MODES: CameraMode[] = ['third', 'driver', 'onboard', 'top', 'broadcast', 'free'];
 /** Cámaras que giran con el robot: el manejo es relativo a la cámara (adelante = adelante). */
-export const ROBOT_CAMERAS: ReadonlySet<CameraMode> = new Set(['third', 'onboard']);
+export const ROBOT_CAMERAS: ReadonlySet<CameraMode> = new Set(['onboard']);
 
 export interface CameraTarget {
   x: number;
@@ -37,9 +37,7 @@ export class CameraRig {
   private pos = new THREE.Vector3();
   private orbit: OrbitControls | null = null;
   private first = true;
-  /** Rumbo suavizado de la cámara de tercera persona. */
-  private yaw = 0;
-  /** Distancia relativa (rueda del mouse) en tercera persona / seguimiento. */
+  /** Distancia relativa (rueda del mouse) en tercera persona. */
   zoom = 1;
 
   constructor(private dom: HTMLElement | null) {
@@ -47,7 +45,7 @@ export class CameraRig {
     dom?.addEventListener(
       'wheel',
       (e) => {
-        if (this.mode !== 'third' && this.mode !== 'chase') return;
+        if (this.mode !== 'third') return;
         e.preventDefault();
         this.zoom = THREE.MathUtils.clamp(this.zoom * Math.exp(e.deltaY * 0.0012), 0.55, 2.2);
       },
@@ -94,7 +92,7 @@ export class CameraRig {
   }
 
   update(dt: number, t: CameraTarget | null): void {
-    const k = this.first ? 1 : 1 - Math.exp(-dt * 6);
+    let k = this.first ? 1 : 1 - Math.exp(-dt * 6);
     this.first = false;
     const s = this.downfield;
     const tgt = t ?? { x: 0, y: 0, z: 0, vx: 0, vz: 0 };
@@ -114,28 +112,20 @@ export class CameraRig {
         break;
       }
       case 'third': {
-        // Detrás del robot, gira con él (suavizado) como en un juego de manejo.
-        const h = tgt.heading ?? (s > 0 ? 0 : Math.PI);
-        if (this.first) this.yaw = h;
-        else this.yaw += wrap(h - this.yaw) * (1 - Math.exp(-dt * 5));
-        const fx = Math.cos(this.yaw);
-        const fz = -Math.sin(this.yaw);
-        const back = 2.3 * this.zoom;
-        let px = tgt.x - fx * back;
-        let pz = tgt.z - fz * back;
-        let lift = 0;
-        // Dentro del recinto: si la cámara quedaría detrás de una pared, se acerca y sube.
-        const lx = F.HALF_L + 0.2;
-        const lz = F.HALF_W + 0.2;
-        const over = Math.max(0, Math.abs(px) - lx, Math.abs(pz) - lz);
-        if (over > 0) {
-          px = THREE.MathUtils.clamp(px, -lx, lx);
-          pz = THREE.MathUtils.clamp(pz, -lz, lz);
-          lift = over * 0.8;
-        }
-        desiredPos.set(px, tgt.y + 1.15 * this.zoom + 0.35 + lift, pz);
-        desiredLook.set(tgt.x + fx * 1.6, tgt.y + 0.35, tgt.z + fz * 1.6);
-        fov = 62;
+        // Como en MoSim: detrás y arriba del robot, SIEMPRE mirando hacia el campo contrario.
+        // No gira con el robot ni se adelanta con la velocidad; solo sigue su posición
+        // (suavizado corto). Puede pasar por encima de la ALLIANCE WALL.
+        const z = this.zoom;
+        // No pasa detrás de la ALLIANCE WALL (la placa de la DRIVER STATION taparía la vista):
+        // si no cabe, se queda junto a la pared y sube para mirar al robot desde arriba.
+        let back = 2.7 * z;
+        const room = Math.max(0, F.HALF_L - 0.25 + s * tgt.x);
+        const missing = Math.max(0, back - room);
+        back -= missing;
+        desiredPos.set(tgt.x - s * back, tgt.y + 2.05 * z + missing * 0.6, tgt.z);
+        desiredLook.set(tgt.x + s * 0.9, tgt.y + 0.15, tgt.z);
+        fov = 58;
+        k = this.first ? 1 : 1 - Math.exp(-dt * 9);
         break;
       }
       case 'onboard': {
@@ -148,21 +138,6 @@ export class CameraRig {
         desiredPos.set(tgt.x + fx * fwd, tgt.y + 0.5, tgt.z + fz * fwd);
         desiredLook.set(tgt.x + fx * 6, tgt.y, tgt.z + fz * 6);
         fov = 70;
-        break;
-      }
-      case 'chase': {
-        const lead = 0.25;
-        // No pasar detrás de la ALLIANCE WALL: si no cabe, sube la cámara.
-        let back = 3.1 * this.zoom;
-        const room = s > 0 ? tgt.x + F.HALF_L - 0.35 : F.HALF_L - 0.35 - tgt.x;
-        let lift = 0;
-        if (room < back) {
-          lift = (back - Math.max(0, room)) * 1.1;
-          back = Math.max(0, room);
-        }
-        desiredPos.set(tgt.x - s * back, 2.6 * this.zoom + lift, tgt.z * 0.92);
-        desiredLook.set(tgt.x + s * 1.2 + tgt.vx * lead, 0.3, tgt.z + tgt.vz * lead);
-        fov = 60;
         break;
       }
       case 'top': {
@@ -210,5 +185,3 @@ export class CameraRig {
     this.camera.lookAt(this.look);
   }
 }
-
-const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));

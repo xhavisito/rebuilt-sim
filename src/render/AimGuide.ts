@@ -77,6 +77,7 @@ export class AimGuide {
     const p = this.pos;
     let n = 0;
     let verdict: AimVerdict = 'miss';
+    // círculo inscrito del hexágono (mitad del ancho entre caras planas): estimación conservadora
     const r = F.HUB_OPENING_HEX / 2 - F.FUEL_RADIUS;
     for (; n < N; n++) {
       p[n * 3] = x;

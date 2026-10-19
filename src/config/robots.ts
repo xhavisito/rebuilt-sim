@@ -178,7 +178,7 @@ export const ROBOT_PRESETS: RobotSpec[] = [
       backspin: 35,
     },
     climb: { maxLevel: 0, timeL1: 99, timeL2: 99, timeL3: 99 },
-    colors: { primary: '#3d4a57', accent: '#ff8a00' },
+    colors: { primary: '#465462', accent: '#ff8a00' },
   }),
   base({
     id: 'balanced',
@@ -200,7 +200,7 @@ export const ROBOT_PRESETS: RobotSpec[] = [
       backspin: 30,
     },
     climb: { maxLevel: 2, timeL1: 2.5, timeL2: 5.5, timeL3: 99 },
-    colors: { primary: '#6d7480', accent: '#19b5fe' },
+    colors: { primary: '#d5dae0', accent: '#19b5fe' },
   }),
   base({
     id: 'climber',
@@ -224,7 +224,7 @@ export const ROBOT_PRESETS: RobotSpec[] = [
       backspin: 25,
     },
     climb: { maxLevel: 3, timeL1: 2.2, timeL2: 4.8, timeL3: 7.5 },
-    colors: { primary: '#2e3138', accent: '#a5ff3c' },
+    colors: { primary: '#6b3fd4', accent: '#a5ff3c' },
   }),
   base({
     id: 'defender',

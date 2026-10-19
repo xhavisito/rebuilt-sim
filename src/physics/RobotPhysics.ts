@@ -4,8 +4,12 @@
  * Colisionadores: 4 esferas-rueda SIN fricción (la tracción la decide nuestro
  * controlador; solo tocan el campo, no el FUEL), caja de BUMPERS (zona 2.5–5.75 in, R405)
  * y caja de la superestructura hasta la altura del robot (decide si cabe bajo el TRENCH
- * de 22.25 in). Un FUEL (5.91 in) tiene su centro arriba del borde inferior del BUMPER,
- * así que la cara vertical lo empuja de lado: el robot lo arrastra, no se sube.
+ * de 22.25 in). Un FUEL (5.91 in) tiene su centro apenas 0.45 in arriba del borde inferior
+ * del BUMPER: con una inclinación mínima se metería abajo y levantaría al robot. Por eso:
+ *  - un "faldón" que solo toca FUEL baja la cara vertical hasta 0.5 in del piso (en un robot
+ *    real ese hueco lo cierran el chasis y la espuma de la pelota, que se comprime), y
+ *  - el robot domina al FUEL (grupo de dominancia): 0.2 kg de espuma no levantan ni inclinan
+ *    a un robot de 55 kg. La resistencia de empujar FUEL la modela `plow`.
  *
  * Manejo: controlador de velocidad cuyo cambio de velocidad por paso está limitado por
  * min(aceleración del motor, μ·g)·(fracción de ruedas en el piso). Con eso los empujones
@@ -75,6 +79,7 @@ export class RobotPhysics {
         .setRotation(q)
         .setLinearDamping(0.2)
         .setAngularDamping(1.5)
+        .setDominanceGroup(1)
         .setCanSleep(false),
     );
     this.body.userData = { robot: index };
@@ -98,6 +103,17 @@ export class RobotPhysics {
       this.body,
     );
     pw.tag(this.bumper, { kind: 'robot', robot: index, part: 'bumper' });
+    const skirtY0 = inch(0.5);
+    const skirt = w.createCollider(
+      RAPIER.ColliderDesc.cuboid(this.outerL, (by0 + 0.01 - skirtY0) / 2, this.outerW)
+        .setTranslation(0, (skirtY0 + by0 + 0.01) / 2, 0)
+        .setMass(0)
+        .setFriction(0.4)
+        .setRestitution(0.08)
+        .setCollisionGroups(GROUPS.skirt),
+      this.body,
+    );
+    pw.tag(skirt, { kind: 'robot', robot: index, part: 'bumper' });
     // Superestructura dentro del perímetro (hasta la altura del robot)
     const fy0 = BUMPER_TOP;
     const fhy = Math.max(0.02, (this.height - fy0) / 2);

@@ -146,52 +146,69 @@ function buildBlueSide(): FieldPart[] {
     out.push(box('outpost-housing', wx0 - 0.95, wx0 - 0.3, 0.3, 1.25, zOf(oy1) - 0.05, zOf(oy0) + 0.05, 'alu', 'none'));
   }
 
-  // ---------- HUB
+  // ---------- HUB (§5.4, figs. 5-5/5-7). Solo colisión: lo que se ve lo dibuja render/HubModel.
   {
     const hx = F.HUB_CENTER_X_BLUE;
     const hs = F.HUB_SIZE / 2;
-    out.push(box('hub-body', hx - hs, hx + hs, 0, F.HUB_INNER_FLOOR, -hs, hs, 'hubBody'));
-    // Parte superior: cuadrado con abertura hexagonal (vértices hacia ±X).
-    const R = F.HUB_OPENING_HEX / 2;
-    const fz = R * Math.cos(Math.PI / 6); // distancia a los lados planos
-    const vx = R / 2; // x de los vértices superiores
-    const y0 = F.HUB_INNER_FLOOR;
-    const y1 = F.HUB_RIM_HEIGHT;
-    const quads: Array<Array<[number, number]>> = [
-      [
-        [0, fz],
-        [vx, fz],
-        [hs, hs],
-        [0, hs],
-      ],
-      [
-        [vx, fz],
-        [R, 0],
-        [hs, 0],
-        [hs, hs],
-      ],
-    ];
-    for (const sx of [1, -1])
-      for (const sz of [1, -1])
-        for (const q of quads) {
-          const pts: number[] = [];
-          for (const [px, pz] of q) for (const y of [y0, y1]) pts.push(sx * px, y, sz * pz);
-          out.push({
-            name: 'hub-top',
-            shape: { type: 'hull', points: pts },
-            pos: [hx, 0, 0],
-            mat: 'hubTop',
-            collide: 'all',
-            shadow: true,
-          });
+    out.push(box('hub-body', hx - hs, hx + hs, 0, F.HUB_INNER_FLOOR, -hs, hs, 'invisible'));
+    // Hexágonos con vértices hacia ±X: vértice k en el ángulo k·60°.
+    const hex = (r: number, k: number): [number, number] => [r * Math.cos((k * Math.PI) / 3), r * Math.sin((k * Math.PI) / 3)];
+    const Rb = F.HUB_FUNNEL_BOTTOM_R;
+    const Rt = F.HUB_OPENING_R;
+    // Tapa: anillo cuadrado con hueco hexagonal del fondo del embudo (de la caja a la placa)
+    {
+      const y0 = F.HUB_INNER_FLOOR;
+      const y1 = F.HUB_PLATE_HEIGHT;
+      for (let k = 0; k < 6; k++) {
+        const a = hex(Rb, k);
+        const b = hex(Rb, k + 1);
+        // cada lado del hexágono se une con la parte del borde cuadrado "detrás" de él
+        const ang = ((k + 0.5) * Math.PI) / 3;
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        const far = (p: [number, number]): [number, number] => {
+          // proyecta radialmente hasta el cuadrado de lado 2·hs
+          const d = Math.max(Math.abs(p[0]), Math.abs(p[1]));
+          return [(p[0] / d) * hs, (p[1] / d) * hs];
+        };
+        const pts: number[] = [];
+        const ring: Array<[number, number]> = [a, b, far(b), far([hs * ca, hs * sa]), far(a)];
+        // esquinas del cuadrado que caen en este sector
+        for (const [cx, cz] of [[hs, hs], [-hs, hs], [-hs, -hs], [hs, -hs]] as Array<[number, number]>) {
+          const t = Math.atan2(cz, cx);
+          const t0 = Math.atan2(a[1], a[0]);
+          const t1 = Math.atan2(b[1], b[0]);
+          const inSector = ((t - t0 + 4 * Math.PI) % (2 * Math.PI)) < ((t1 - t0 + 4 * Math.PI) % (2 * Math.PI));
+          if (inSector) ring.push([cx, cz]);
         }
-    // Red trasera (hacia la NEUTRAL ZONE)
-    out.push(box('hub-net', hx + hs - 0.02, hx + hs, y1, F.HUB_NET_TOP, -hs, hs, 'net', 'all', false));
-    for (const sz of [-1, 1])
-      out.push(box('hub-net-post', hx + hs - 0.04, hx + hs, y1, F.HUB_NET_TOP, sz * hs - 0.02, sz * hs + 0.02, 'alu', 'none'));
-    out.push(box('hub-net-top', hx + hs - 0.04, hx + hs, F.HUB_NET_TOP - 0.03, F.HUB_NET_TOP, -hs, hs, 'alu', 'none'));
-    // Salidas (visual): marcos en la base hacia la NEUTRAL ZONE
-    out.push(box('hub-exits', hx + hs, hx + hs + 0.28, 0, 0.32, -0.62, 0.62, 'dark', 'none'));
+        for (const [px, pz] of ring) for (const y of [y0, y1]) pts.push(px, y, pz);
+        out.push({ name: 'hub-cap', shape: { type: 'hull', points: pts }, pos: [hx, 0, 0], mat: 'invisible', collide: 'all' });
+      }
+    }
+    // Embudo: 6 paredes inclinadas de 1 cm, del fondo (placa) a la abertura (72 in)
+    {
+      const y0 = F.HUB_PLATE_HEIGHT;
+      const y1 = F.HUB_RIM_HEIGHT;
+      const th = 0.012;
+      for (let k = 0; k < 6; k++) {
+        const pts: number[] = [];
+        for (const [r, y] of [[Rb, y0], [Rt, y1]] as Array<[number, number]>)
+          for (const kk of [k, k + 1])
+            for (const off of [0, th]) {
+              const [px, pz] = hex(r + off, kk);
+              pts.push(px, y, pz);
+            }
+        out.push({ name: 'hub-funnel', shape: { type: 'hull', points: pts }, pos: [hx, 0, 0], mat: 'invisible', collide: 'all' });
+      }
+    }
+    // Red trasera inclinada hacia la NEUTRAL ZONE (bloquea tiros desde fuera de la ALLIANCE ZONE, G407)
+    {
+      const pts: number[] = [];
+      const zw = hs + 0.03;
+      for (const [u, y] of [[F.HUB_NET_BOTTOM_U, F.HUB_RIM_HEIGHT - 0.12], [F.HUB_NET_TOP_U, F.HUB_NET_TOP]] as Array<[number, number]>)
+        for (const z of [-zw, zw]) for (const d of [0, 0.02]) pts.push(u + d, y, z);
+      out.push({ name: 'hub-net', shape: { type: 'hull', points: pts }, pos: [hx, 0, 0], mat: 'invisible', collide: 'all' });
+    }
   }
 
   // ---------- BUMPS (prisma con rampas de 15° y labio de 0.5 in)

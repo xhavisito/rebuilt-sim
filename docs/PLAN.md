@@ -98,9 +98,13 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 - Rojo = rotación 180° de todo lo anterior.
 
 ## Supuestos (donde el manual es ambiguo para simular)
-1. **Red del HUB**: altura total 2.6 m (102 in) en la cara hacia la NEUTRAL ZONE. // TODO CAD
-2. **Abertura del HUB**: hexágono horizontal de 41.7 in entre vértices, borde a 72 in; el interior
-   cuenta el FUEL al cruzar ~0.35 m bajo el borde ("sensor array" §6.5.1).
+1. **Forma del HUB** (medida sobre las figs. 5-5 y 5-7): cuerpo negro hasta ~50.5 in, tapa
+   biselada gris hasta ~59 in, placa de color de alianza y embudo hexagonal translúcido de
+   ~24 in (fondo) a 41.7 in (arriba, a 72 in). Red ahumada inclinada hacia la NEUTRAL ZONE
+   con la punta a ~120 in. // TODO CAD
+2. **Abertura del HUB**: hexágono de 41.7 in **entre caras planas** (así lo acota la vista
+   superior de la fig. 5-7; los vértices llegan al borde de la caja), borde a 72 in; el FUEL
+   se cuenta al cruzar ~0.3 m bajo el borde, al fondo del embudo ("sensor array" §6.5.1).
 3. **Salidas del HUB**: 4 aberturas a ~0.15 m de altura en la cara hacia la NEUTRAL ZONE,
    retardo de procesamiento 0.6–1.4 s, velocidad de salida 1.5–3 m/s.
 4. **Gracia de 3 s** (§6.5): un FUEL que entra al HUB dentro de los 3 s posteriores a su
@@ -123,8 +127,9 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 12. **Umbral del CORRAL**: una cuña de 0.12 m (solo colisiona con FUEL) frente al umbral de 1.88 in
     permite que el FUEL empujado entre al CORRAL (en la realidad la espuma se comprime). // TODO CAD
 13. **Robot contra FUEL**: las ruedas no colisionan con el FUEL; lo empuja la cara vertical de los
-    BUMPERS (el centro de un FUEL, 2.95 in, queda arriba del borde inferior de la BUMPER ZONE,
-    2.5 in), así que el robot no se trepa. Empujar FUEL frena: −3.5 % de velocidad máxima por
+    BUMPERS, que un "faldón" (solo FUEL) baja hasta 0.5 in del piso, y el robot domina al FUEL
+    (grupo de dominancia de Rapier: 0.2 kg de espuma no levantan a un robot de 55 kg). Así el
+    robot no se trepa al FUEL ni lo hunde en la alfombra. Empujar FUEL frena: −3.5 % de velocidad máxima por
     pelota pegada al BUMPER (0.5 por cada una de las dos filas siguientes; 0.3 si la intake
     desplegada la está tragando), hasta 40 % de la velocidad máxima. Calibrado a ojo.
 

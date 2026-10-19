@@ -42,13 +42,34 @@ export const ALLIANCE_AREA_DEPTH = inch(134);
 export const HUB_SIZE = inch(47); // 47 × 47 in
 /** Centro del HUB azul (tags 18–21, 24–27): x = 182.11 in, y = 158.84 in. */
 export const HUB_CENTER_X_BLUE = inch(182.11 - FIELD_LENGTH_IN / 2);
-export const HUB_OPENING_HEX = inch(41.7); // abertura hexagonal (supuesto: entre vértices)
+/**
+ * Abertura hexagonal de 41.7 in. En la vista superior de la fig. 5-7 la cota mide el ancho
+ * entre CARAS PLANAS (lados a ±Z) y los vértices (a ±X) llegan casi al borde de la caja.
+ */
+export const HUB_OPENING_HEX = inch(41.7);
+/** Radio a los vértices de la abertura (41.7 / √3 in ≈ 24.1 in). */
+export const HUB_OPENING_R = HUB_OPENING_HEX / Math.sqrt(3);
 export const HUB_RIM_HEIGHT = inch(72); // borde frontal de la abertura
+/**
+ * Perfil del HUB medido sobre las figs. 5-5 y 5-7 (escala: caja de 47 in, borde a 72 in):
+ * cuerpo negro hasta ~50.5 in, tapa biselada gris hasta ~59 in, placa de color de alianza y
+ * encima el embudo hexagonal translúcido que abre hacia arriba hasta 72 in. El fondo del
+ * embudo mide ~24 in entre caras planas. // TODO: verificar con CAD oficial
+ */
+export const HUB_BODY_TOP = inch(50.5);
+export const HUB_PLATE_HEIGHT = inch(59);
+export const HUB_FUNNEL_BOTTOM_R = inch(24) / Math.sqrt(3);
+/** Bisel de la tapa (hacia adentro, por lado). */
+export const HUB_CAP_INSET = inch(5);
 /** Altura del cuerpo sólido bajo el embudo; el FUEL que cae aquí ya pasó el sensor. */
 export const HUB_INNER_FLOOR = 1.32;
 /** El FUEL se cuenta al cruzar este nivel dentro del hexágono (sensor array §6.5.1). */
 export const HUB_SENSOR_HEIGHT = HUB_RIM_HEIGHT - 0.3;
-export const HUB_NET_TOP = inch(102); // TODO: verificar con CAD oficial (supuesto 1, PLAN.md)
+/** Red trasera (hacia la NEUTRAL ZONE), inclinada hacia afuera; punta a ~120 in (fig. 5-7). */
+export const HUB_NET_TOP = inch(120); // TODO: verificar con CAD oficial (supuesto 1, PLAN.md)
+/** Distancia (desde el centro, hacia la NEUTRAL ZONE) de los bordes inferior y superior de la red. */
+export const HUB_NET_BOTTOM_U = inch(19.5);
+export const HUB_NET_TOP_U = inch(34.5);
 export const HUB_APRILTAG_HEIGHT = inch(44.25);
 /** Salidas del HUB hacia la NEUTRAL ZONE (§5.4 fig. 5-8, aproximación). Offsets en Z (azul). */
 export const HUB_EXIT_OFFSETS = [-0.45, -0.15, 0.15, 0.45];

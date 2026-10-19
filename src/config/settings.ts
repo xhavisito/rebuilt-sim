@@ -73,6 +73,8 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const KEY = 'rebuilt-sim.settings.v1';
+/** Igual a CAMERA_MODES (sin importar Three.js aquí). */
+const CAMERAS: CameraMode[] = ['third', 'driver', 'onboard', 'top', 'broadcast', 'free'];
 
 function merge<T>(base: T, over: unknown): T {
   if (typeof base !== 'object' || base === null || Array.isArray(base)) return (over ?? base) as T;
@@ -88,7 +90,12 @@ function merge<T>(base: T, over: unknown): T {
 export function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return merge(structuredClone(DEFAULT_SETTINGS), JSON.parse(raw));
+    if (raw) {
+      const s = merge(structuredClone(DEFAULT_SETTINGS), JSON.parse(raw));
+      // Cámaras que ya no existen (la de "seguimiento" se fusionó con tercera persona)
+      if (!CAMERAS.includes(s.camera)) s.camera = 'third';
+      return s;
+    }
   } catch {
     /* almacenamiento no disponible: usar defaults */
   }

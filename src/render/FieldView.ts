@@ -1,7 +1,7 @@
 /**
  * Geometría visual del campo. Las piezas de `fieldParts()` se agrupan por material y se
  * fusionan (pocas draw calls). Se agregan detalles solo visuales: alfombra, cintas,
- * AprilTags, barras de luz del HUB, letreros de equipo, LED stacks, repisas.
+ * AprilTags, el HUB (HubModel), letreros de equipo, LED stacks, repisas.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -10,10 +10,11 @@ import * as F from '../config/field';
 import { fieldParts, type FieldPart, type MatKey } from '../config/fieldLayout';
 import type { Alliance, HubLight } from '../core/types';
 import { aprilTagAtlas } from './apriltag';
+import { HubModel } from './HubModel';
 import { carpetTexture, diamondPlate, netTexture, orangePeelBump, textTexture } from './textures';
 
 /** Intensidad emisiva de las barras DMX (alta para que el bloom por luminancia las tome). */
-const E = 9;
+const E = 6;
 
 export const ALLIANCE_COLOR: Record<Alliance, number> = { red: 0xd32f2f, blue: 0x1e66d0 };
 
@@ -82,7 +83,7 @@ export class FieldView {
     this.buildParts();
     this.buildTape();
     this.buildAprilTags();
-    this.hubLights = { red: this.buildHubLights('red'), blue: this.buildHubLights('blue') };
+    this.hubLights = { red: this.buildHub('red'), blue: this.buildHub('blue') };
     for (const a of ['red', 'blue'] as Alliance[]) this.buildDriverStationDetails(a);
   }
 
@@ -223,41 +224,17 @@ export class FieldView {
       for (const sx of [-1, 1]) for (const sy of [-1, 1]) frame.push(new THREE.BoxGeometry(tube, tube, 2 * hz + tube).translate(cx + sx * hx, cy + sy * hy, cz));
     };
     for (const p of fieldParts()) {
-      if (p.shape.type !== 'box' || (p.mat !== 'panelA' && p.mat !== 'hubBody')) continue;
+      if (p.shape.type !== 'box' || p.mat !== 'panelA') continue;
       const { hx, hy, hz } = p.shape;
       if (Math.min(hx, hy, hz) * 2 < F.inch(3) && Math.max(hx, hz) * 2 < F.inch(3)) continue;
       if (hy * 2 < F.inch(3)) continue;
       edgeTubes(p.pos[0], p.pos[1], p.pos[2], Math.max(hx, tube / 2), hy, Math.max(hz, tube / 2));
-    }
-    // HUB: postes en las esquinas, rieles a media altura y en el borde de la abertura
-    for (const a of ['red', 'blue'] as Alliance[]) {
-      const c = F.hubCenter(a);
-      const hs = F.HUB_SIZE / 2;
-      edgeTubes(c.x, F.HUB_RIM_HEIGHT / 2, c.z, hs, F.HUB_RIM_HEIGHT / 2, hs);
-      edgeTubes(c.x, F.HUB_INNER_FLOOR, c.z, hs, 0.001, hs);
     }
     const frameMesh = new THREE.Mesh(mergeGeometries(frame.map((g) => g.toNonIndexed()))!, this.mat('alu'));
     frameMesh.castShadow = true;
     frameMesh.receiveShadow = true;
     frameMesh.name = 'field-frame';
     this.group.add(frameMesh);
-
-    // Detalles del HUB: embudo hexagonal interior y franjas de color de alianza
-    const funnelMat = new THREE.MeshStandardMaterial({ color: 0x2a2e36, roughness: 0.7, side: THREE.DoubleSide });
-    for (const a of ['red', 'blue'] as Alliance[]) {
-      const c = F.hubCenter(a);
-      const R = F.HUB_OPENING_HEX / 2;
-      const depth = F.HUB_RIM_HEIGHT - F.HUB_INNER_FLOOR;
-      const funnel = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.005, R * 0.62, depth, 6, 1, true), funnelMat);
-      funnel.position.set(c.x, F.HUB_INNER_FLOOR + depth / 2, c.z);
-      this.group.add(funnel);
-      const stripe = new THREE.Mesh(
-        new THREE.BoxGeometry(F.HUB_SIZE + 0.01, 0.12, F.HUB_SIZE + 0.01),
-        this.mat('towerA', a),
-      );
-      stripe.position.set(c.x, 0.5, c.z);
-      this.group.add(stripe);
-    }
   }
 
   // ------------------------------------------------------------------ cintas
@@ -311,31 +288,11 @@ export class FieldView {
     this.group.add(m);
   }
 
-  // ------------------------------------------------------------------ luces del HUB
-  private buildHubLights(a: Alliance): HubLightHandle {
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x111111,
-      emissive: new THREE.Color(ALLIANCE_COLOR[a]),
-      emissiveIntensity: 0,
-      roughness: 0.4,
-    });
-    const c = F.hubCenter(a);
-    const hs = F.HUB_SIZE / 2;
-    const y = F.HUB_RIM_HEIGHT - 0.02;
-    const t = 0.045;
-    const bars = [
-      new THREE.BoxGeometry(F.HUB_SIZE + t, t, t).translate(0, y, hs),
-      new THREE.BoxGeometry(F.HUB_SIZE + t, t, t).translate(0, y, -hs),
-      new THREE.BoxGeometry(t, t, F.HUB_SIZE + t).translate(hs, y, 0),
-      new THREE.BoxGeometry(t, t, F.HUB_SIZE + t).translate(-hs, y, 0),
-    ];
-    // Barras verticales en las esquinas superiores ("top angles")
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) bars.push(new THREE.BoxGeometry(t, 0.35, t).translate(sx * hs, y - 0.17, sz * hs));
-    const mesh = new THREE.Mesh(mergeGeometries(bars.map((b) => b.toNonIndexed()))!, material);
-    mesh.position.set(c.x, 0, c.z);
-    mesh.name = `hub-lights-${a}`;
-    this.group.add(mesh);
-    return { material, state: 'off' };
+  // ------------------------------------------------------------------ HUB
+  private buildHub(a: Alliance): HubLightHandle {
+    const hub = new HubModel(a, ALLIANCE_COLOR[a]);
+    this.group.add(hub.group);
+    return { material: hub.lightMaterial, state: 'off' };
   }
 
   /**

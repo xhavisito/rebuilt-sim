@@ -248,7 +248,7 @@ export class Screens {
             <div class="maphint"><span>${t('dragHint')}</span><span class="msg" data-g303></span></div>
           </div>
           <div class="opts">
-            <div class="opt wide"><span>${t('camera')}</span>${seg('camera', (['third', 'driver', 'onboard', 'chase', 'top'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) })), this.app.settings.camera)}</div>
+            <div class="opt wide"><span>${t('camera')}</span>${seg('camera', (['third', 'driver', 'onboard', 'top'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) })), this.app.settings.camera)}</div>
             <div class="opt"><span>${t('station')}</span>${seg('station', ['1', '2', '3'].map((v) => ({ value: v, label: `DS ${v}` })), String(m.station))}</div>
             ${isMatch ? `<div class="opt"><span>${t('autoRoutine')}</span>${select('routine', routines, m.autoRoutine)}</div>` : ''}
             ${isMatch ? `<div class="opt"><span>${t('difficulty')}</span>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}</div>` : ''}
@@ -383,7 +383,7 @@ export class Screens {
   settings(back: () => void = () => this.main()): void {
     const s = this.s;
     const q = (['auto', 'low', 'medium', 'high', 'ultra'] as const).map((v) => ({ value: v, label: t(`q_${v}` as TKey) }));
-    const cams = (['third', 'driver', 'onboard', 'chase', 'top', 'broadcast'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) }));
+    const cams = (['third', 'driver', 'onboard', 'top', 'broadcast'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) }));
     const onoff = (on: boolean) => (on ? '1' : '0');
     const yn: Opt[] = [
       { value: '1', label: t('on') },

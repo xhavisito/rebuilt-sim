@@ -166,7 +166,8 @@ export class GameSession {
         rig.station = pr.station;
       }
       rig.shakeEnabled = settings.cameraShake;
-      rig.setMode(cfg.sharedCamera ? 'broadcast' : n > 1 ? 'chase' : settings.camera);
+      // Sin robot propio (espectador): cámara de transmisión
+      rig.setMode(cfg.sharedCamera || !players.length ? 'broadcast' : n > 1 ? 'third' : settings.camera);
       this.rigs.push(rig);
     }
     renderer.scene.add(this.group);

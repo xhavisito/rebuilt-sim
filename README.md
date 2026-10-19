@@ -24,8 +24,9 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
 - **Modos**: práctica libre, match 3 vs 3 contra IA (Fácil → Einstein), multijugador local 2–4
   (pantalla dividida o cámara compartida), torneo rápido (Qualifications, rankings, alianzas y
   Playoffs), espectador IA vs IA, diseñador de AUTO y editor de robots.
-- **7 cámaras**: tercera persona (detrás del robot, gira con él), DRIVER STATION, desde el robot
-  (POV), seguimiento, superior, transmisión y libre (práctica). La rueda del mouse acerca/aleja.
+- **6 cámaras**: tercera persona (como en MoSim: detrás del robot, siempre mirando al campo
+  contrario, no gira con el robot), DRIVER STATION, desde el robot (POV), superior,
+  transmisión y libre (práctica). La rueda del mouse acerca/aleja la tercera persona.
 - **Guía de tiro**: la trayectoria del siguiente FUEL en puntos (verde = entra al HUB activo,
   amarillo = HUB inactivo, blanco = no entra). Se apaga en Ajustes.
 - **Calidad** Baja / Media / Alta / Ultra / Auto (mide los FPS y se ajusta sola).
@@ -99,7 +100,7 @@ Todo se puede reasignar en **Ajustes → Controles**.
 - En AUTO tu robot ejecuta la rutina elegida (diséñala en **Diseñador de AUTO**); no recibe mandos.
 - Manejo field-relative por defecto: "arriba" es hacia el lado contrario del campo visto desde
   tu DRIVER STATION. Con la cámara de transmisión o la superior, "arriba" es arriba de la pantalla.
-  Con tercera persona o desde el robot, "arriba" es hacia donde mira la cámara.
+  Con la cámara desde el robot, "arriba" es hacia donde mira el robot.
 - Opción de apuntar con el mouse en Ajustes. El control vibra al chocar, al anotar y en los SHIFTS.
 - Táctil: los joysticks aparecen donde pones el dedo; en Ajustes puedes cambiar tamaño, opacidad
   y posición de los botones ("Editar layout táctil").
