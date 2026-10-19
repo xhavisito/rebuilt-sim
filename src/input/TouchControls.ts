@@ -24,7 +24,7 @@ const BUTTONS: ButtonDef[] = [
   { id: 'intake', action: 'intake', label: 'b_intake', right: 15, bottom: 8, size: 78, toggle: true },
   { id: 'pass', action: 'pass', label: 'b_pass', right: 3, bottom: 6, size: 64 },
   { id: 'climb', action: 'climbUp', label: 'b_climb', right: 17, bottom: 30, size: 60 },
-  { id: 'camera', action: 'cameraNext', label: 'b_camera', right: 3, bottom: 78, size: 50 },
+  { id: 'camera', action: 'cameraNext', label: 'b_camera', right: 3, bottom: 58, size: 50 },
 ];
 
 export interface TouchState {

@@ -1,14 +1,17 @@
 /**
  * Una sesión de juego (práctica o match): mundo físico, FUEL, robots, controladores,
- * cámaras y (en fases siguientes) reloj, árbitro, IA y HUMAN PLAYERS.
+ * cámaras, reloj del match y (en fases siguientes) árbitro, IA y HUMAN PLAYERS.
+ * No toca el DOM ni el audio: avisa a la App mediante `hooks`.
  */
 import * as THREE from 'three';
 import * as F from '../config/field';
 import type { RobotSpec } from '../config/robots';
 import type { Settings } from '../config/settings';
+import { formatTimer, robotsEnabled, timerSeconds } from '../core/clock';
+import { Match, type MatchEvent } from '../core/match';
 import { Rng } from '../core/rng';
 import { defaultStart } from '../core/startRules';
-import type { Alliance, EventType, StationNumber } from '../core/types';
+import { ALLIANCES, type Alliance, type EventType, type Phase, type StationNumber } from '../core/types';
 import type { PlayerInput } from '../input/actions';
 import { buildFieldColliders } from '../physics/FieldColliders';
 import { FuelSystem } from '../physics/FuelSystem';
@@ -39,6 +42,18 @@ export interface SessionConfig {
   seed: number;
   /** Cámara compartida en multijugador. */
   sharedCamera?: boolean;
+  playoff?: boolean;
+}
+
+/** Notificaciones hacia la App (audio, HUD, efectos). */
+export interface SessionHooks {
+  matchEvent?(e: MatchEvent): void;
+  toast?(key: 'gyroReset' | 'fieldRel' | 'robotRel'): void;
+  cameraChange?(mode: string): void;
+  /** Un FUEL cruzó el sensor del HUB (counted = dio punto). */
+  fuelScored?(hub: Alliance, counted: boolean, x: number, y: number, z: number): void;
+  /** Golpe fuerte (0–1) con el robot del jugador `slot` involucrado o no (-1). */
+  impact?(strength: number, slot: number, x: number, y: number, z: number): void;
 }
 
 export class GameSession {
@@ -49,6 +64,9 @@ export class GameSession {
   readonly rigs: CameraRig[] = [];
   readonly rng: Rng;
   readonly group = new THREE.Group();
+  /** null en práctica libre. */
+  readonly match: Match | null;
+  hooks: SessionHooks = {};
   /** Tiempo simulado total (s). */
   simTime = 0;
   paused = false;
@@ -79,6 +97,10 @@ export class GameSession {
     // FUEL
     this.fuel = new FuelSystem(this.pw, cfg.fuelTotal, this.rng);
     this.fuel.stage(this.robots.map((r) => r.spec.preload));
+    this.match = cfg.mode === 'practice' ? null : new Match(cfg.eventType, this.rng, cfg.playoff ?? false);
+    this.fuel.cb = {
+      onHubEnter: (i, hub) => this.onHubEnter(i, hub),
+    };
     this.fuelView = new FuelView(this.fuel, renderer.preset.fuelDetail);
     this.fuelView.setShadows(renderer.preset.fuelShadows);
     this.group.add(this.fuelView.mesh);
@@ -102,8 +124,35 @@ export class GameSession {
       this.rigs.push(rig);
     }
     renderer.scene.add(this.group);
-    // En práctica ambos HUBS están activos (Fase 2 los controla el reloj del match)
-    for (const a of ['red', 'blue'] as Alliance[]) field.setHubLight(a, 'active', 0);
+    field.setLeds(false);
+  }
+
+  /** Fase actual del match ('AUTO'… o null en práctica). */
+  get phase(): Phase | null {
+    return this.match?.phase ?? null;
+  }
+
+  /** Arranca el reloj del match (después de la cuenta regresiva de la App). */
+  beginMatch(): void {
+    if (this.match && !this.match.running) {
+      this.match.start();
+      this.field.setLeds(true);
+    }
+  }
+
+  private onHubEnter(i: number, hub: Alliance): void {
+    const o = i * 3;
+    let counted = true;
+    if (this.match) counted = this.match.fuelEntered(hub).counted;
+    const shooter = this.fuel.shotBy[i];
+    if (counted && shooter >= 0 && this.robots[shooter]?.alliance === hub) this.robots[shooter].stats.fuelScored++;
+    this.hooks.fuelScored?.(hub, counted, this.fuel.pos[o], this.fuel.pos[o + 1], this.fuel.pos[o + 2]);
+  }
+
+  /** Reacciona a eventos del reloj del match. */
+  private onMatchEvent(e: MatchEvent): void {
+    if (e.type === 'phase' && (e.phase === 'POST' || e.phase === 'DONE')) this.field.setLeds(false);
+    this.hooks.matchEvent?.(e);
   }
 
   players(): Robot[] {
@@ -197,7 +246,7 @@ export class GameSession {
         let next = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
         if (next === 'free' && this.cfg.mode !== 'practice') next = CAMERA_MODES[0];
         rig.setMode(next);
-        this.onCameraChange?.(next);
+        this.hooks.cameraChange?.(next);
       }
       if (!r) return;
       if (inp.pressed.has('intake')) r.intakeOn = !r.intakeOn;
@@ -205,17 +254,14 @@ export class GameSession {
         // El rumbo actual pasa a ser "hacia el campo" (lejos del piloto)
         const base = rig.downfield > 0 ? 0 : Math.PI;
         r.gyroOffset = r.phys.heading() - base;
-        this.onToast?.('gyroReset');
+        this.hooks.toast?.('gyroReset');
       }
       if (inp.pressed.has('toggleFieldRelative')) {
         r.fieldRelative = !r.fieldRelative;
-        this.onToast?.(r.fieldRelative ? 'fieldRel' : 'robotRel');
+        this.hooks.toast?.(r.fieldRelative ? 'fieldRel' : 'robotRel');
       }
     });
   }
-
-  onCameraChange?: (mode: string) => void;
-  onToast?: (key: 'gyroReset' | 'fieldRel' | 'robotRel') => void;
 
   // ------------------------------------------------------------------ bucle
   update(frameDt: number, inputs: PlayerInput[]): void {
@@ -235,9 +281,15 @@ export class GameSession {
   }
 
   private step(dt: number, inputs: PlayerInput[]): void {
+    const m = this.match;
+    if (m) for (const e of m.tick(dt)) this.onMatchEvent(e);
+    const enabled = m ? robotsEnabled(m.phase) : true;
+    const auto = m?.phase === 'AUTO';
     for (const r of this.robots) {
-      r.enabled = true;
-      if (r.control.type === 'player') {
+      r.enabled = enabled && !r.disabled;
+      if (!r.enabled) r.cmd = idleCommand(); // deshabilitado: frena (brake mode)
+      else if (auto) r.cmd = idleCommand(); // AUTO: sin control del piloto (rutinas en Fase 5)
+      else if (r.control.type === 'player') {
         const slot = r.control.slot;
         const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
         r.cmd = inputs[slot] ? this.playerCommand(r, inputs[slot], rig) : idleCommand();
@@ -247,7 +299,7 @@ export class GameSession {
     this.fuel.prePhysics(dt);
     this.pw.step();
     this.pw.events.drainCollisionEvents(() => {});
-    this.pw.events.drainContactForceEvents(() => {});
+    this.pw.events.drainContactForceEvents((ev) => this.onContactForce(ev.collider1(), ev.collider2(), ev.maxForceMagnitude()));
     this.fuel.postPhysics(dt);
     for (const r of this.robots) {
       r.phys.snapshot();
@@ -256,8 +308,28 @@ export class GameSession {
     this.simTime += dt;
   }
 
+  /** Golpes fuertes: sonido, vibración y temblor de cámara. */
+  private onContactForce(h1: number, h2: number, force: number): void {
+    const a = this.pw.tagOf(h1);
+    const b = this.pw.tagOf(h2);
+    const ra = a?.kind === 'robot' ? this.robots[a.robot] : undefined;
+    const rb = b?.kind === 'robot' ? this.robots[b.robot] : undefined;
+    const r = ra ?? rb;
+    if (!r || a?.kind === 'fuel' || b?.kind === 'fuel') return;
+    const strength = Math.min(1, force / 6000);
+    if (strength < 0.15) return;
+    const slotOf = (x?: Robot) => (x && x.control.type === 'player' ? x.control.slot : -1);
+    const slot = Math.max(slotOf(ra), slotOf(rb));
+    const p = r.phys.curPos;
+    this.hooks.impact?.(strength, slot, p.x, 0.3, p.z);
+  }
+
   /** Prepara la escena para dibujar (interpolación) y devuelve los viewports. */
   frame(frameDt: number): Viewport[] {
+    // Luces de los HUBS (Tabla 5-3) y timer de la DRIVER STATION
+    const m = this.match;
+    for (const a of ALLIANCES) this.field.setHubLight(a, m ? m.light(a) : 'active', this.simTime);
+    if (m) this.field.setTimer(formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t)));
     for (const r of this.robots) r.syncView(this.alpha, this.simTime, this.fuel.robotCount(r.index));
     this.fuelView.update(this.alpha);
     const players = this.players();

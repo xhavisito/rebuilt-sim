@@ -7,6 +7,7 @@ import { BUMPER_ZONE_LOW, FUEL_RADIUS, inch } from '../config/field';
 import type { RobotSpec } from '../config/robots';
 import type { Alliance } from '../core/types';
 import { ALLIANCE_COLOR } from './FieldView';
+import { mergeStaticChildren } from './merge';
 import { textTexture } from './textures';
 
 export interface RobotVisualState {
@@ -257,6 +258,11 @@ export class RobotView {
     this.marker.position.y = 0.01;
     this.marker.visible = false;
     g.add(this.marker);
+    mergeStaticChildren(g, new Set([this.marker, this.hopperBalls, rslMesh]));
+    // Solo el cuerpo fusionado proyecta sombra (las piezas móviles chicas no: ahorra draw calls)
+    g.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o.parent !== g) o.castShadow = false;
+    });
   }
 
   /** Altura de salida del shooter en coordenadas locales (para alinear el disparo). */
