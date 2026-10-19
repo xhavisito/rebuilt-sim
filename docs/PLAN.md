@@ -12,7 +12,7 @@ jugable con táctil, teclado/mouse y gamepad en celular, tablet y PC.
 - [x] Fase 4 — TOWER y climb, árbitro (sección 6 del prompt), RP, resultados
 - [x] Fase 5 — IA (5 robots + HP), modos de juego, diseñador de AUTO, editor de robots
 - [x] Fase 6 — pulido gráfico, presets de calidad, PWA/offline, móvil, README
-- [ ] Fase 7 — GitHub Actions → GitHub Pages
+- [x] Fase 7 (workflow listo; falta crear el repo remoto) — GitHub Actions → GitHub Pages
 
 (Se actualiza al cerrar cada fase. Al retomar: leer esto, `git log`, y la lista de tareas.)
 
