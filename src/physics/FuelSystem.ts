@@ -67,6 +67,9 @@ export class FuelSystem {
   readonly pos: Float32Array;
   readonly prev: Float32Array;
   readonly color: Float32Array;
+  /** Momento (this.time) y lugar en que una intake lo capturó: el render lo anima hacia el robot. */
+  readonly capturedAt: Float32Array;
+  readonly capturePos: Float32Array;
   /** Tiempo que lleva cada FUEL casi quieto en el piso (para dormirlo antes que Rapier). */
   private slowT: Float32Array;
 
@@ -100,6 +103,8 @@ export class FuelSystem {
     this.pos = new Float32Array(total * 3);
     this.prev = new Float32Array(total * 3);
     this.color = new Float32Array(total);
+    this.capturedAt = new Float32Array(total).fill(-10);
+    this.capturePos = new Float32Array(total * 3);
     this.slowT = new Float32Array(total);
     const w = pw.world;
     for (let i = 0; i < total; i++) {
@@ -285,6 +290,10 @@ export class FuelSystem {
 
   /** Mete un FUEL del campo al hopper de un robot. */
   toRobot(i: number, robot: number): void {
+    if (this.state[i] === FuelState.Field) {
+      this.capturedAt[i] = this.time;
+      this.capturePos.set(this.pos.subarray(i * 3, i * 3 + 3), i * 3);
+    }
     this.store(i, FuelState.Robot, robot);
     let list = this.robotStore.get(robot);
     if (!list) this.robotStore.set(robot, (list = []));
@@ -375,6 +384,15 @@ export class FuelSystem {
         return;
       }
       const v = b.linvel();
+      // ---- Nunca bajo la alfombra: si algo lo hundió (choque fuerte), lo regresa arriba.
+      //      El piso es plano en y = 0 en todo el campo (las rampas y el HUB están encima).
+      if (t.y < F.FUEL_RADIUS - 0.006) {
+        b.setTranslation({ x: t.x, y: F.FUEL_RADIUS, z: t.z }, true);
+        if (v.y < 0) b.setLinvel({ x: v.x, y: 0, z: v.z }, true);
+        this.setPos(i, t.x, F.FUEL_RADIUS, t.z, false);
+        this.slowT[i] = 0;
+        return;
+      }
       const hsp = Math.hypot(v.x, v.z);
       // ---- En vuelo → aterrizado
       if (this.airborne.has(i)) {

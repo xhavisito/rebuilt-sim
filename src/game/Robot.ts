@@ -58,6 +58,9 @@ export class Robot {
   spinUp = 0;
   shootCooldown = 0;
   lastSolution: ShotSolution | null = null;
+  /** Solución para la guía de tiro cuando no está disparando (se recalcula a 10 Hz). */
+  previewSolution: ShotSolution | null = null;
+  previewTimer = 0;
   solveTimer = 0;
   corralSide = 1;
   lastKind: 'shot' | 'pass' = 'shot';

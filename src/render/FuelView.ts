@@ -9,9 +9,14 @@ import * as F from '../config/field';
 import type { Alliance } from '../core/types';
 import { FuelState, type FuelSystem } from '../physics/FuelSystem';
 
+/** Duración de la animación de captura (s): el FUEL vuela de la intake al hopper. */
+const ABSORB = 0.18;
+
 export class FuelView {
   readonly mesh: THREE.InstancedMesh;
   private arr: Float32Array;
+  /** Posición del hopper de un robot (para animar las capturas). La pone GameSession. */
+  hopperPos: ((robot: number) => { x: number; y: number; z: number }) | null = null;
 
   constructor(
     private fuel: FuelSystem,
@@ -68,6 +73,15 @@ export class FuelView {
         x = q[k] + (p[k] - q[k]) * alpha;
         y = q[k + 1] + (p[k + 1] - q[k + 1]) * alpha;
         z = q[k + 2] + (p[k + 2] - q[k + 2]) * alpha;
+      } else if (st === FuelState.Robot && this.hopperPos && f.time - f.capturedAt[i] < ABSORB) {
+        const k = (f.time - f.capturedAt[i]) / ABSORB;
+        const e = k * k;
+        const h = this.hopperPos(f.owner[i]);
+        const c = i * 3;
+        x = f.capturePos[c] + (h.x - f.capturePos[c]) * e;
+        y = f.capturePos[c + 1] + (h.y - f.capturePos[c + 1]) * e + Math.sin(k * Math.PI) * 0.06;
+        z = f.capturePos[c + 2] + (h.z - f.capturePos[c + 2]) * e;
+        s = 1 - 0.35 * k;
       } else if (st === FuelState.Corral || st === FuelState.Chute) {
         const al: Alliance = f.owner[i] === 0 ? 'red' : 'blue';
         const n = slot(al, st === FuelState.Corral ? 'corral' : 'chute', i);

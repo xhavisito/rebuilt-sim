@@ -122,6 +122,11 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 11. **Tarjetas** (G211): PIN > 15 s, ≥ 5 FUEL sacados del campo, ≥ 3 ráfagas de G407.
 12. **Umbral del CORRAL**: una cuña de 0.12 m (solo colisiona con FUEL) frente al umbral de 1.88 in
     permite que el FUEL empujado entre al CORRAL (en la realidad la espuma se comprime). // TODO CAD
+13. **Robot contra FUEL**: las ruedas no colisionan con el FUEL; lo empuja la cara vertical de los
+    BUMPERS (el centro de un FUEL, 2.95 in, queda arriba del borde inferior de la BUMPER ZONE,
+    2.5 in), así que el robot no se trepa. Empujar FUEL frena: −3.5 % de velocidad máxima por
+    pelota pegada al BUMPER (0.5 por cada una de las dos filas siguientes; 0.3 si la intake
+    desplegada la está tragando), hasta 40 % de la velocidad máxima. Calibrado a ojo.
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.

@@ -80,7 +80,7 @@ export class App {
     });
     this.input = new InputManager(this.settings, this.renderer.renderer.domElement);
     this.audio = new AudioEngine(this.settings);
-    this.hud = new Hud(uiEl, () => this.togglePause());
+    this.hud = new Hud(uiEl, () => this.togglePause(), () => this.session?.cycleCamera(0));
     this.touch = new TouchControls(uiEl, this.settings, () => this.save());
     this.input.touch = this.touch;
     this.fpsEl = document.createElement('div');
@@ -271,7 +271,14 @@ export class App {
           this.input.rumble(slot, strength, 120);
         }
       },
-      cameraChange: (mode) => this.toast(`${t('camera')}: ${t(`cam_${mode}` as TKey)}`),
+      cameraChange: (mode) => {
+        this.toast(`${t('camera')}: ${t(`cam_${mode}` as TKey)}`);
+        // Recuerda la cámara elegida (un solo jugador; la libre es solo de práctica)
+        if (s.rigs.length === 1 && cfg.mode !== 'local' && !cfg.sharedCamera && mode !== 'free') {
+          this.settings.camera = mode as Settings['camera'];
+          this.save();
+        }
+      },
     };
     // recompone el composer con la cámara nueva
     this.renderer.setQuality(this.renderer.quality, s.rigs[0].camera);

@@ -46,7 +46,7 @@ export class Hud {
   private els: Record<string, HTMLElement> = {};
   private lastKey = '';
 
-  constructor(parent: HTMLElement, onPause: () => void) {
+  constructor(parent: HTMLElement, onPause: () => void, onCamera: () => void) {
     const r = document.createElement('div');
     r.className = 'hud';
     r.innerHTML = `
@@ -77,6 +77,7 @@ export class Hud {
         <div class="chips" data-k="chips"></div>
         <div class="pnote" data-k="pnote"></div>
       </div>
+      <button class="cam-btn" data-k="cam" aria-label="camera"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg><span data-k="camname"></span><kbd>C</kbd></button>
       <button class="pause-btn" data-k="pause" aria-label="pause">❚❚</button>
       <div class="pin-layer" data-k="pins"></div>
     `;
@@ -84,6 +85,10 @@ export class Hud {
     this.root = r;
     r.querySelectorAll<HTMLElement>('[data-k]').forEach((el) => (this.els[el.dataset.k!] = el));
     this.els.pause.addEventListener('click', onPause);
+    this.els.cam.addEventListener('click', (e) => {
+      onCamera();
+      (e.currentTarget as HTMLElement).blur();
+    });
   }
 
   setVisible(v: boolean): void {
@@ -150,6 +155,8 @@ export class Hud {
       e.banner.className = `banner ${fi && m.phase === 'TRANSITION' ? fi : ''}`;
     }
     e.player.style.display = player ? '' : 'none';
+    e.cam.style.display = player ? '' : 'none';
+    if (player && e.camname.textContent !== player.camera) e.camname.textContent = player.camera;
     if (player) {
       const key = JSON.stringify(player);
       if (key !== this.lastKey) {
@@ -158,11 +165,7 @@ export class Hud {
         e.pname.textContent = `${player.team} · ${player.robotName}`;
         (e.hbar as HTMLElement).style.width = `${Math.min(100, (player.hopper / Math.max(1, player.capacity)) * 100)}%`;
         e.htext.textContent = `${t('hopper')} ${player.hopper}/${player.capacity}`;
-        const chips = [
-          player.fieldRelative ? t('fieldRel') : t('robotRel'),
-          `${t('camera')}: ${player.camera}`,
-          player.intakeOn ? 'INTAKE ●' : 'INTAKE ○',
-        ];
+        const chips = [player.fieldRelative ? t('fieldRel') : t('robotRel'), player.intakeOn ? 'INTAKE ●' : 'INTAKE ○'];
         if (player.autoAim) chips.push('AIM ◎');
         if (player.climb) chips.push(player.climb);
         chips.push(player.outpost);

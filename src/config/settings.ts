@@ -21,6 +21,8 @@ export interface Settings {
     mouseAim: boolean;
     autoAim: boolean;
     shootOnMove: boolean;
+    /** Dibuja la trayectoria del siguiente tiro. */
+    aimGuide: boolean;
   };
   pad: { deadzone: number; curve: 'linear' | 'quadratic'; vibration: boolean };
   touch: { scale: number; opacity: number; layout: Record<string, { x: number; y: number }> };
@@ -47,10 +49,10 @@ export const DEFAULT_SETTINGS: Settings = {
   driverName: '',
   quality: 'auto',
   showFps: false,
-  camera: 'driver',
+  camera: 'third',
   cameraShake: true,
   colorblind: false,
-  drive: { fieldRelative: true, mouseAim: false, autoAim: true, shootOnMove: true },
+  drive: { fieldRelative: true, mouseAim: false, autoAim: true, shootOnMove: true, aimGuide: true },
   pad: { deadzone: 0.12, curve: 'quadratic', vibration: true },
   touch: { scale: 1, opacity: 0.55, layout: {} },
   keys: DEFAULT_KEYS,

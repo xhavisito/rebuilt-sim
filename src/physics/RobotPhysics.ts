@@ -2,8 +2,10 @@
  * Cuerpo físico de un robot.
  *
  * Colisionadores: 4 esferas-rueda SIN fricción (la tracción la decide nuestro
- * controlador), caja de BUMPERS (zona 2.5–5.75 in, R405) y caja de la superestructura
- * hasta la altura del robot (decide si cabe bajo el TRENCH de 22.25 in).
+ * controlador; solo tocan el campo, no el FUEL), caja de BUMPERS (zona 2.5–5.75 in, R405)
+ * y caja de la superestructura hasta la altura del robot (decide si cabe bajo el TRENCH
+ * de 22.25 in). Un FUEL (5.91 in) tiene su centro arriba del borde inferior del BUMPER,
+ * así que la cara vertical lo empuja de lado: el robot lo arrastra, no se sube.
  *
  * Manejo: controlador de velocidad cuyo cambio de velocidad por paso está limitado por
  * min(aceleración del motor, μ·g)·(fracción de ruedas en el piso). Con eso los empujones
@@ -38,8 +40,8 @@ export class RobotPhysics {
   readonly height: number;
   /** Fracción de ruedas con tracción (0–1). */
   grounded = 1;
-  /** Ruedas sobre FUEL ("beached"). */
-  beached = 0;
+  /** FUEL que el robot va empujando con los BUMPERS (ver `plowLoad`); lo frena. */
+  plow = 0;
   /** Último mando aplicado (para detectar PIN: quiere moverse pero no puede). */
   lastCmd: DriveCommand = { vx: 0, vz: 0, omega: 0 };
   /** Interpolación: pose anterior y actual. */
@@ -79,8 +81,9 @@ export class RobotPhysics {
     const wheelMass = 0.6;
     const superMass = spec.massKg * 0.22;
     const bumperMass = spec.massKg - 4 * wheelMass - superMass;
-    // BUMPERS: caja redondeada que llena la BUMPER ZONE (R405) y un poco más.
-    const rr = 0.025;
+    // BUMPERS: caja que llena la BUMPER ZONE (R405) y un poco más. Redondeo mínimo: un
+    // borde inferior redondeado actuaría como rampa y el robot se treparía al FUEL.
+    const rr = 0.004;
     const by0 = BUMPER_ZONE_LOW;
     const bhy = (BUMPER_TOP - by0) / 2;
     this.bumper = w.createCollider(
@@ -127,7 +130,7 @@ export class RobotPhysics {
           .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
           .setRestitution(0)
           .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
-          .setCollisionGroups(GROUPS.robot),
+          .setCollisionGroups(GROUPS.wheel),
         this.body,
       );
       pw.tag(c, { kind: 'robot', robot: index, part: 'wheel' });
@@ -191,9 +194,12 @@ export class RobotPhysics {
     let tx = cmd.vx;
     let tz = cmd.vz;
     const mag = Math.hypot(tx, tz);
-    if (mag > s.maxSpeed) {
-      tx *= s.maxSpeed / mag;
-      tz *= s.maxSpeed / mag;
+    // Empujar un montón de FUEL cuesta: las pelotas se atoran entre sí y se arrastran sobre la
+    // alfombra. Supuesto 13: −3.5 % de velocidad por FUEL empujado, hasta 40 % de la máxima.
+    const vMax = s.maxSpeed * Math.max(0.4, 1 - 0.035 * this.plow);
+    if (mag > vMax) {
+      tx *= vMax / mag;
+      tz *= vMax / mag;
     }
     if (s.drivetrain === 'tank') {
       // Tank/west coast: solo avanza sobre su eje; la tracción resiste el deslizamiento lateral.
@@ -201,8 +207,8 @@ export class RobotPhysics {
       tx = along * fx;
       tz = along * fz;
     }
-    // Tracción efectiva (ruedas sobre FUEL resbalan)
-    const mu = s.traction * (this.grounded - 0.7 * this.beached);
+    // Tracción efectiva: solo las ruedas apoyadas empujan
+    const mu = s.traction * this.grounded;
     const aMax = Math.max(0, Math.min(s.maxAccel, mu * 9.81));
     let dvx = tx - v.x;
     let dvz = tz - v.z;
@@ -226,24 +232,17 @@ export class RobotPhysics {
     if (Math.abs(dw) > 1e-5) b.setAngvel({ x: w.x, y: w.y + dw, z: w.z }, true);
   }
 
-  /** Raycast bajo cada rueda: ¿toca piso? ¿está sobre FUEL? */
+  /** Raycast bajo cada rueda: ¿toca piso? (solo campo: las ruedas no tocan el FUEL) */
   private senseGround(): void {
     let g = 0;
-    let fuel = 0;
     const p = this.body.translation();
     const r = this.body.rotation();
     for (const [lx, lz] of this.wheelLocal) {
       const wp = rotate(r, lx, WHEEL_R, lz);
       this.ray.origin = { x: p.x + wp.x, y: p.y + wp.y, z: p.z + wp.z };
-      const hit = this.pw.world.castRay(this.ray, WHEEL_R + 0.03, true, undefined, undefined, undefined, this.body);
-      if (hit) {
-        g++;
-        const tag = this.pw.tagOf(hit.collider.handle);
-        if (tag?.kind === 'fuel') fuel++;
-      }
+      if (this.pw.world.castRay(this.ray, WHEEL_R + 0.03, true, undefined, GROUPS.wheel, undefined, this.body)) g++;
     }
     this.grounded = g / 4;
-    this.beached = fuel / 4;
   }
 
   /** Guarda la pose para interpolar el render. */

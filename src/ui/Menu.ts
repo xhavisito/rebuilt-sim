@@ -248,6 +248,7 @@ export class Screens {
             <div class="maphint"><span>${t('dragHint')}</span><span class="msg" data-g303></span></div>
           </div>
           <div class="opts">
+            <div class="opt wide"><span>${t('camera')}</span>${seg('camera', (['third', 'driver', 'onboard', 'chase', 'top'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) })), this.app.settings.camera)}</div>
             <div class="opt"><span>${t('station')}</span>${seg('station', ['1', '2', '3'].map((v) => ({ value: v, label: `DS ${v}` })), String(m.station))}</div>
             ${isMatch ? `<div class="opt"><span>${t('autoRoutine')}</span>${select('routine', routines, m.autoRoutine)}</div>` : ''}
             ${isMatch ? `<div class="opt"><span>${t('difficulty')}</span>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}</div>` : ''}
@@ -325,6 +326,7 @@ export class Screens {
       }),
     );
     bind(r, (name, v) => {
+      if (name === 'camera') this.app.settings.camera = v as Settings['camera'];
       if (name === 'station') m.station = Number(v) as StationNumber;
       if (name === 'routine') m.autoRoutine = String(v);
       if (name === 'hp') m.humanPlayer = v as 'ai' | 'player';
@@ -381,7 +383,7 @@ export class Screens {
   settings(back: () => void = () => this.main()): void {
     const s = this.s;
     const q = (['auto', 'low', 'medium', 'high', 'ultra'] as const).map((v) => ({ value: v, label: t(`q_${v}` as TKey) }));
-    const cams = (['driver', 'chase', 'top', 'broadcast'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) }));
+    const cams = (['third', 'driver', 'onboard', 'chase', 'top', 'broadcast'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) }));
     const onoff = (on: boolean) => (on ? '1' : '0');
     const yn: Opt[] = [
       { value: '1', label: t('on') },
@@ -415,6 +417,7 @@ export class Screens {
         <label>${t('fieldRelative')}</label>${seg('fieldrel', yn, onoff(s.drive.fieldRelative))}
         <label>${t('autoAim')}</label>${seg('autoaim', yn, onoff(s.drive.autoAim))}
         <label>${t('shootOnMove')}</label>${seg('som', yn, onoff(s.drive.shootOnMove))}
+        <label>${t('aimGuide')}</label>${seg('aimguide', yn, onoff(s.drive.aimGuide))}
         <label>${t('mouseAim')}</label>${seg('mouseaim', yn, onoff(s.drive.mouseAim))}
         <h3>${t('gamepad')}</h3>
         <label>${t('deadzone')}</label>${range('deadzone', 0, 0.4, 0.01, s.pad.deadzone)}
@@ -473,6 +476,9 @@ export class Screens {
           break;
         case 'som':
           s.drive.shootOnMove = b;
+          break;
+        case 'aimguide':
+          s.drive.aimGuide = b;
           break;
         case 'mouseaim':
           s.drive.mouseAim = b;

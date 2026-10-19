@@ -4,7 +4,7 @@
  */
 import * as F from '../config/field';
 import type { Rng } from '../core/rng';
-import { backspinAxis, launchVector, solveShot } from '../physics/ballistics';
+import { backspinAxis, launchVector, solveShot, type ShotSolution, type Vec3 } from '../physics/ballistics';
 import { FLAG_SHOT, type FuelSystem } from '../physics/FuelSystem';
 import type { Robot } from './Robot';
 
@@ -33,6 +33,44 @@ export function hubAimPoint(r: Robot): { x: number; y: number; z: number } {
 /** Altura de salida del FUEL: sobre la superestructura para no chocar con el propio robot. */
 export function exitHeight(r: Robot): number {
   return Math.max(F.inch(r.spec.shooter.exitHeightIn), r.phys.height + F.FUEL_RADIUS + 0.03);
+}
+
+/**
+ * FUEL que el robot empuja en la dirección en que quiere moverse: la primera fila pegada al
+ * BUMPER cuenta 1 y las dos siguientes 0.5 (el montón detrás también se resiste).
+ */
+export function plowLoad(r: Robot, fuel: FuelSystem): number {
+  const d = r.cmd.drive;
+  const sp = Math.hypot(d.vx, d.vz);
+  if (sp < 0.2 || r.climbing) return 0;
+  const ux = d.vx / sp;
+  const uz = d.vz / sp;
+  const ph = r.phys;
+  const h = ph.heading();
+  // Dirección de avance en el marco del robot → semiejes de la caja de BUMPERS en esa dirección
+  const lx = Math.abs(ux * Math.cos(h) - uz * Math.sin(h));
+  const lz = Math.abs(ux * Math.sin(h) + uz * Math.cos(h));
+  const along = lx * ph.outerL + lz * ph.outerW;
+  const side = lz * ph.outerL + lx * ph.outerW;
+  const D = F.FUEL_DIAMETER;
+  const p = ph.curPos;
+  const c = Math.cos(h);
+  const sn = Math.sin(h);
+  // Con la intake abajo, el FUEL frente a los rodillos se traga en vez de empujarse
+  const intakeHw = r.intakeOn && r.intakeDeploy > 0.6 ? F.inch(r.spec.intake.widthIn) / 2 : -1;
+  let n = 0;
+  fuel.forEachNear(p.x, p.z, along + 3 * D + 0.05, (_i, px, py, pz) => {
+    if (py > p.y + 0.3) return;
+    const dx = px - p.x;
+    const dz = pz - p.z;
+    const s = dx * ux + dz * uz;
+    const l = Math.abs(dx * uz - dz * ux);
+    if (l > side + F.FUEL_RADIUS * 0.5 || s < along - 0.02) return;
+    const w = intakeHw > 0 && dx * c - dz * sn > 0 && Math.abs(dx * sn + dz * c) < intakeHw ? 0.3 : 1;
+    if (s < along + D + 0.02) n += w;
+    else if (s < along + 3 * D + 0.05) n += 0.5 * w;
+  });
+  return n;
 }
 
 /** Captura FUEL dentro de la zona de la intake (marco local del robot), con tasa máxima. */
@@ -72,6 +110,59 @@ export function runIntake(r: Robot, ctx: MechContext, dt: number): void {
     f.toRobot(best, r.index);
     r.stats.intaked++;
   }
+}
+
+/**
+ * Cómo saldría el siguiente FUEL (para la guía de tiro del jugador): misma lógica de objetivo
+ * y de rumbo que `runShooter`, sin dispersión. null = fuera de alcance o entrega al CORRAL.
+ */
+export function predictLaunch(
+  r: Robot,
+  autoAim: boolean,
+  shootOnMove: boolean,
+  dt: number,
+): { from: Vec3; vel: Vec3; spin: Vec3; pass: boolean } | null {
+  const s = r.spec.shooter;
+  const pass = r.cmd.pass;
+  const h = r.phys.heading();
+  const p = r.phys.curPos;
+  const v = r.phys.velocity();
+  const from = { x: p.x, y: p.y + exitHeight(r), z: p.z };
+  if (pass && r.lastShotKind === 'corral') return null;
+  let sol: ShotSolution | null;
+  if (r.cmd.shoot || pass) sol = r.lastSolution;
+  else if ((r.previewTimer -= dt) > 0) sol = r.previewSolution;
+  else {
+    // Sin disparar: la solución se recalcula a 10 Hz (la trayectoria sí sigue al robot cada frame)
+    r.previewTimer = 0.1;
+    const target = r.cmd.aim ? { x: r.cmd.aim.x, y: r.cmd.aim.y ?? 0.5, z: r.cmd.aim.z } : hubAimPoint(r);
+    if (!autoAim && s.type === 'fixed' && !r.cmd.aim) {
+      const d = Math.hypot(target.x - p.x, target.z - p.z);
+      target.x = p.x + Math.cos(h) * d;
+      target.z = p.z - Math.sin(h) * d;
+    }
+    sol = solveShot({
+      from,
+      target,
+      robotVel: shootOnMove ? { x: v.x, z: v.z } : undefined,
+      minAngle: s.minAngle * DEG,
+      maxAngle: s.maxAngle * DEG,
+      maxSpeed: s.maxSpeed,
+      spin: s.backspin,
+      minDescent: r.cmd.aim ? 0 : 35 * DEG,
+    });
+    r.previewSolution = sol;
+  }
+  if (!sol) return null;
+  let yaw = s.type === 'turret' ? sol.yaw : h;
+  if (s.type === 'fixed' && Math.abs(wrap(sol.yaw - h)) < 6 * DEG) yaw = sol.yaw;
+  const lv = launchVector(yaw, sol.pitch, sol.speed);
+  return {
+    from: { x: from.x + Math.cos(yaw) * 0.05, y: from.y, z: from.z - Math.sin(yaw) * 0.05 },
+    vel: { x: lv.x + v.x, y: lv.y, z: lv.z + v.z },
+    spin: backspinAxis(yaw, s.backspin),
+    pass,
+  };
 }
 
 /** Gira la turret / hood hacia la solución y dispara con la cadencia del diseño. */

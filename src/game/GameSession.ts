@@ -22,13 +22,14 @@ import type { PlayerInput } from '../input/actions';
 import { buildFieldColliders } from '../physics/FieldColliders';
 import { FuelSystem } from '../physics/FuelSystem';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
-import { CameraRig, CAMERA_MODES } from '../render/CameraRig';
+import { CameraRig, CAMERA_MODES, ROBOT_CAMERAS } from '../render/CameraRig';
 import type { FieldView } from '../render/FieldView';
 import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
 import { climbSlots, type TowerOccupancy } from './Climber';
 import { HumanPlayer, type HpContext } from './HumanPlayer';
-import { runIntake, runShooter, type MechContext } from './Mechanisms';
+import { plowLoad, predictLaunch, runIntake, runShooter, type MechContext } from './Mechanisms';
+import { AimGuide } from '../render/AimGuide';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
 export type SessionMode = 'practice' | 'match' | 'local' | 'tournament';
@@ -144,6 +145,10 @@ export class GameSession {
     };
     this.fuelView = new FuelView(this.fuel, renderer.preset.fuelDetail);
     this.fuelView.setShadows(renderer.preset.fuelShadows);
+    this.fuelView.hopperPos = (i) => {
+      const g = this.robots[i].view.group.position;
+      return { x: g.x, y: g.y + this.robots[i].phys.height * 0.55, z: g.z };
+    };
     this.group.add(this.fuelView.mesh);
     for (const a of ['red', 'blue'] as Alliance[])
       field.setTeamNumbers(
@@ -349,10 +354,13 @@ export class GameSession {
       // Field-relative: base fija "hacia el campo" desde el piloto, o la de la cámara
       // en vistas laterales; el reset de giroscopio rota esa base.
       let b: { fx: number; fz: number; rx: number; rz: number };
-      if (rig.mode === 'broadcast' || rig.mode === 'free' || rig.mode === 'top') b = rig.basis();
+      // En las cámaras que giran con el robot el manejo es relativo a la cámara (sin giroscopio).
+      const camRel = ROBOT_CAMERAS.has(rig.mode);
+      if (camRel || rig.mode === 'broadcast' || rig.mode === 'free' || rig.mode === 'top') b = rig.basis();
       else b = { fx: rig.downfield, fz: 0, rx: 0, rz: rig.downfield };
-      const c = Math.cos(r.gyroOffset);
-      const sn = Math.sin(r.gyroOffset);
+      const gyro = camRel ? 0 : r.gyroOffset;
+      const c = Math.cos(gyro);
+      const sn = Math.sin(gyro);
       const fx = b.fx * c + b.fz * sn;
       const fz = -b.fx * sn + b.fz * c;
       const rx = -fz;
@@ -405,18 +413,23 @@ export class GameSession {
     return this.raycaster.ray.intersectPlane(this.plane, out);
   }
 
+  /** Siguiente cámara para el jugador `slot` (la libre solo en práctica). */
+  cycleCamera(slot = 0): void {
+    const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
+    if (!rig) return;
+    const i = CAMERA_MODES.indexOf(rig.mode);
+    let next = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
+    if (next === 'free' && this.cfg.mode !== 'practice') next = CAMERA_MODES[0];
+    rig.setMode(next);
+    this.hooks.cameraChange?.(next);
+  }
+
   /** Acciones de flanco (una vez por frame, no por paso). */
   private handlePressed(inputs: PlayerInput[]): void {
     inputs.forEach((inp, slot) => {
       const r = this.playerRobot(slot);
       const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
-      if (inp.pressed.has('cameraNext') && rig && (this.rigs.length === 1 ? slot === 0 : true)) {
-        const i = CAMERA_MODES.indexOf(rig.mode);
-        let next = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
-        if (next === 'free' && this.cfg.mode !== 'practice') next = CAMERA_MODES[0];
-        rig.setMode(next);
-        this.hooks.cameraChange?.(next);
-      }
+      if (inp.pressed.has('cameraNext') && rig && (this.rigs.length === 1 ? slot === 0 : true)) this.cycleCamera(slot);
       // HUMAN PLAYER controlado por el jugador (su alianza)
       const hpAlliance = r?.alliance ?? this.robots[0]?.alliance;
       const hp = hpAlliance ? this.humanPlayers[hpAlliance] : undefined;
@@ -478,6 +491,7 @@ export class GameSession {
         const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
         r.cmd = inputs[slot] ? this.playerCommand(r, inputs[slot], rig) : idleCommand();
       } else r.cmd = idleCommand();
+      r.phys.plow = plowLoad(r, this.fuel);
       r.phys.drive(r.cmd.drive, dt);
       if (r.enabled) {
         this.runClimb(r, dt);
@@ -542,6 +556,7 @@ export class GameSession {
     if (m) this.field.setTimer(formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t)));
     for (const r of this.robots) r.syncView(this.alpha, this.simTime, this.fuel.robotCount(r.index));
     this.fuelView.update(this.alpha);
+    this.updateAimGuides(frameDt);
     const players = this.players();
     const views: Viewport[] = [];
     const n = this.rigs.length;
@@ -554,6 +569,9 @@ export class GameSession {
             z: r.view.group.position.z,
             vx: r.phys.velocity().x,
             vz: r.phys.velocity().z,
+            heading: yawOf(r.view.group.quaternion),
+            height: r.phys.height,
+            halfLength: r.phys.outerL,
           }
         : null;
       rig.update(frameDt, t);
@@ -563,6 +581,30 @@ export class GameSession {
       else views.push({ camera: rig.camera, x: (k % 2) * 0.5, y: k < 2 ? 0.5 : 0, w: 0.5, h: 0.5 });
     });
     return views;
+  }
+
+  private aimGuides = new Map<number, AimGuide>();
+
+  /** Trayectoria del siguiente tiro de cada jugador (ver AimGuide). */
+  private updateAimGuides(dt: number): void {
+    for (const r of this.players()) {
+      let g = this.aimGuides.get(r.index);
+      if (!g) {
+        g = new AimGuide();
+        this.aimGuides.set(r.index, g);
+        this.group.add(g.group);
+      }
+      const show =
+        this.settings.drive.aimGuide && r.enabled && !r.climbing && this.phase !== 'AUTO' && this.fuel.robotCount(r.index) > 0;
+      const L = show ? predictLaunch(r, this.settings.drive.autoAim, this.settings.drive.shootOnMove, dt) : null;
+      if (!L) {
+        g.hide();
+        continue;
+      }
+      const c = F.hubCenter(r.alliance);
+      const active = this.match ? this.match.isHubActive(r.alliance) : true;
+      g.show(L.from, L.vel, L.spin, L.pass ? null : { x: c.x, z: c.z, active }, r.cmd.shoot || r.cmd.pass);
+    }
   }
 
   get physicsSteps(): number {
@@ -591,4 +633,11 @@ export class GameSession {
     });
     this.pw.free();
   }
+}
+
+/** Rumbo (rad) de un cuaternión de vista (adelante = +X local). */
+function yawOf(q: THREE.Quaternion): number {
+  const fx = 1 - 2 * (q.y * q.y + q.z * q.z);
+  const fz = 2 * (q.x * q.z - q.w * q.y);
+  return Math.atan2(-fz, fx);
 }

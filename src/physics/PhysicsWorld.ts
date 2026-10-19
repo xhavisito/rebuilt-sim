@@ -29,6 +29,8 @@ export const GROUPS = {
   field: groups(G.FIELD, G.ROBOT | G.FUEL),
   fuelOnly: groups(G.FUEL_ONLY, G.FUEL),
   robot: groups(G.ROBOT, G.FIELD | G.ROBOT | G.FUEL),
+  /** Ruedas: solo tocan el campo. El FUEL lo empujan los BUMPERS (no hay forma de "rodar" encima). */
+  wheel: groups(G.ROBOT, G.FIELD),
   fuel: groups(G.FUEL, G.FIELD | G.ROBOT | G.FUEL | G.FUEL_ONLY),
 };
 

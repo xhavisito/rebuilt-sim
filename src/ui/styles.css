@@ -266,6 +266,26 @@ button { font-family: inherit; color: inherit; }
   pointer-events: auto !important;
   cursor: pointer;
 }
+.cam-btn {
+  position: absolute;
+  top: calc(10px + var(--safe-t));
+  right: calc(66px + var(--safe-r));
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: rgba(17, 18, 22, 0.85);
+  color: #fff;
+  font: 600 13px var(--font);
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+.cam-btn:hover { border-color: var(--accent); }
+.cam-btn svg { color: var(--accent); }
+.cam-btn kbd { font: 700 10px var(--font); color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px; }
 .hud.practice .scorebar, .hud.practice .subbar, .hud.practice .shiftline { display: none; }
 .pin-layer { position: absolute; inset: 0; }
 .pin { position: absolute; left: 0; top: 0; margin: -14px 0 0 -32px; background: rgba(17, 18, 22, 0.9); border: 1px solid var(--line-2); color: #fff; padding: 3px 8px; border-radius: 6px; font: 700 12px/1.2 var(--font); }
@@ -525,6 +545,7 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .maphead .label, .opt > span { font: 600 11px var(--font); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 .maphint { color: var(--muted); font-size: 12px; margin-top: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+.opt.wide { grid-column: 1 / -1; }
 .opt { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
 
 /* ===================================================================== reglas */
@@ -598,6 +619,8 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
   .pname { font-size: 15px; margin-bottom: 3px; }
   .player .chips { display: none; }
   .pause-btn { width: 40px; height: 40px; }
+  .cam-btn { height: 40px; right: calc(60px + var(--safe-r)); padding: 0 10px; }
+  .cam-btn span, .cam-btn kbd { display: none; }
   .dialog { padding: 16px; }
   .dialog h2 { font-size: 32px; }
   .final { font-size: 50px; }
