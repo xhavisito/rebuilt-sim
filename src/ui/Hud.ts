@@ -34,6 +34,8 @@ export interface PlayerHudInfo {
   intakeOn: boolean;
   autoAim: boolean;
   climb: string | null;
+  /** Estado del OUTPOST propio (CHUTE / CORRAL). */
+  outpost: string;
   disabled: boolean;
   /** Mensaje contextual (p. ej. "AUTO: tu robot ejecuta la rutina"). */
   note: string | null;
@@ -158,6 +160,7 @@ export class Hud {
         ];
         if (player.autoAim) chips.push('AIM ◎');
         if (player.climb) chips.push(player.climb);
+        chips.push(player.outpost);
         e.chips.innerHTML = chips.map((c) => `<span>${c}</span>`).join('');
         e.pnote.textContent = player.disabled ? t('disabled') : (player.note ?? '');
       }

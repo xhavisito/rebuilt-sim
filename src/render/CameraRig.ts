@@ -93,7 +93,15 @@ export class CameraRig {
       }
       case 'chase': {
         const lead = 0.25;
-        desiredPos.set(tgt.x - s * 3.1, 2.6, tgt.z * 0.92);
+        // No pasar detrás de la ALLIANCE WALL: si no cabe, sube la cámara.
+        let back = 3.1;
+        const room = s > 0 ? tgt.x + F.HALF_L - 0.35 : F.HALF_L - 0.35 - tgt.x;
+        let lift = 0;
+        if (room < back) {
+          lift = (back - Math.max(0, room)) * 1.1;
+          back = Math.max(0, room);
+        }
+        desiredPos.set(tgt.x - s * back, 2.6 + lift, tgt.z * 0.92);
         desiredLook.set(tgt.x + s * 1.2 + tgt.vx * lead, 0.3, tgt.z + tgt.vz * lead);
         fov = 60;
         break;

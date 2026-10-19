@@ -106,6 +106,13 @@ function buildBlueSide(): FieldPart[] {
       box('outpost-mid', wx0, wx1, F.CORRAL_OPEN_BOTTOM + F.CORRAL_OPEN_H, F.CHUTE_OPEN_BOTTOM, zOf(oy1), zOf(oy0), 'panelA'),
     );
     out.push(box('outpost-top', wx0, wx1, F.CHUTE_OPEN_BOTTOM + F.CHUTE_OPEN_H, h, zOf(oy1), zOf(oy0), 'panelA'));
+    // Cuña para FUEL frente al umbral de 1.88 in: los robots empujan la espuma por encima
+    // del umbral (supuesto 12 en PLAN.md; la geometría exacta está en el CAD oficial).
+    {
+      const pts: number[] = [];
+      for (const z of [zOf(oy1), zOf(oy0)]) pts.push(wx1, 0, z, wx1, F.CORRAL_OPEN_BOTTOM, z, wx1 + 0.12, 0, z);
+      out.push({ name: 'corral-ramp', shape: { type: 'hull', points: pts }, pos: [0, 0, 0], mat: 'dark', collide: 'fuel', shadow: false });
+    }
     // Tubo vertical al centro de la abertura del CORRAL (1-1/4" Sch 40)
     out.push({
       name: 'corral-pipe',

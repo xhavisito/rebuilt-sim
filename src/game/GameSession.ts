@@ -20,6 +20,8 @@ import { CameraRig, CAMERA_MODES } from '../render/CameraRig';
 import type { FieldView } from '../render/FieldView';
 import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
+import { HumanPlayer, type HpContext } from './HumanPlayer';
+import { runIntake, runShooter, type MechContext } from './Mechanisms';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
 export type SessionMode = 'practice' | 'match' | 'local' | 'tournament';
@@ -43,6 +45,10 @@ export interface SessionConfig {
   /** Cámara compartida en multijugador. */
   sharedCamera?: boolean;
   playoff?: boolean;
+  /** Quién controla a cada HUMAN PLAYER. */
+  humanPlayers?: Partial<Record<Alliance, 'ai' | 'player'>>;
+  /** Precisión de la IA (0–1) según dificultad. */
+  aiAccuracy?: number;
 }
 
 /** Notificaciones hacia la App (audio, HUD, efectos). */
@@ -52,6 +58,10 @@ export interface SessionHooks {
   cameraChange?(mode: string): void;
   /** Un FUEL cruzó el sensor del HUB (counted = dio punto). */
   fuelScored?(hub: Alliance, counted: boolean, x: number, y: number, z: number): void;
+  /** Un robot lanzó FUEL (sonido / efectos). */
+  launch?(robot: Robot, kind: 'shot' | 'pass' | 'corral', isPlayer: boolean): void;
+  /** El HUMAN PLAYER lanzó o abrió la CHUTE. */
+  hpAction?(alliance: Alliance, what: 'throw' | 'door'): void;
   /** Golpe fuerte (0–1) con el robot del jugador `slot` involucrado o no (-1). */
   impact?(strength: number, slot: number, x: number, y: number, z: number): void;
 }
@@ -66,6 +76,7 @@ export class GameSession {
   readonly group = new THREE.Group();
   /** null en práctica libre. */
   readonly match: Match | null;
+  readonly humanPlayers: Record<Alliance, HumanPlayer>;
   hooks: SessionHooks = {};
   /** Tiempo simulado total (s). */
   simTime = 0;
@@ -98,6 +109,10 @@ export class GameSession {
     this.fuel = new FuelSystem(this.pw, cfg.fuelTotal, this.rng);
     this.fuel.stage(this.robots.map((r) => r.spec.preload));
     this.match = cfg.mode === 'practice' ? null : new Match(cfg.eventType, this.rng, cfg.playoff ?? false);
+    this.humanPlayers = {
+      red: new HumanPlayer('red', cfg.humanPlayers?.red ?? 'ai'),
+      blue: new HumanPlayer('blue', cfg.humanPlayers?.blue ?? 'ai'),
+    };
     this.fuel.cb = {
       onHubEnter: (i, hub) => this.onHubEnter(i, hub),
     };
@@ -147,6 +162,46 @@ export class GameSession {
     const shooter = this.fuel.shotBy[i];
     if (counted && shooter >= 0 && this.robots[shooter]?.alliance === hub) this.robots[shooter].stats.fuelScored++;
     this.hooks.fuelScored?.(hub, counted, this.fuel.pos[o], this.fuel.pos[o + 1], this.fuel.pos[o + 2]);
+  }
+
+  /** Los HUMAN PLAYERS pueden meter FUEL en AUTO (excepción de G402) y en TELEOP. */
+  private hpCanAct(): boolean {
+    const p = this.match?.phase;
+    return !this.match || p === 'AUTO' || (p !== undefined && p !== 'PRE' && p !== 'AUTO_PAUSE' && p !== 'POST' && p !== 'DONE');
+  }
+
+  private mechContext(r: Robot): MechContext {
+    const isPlayer = r.control.type === 'player';
+    return {
+      fuel: this.fuel,
+      rng: this.rng,
+      time: this.match?.t ?? this.simTime,
+      autoAim: isPlayer ? this.settings.drive.autoAim : true,
+      shootOnMove: isPlayer ? this.settings.drive.shootOnMove : true,
+      onLaunch: (rb, _i, kind) => this.hooks.launch?.(rb, kind, rb.control.type === 'player'),
+    };
+  }
+
+  hpContext(hp: HumanPlayer): HpContext {
+    const a = hp.alliance;
+    const o = F.outpostInfo(a);
+    const exitX = o.x - F.allianceSign(a) * 0.9;
+    const near = this.robots.some(
+      (r) =>
+        r.alliance === a &&
+        Math.hypot(r.phys.curPos.x - exitX, r.phys.curPos.z - o.z) < 1.4 &&
+        this.fuel.robotCount(r.index) < r.spec.hopperCapacity,
+    );
+    const m = this.match;
+    const hubWillCount = m ? m.isHubActive(a) && !(m.light(a) === 'pulse' && m.phase !== 'END_GAME') : true;
+    return {
+      fuel: this.fuel,
+      rng: this.rng,
+      time: m?.t ?? this.simTime,
+      hubWillCount,
+      robotNearChute: near,
+      accuracy: hp.control === 'player' ? 0.85 : (this.cfg.aiAccuracy ?? 0.8),
+    };
   }
 
   /** Reacciona a eventos del reloj del match. */
@@ -207,6 +262,12 @@ export class GameSession {
       vz = (my * fz + lat * Math.cos(h)) * s.maxSpeed * slow;
     }
     cmd.drive = { vx, vz, omega: -rot * s.maxOmega * (inp.held.slow ? 0.4 : 1) };
+    // Auto-aim con shooter fijo: el robot gira solo hacia la solución mientras disparas
+    if (inp.held.shoot && this.settings.drive.autoAim && s.shooter.type === 'fixed' && Math.abs(rot) < 0.05 && !inp.mouseNdc) {
+      const want = r.lastSolution?.yaw ?? Math.atan2(-(F.hubCenter(r.alliance).z - r.phys.curPos.z), F.hubCenter(r.alliance).x - r.phys.curPos.x);
+      const d = Math.atan2(Math.sin(want - h), Math.cos(want - h));
+      cmd.drive.omega = THREE.MathUtils.clamp(d * 7, -s.maxOmega, s.maxOmega);
+    }
     cmd.intake = r.intakeOn;
     cmd.shoot = inp.held.shoot;
     cmd.pass = inp.held.pass;
@@ -247,6 +308,19 @@ export class GameSession {
         if (next === 'free' && this.cfg.mode !== 'practice') next = CAMERA_MODES[0];
         rig.setMode(next);
         this.hooks.cameraChange?.(next);
+      }
+      // HUMAN PLAYER controlado por el jugador (su alianza)
+      const hpAlliance = r?.alliance ?? this.robots[0]?.alliance;
+      const hp = hpAlliance ? this.humanPlayers[hpAlliance] : undefined;
+      if (hp && hp.control === 'player' && slot === 0) {
+        if (inp.pressed.has('chuteDoor')) {
+          hp.toggleDoor();
+          this.hooks.hpAction?.(hp.alliance, 'door');
+        }
+        if (inp.pressed.has('hpThrow') && this.hpCanAct()) {
+          const target = inp.mouseNdc ? this.groundPoint(inp.mouseNdc, rig.camera) : null;
+          if (hp.throwFuel(this.hpContext(hp), target ? { x: target.x, y: 0.4, z: target.z } : undefined)) this.hooks.hpAction?.(hp.alliance, 'throw');
+        }
       }
       if (!r) return;
       if (inp.pressed.has('intake')) r.intakeOn = !r.intakeOn;
@@ -295,7 +369,13 @@ export class GameSession {
         r.cmd = inputs[slot] ? this.playerCommand(r, inputs[slot], rig) : idleCommand();
       } else r.cmd = idleCommand();
       r.phys.drive(r.cmd.drive, dt);
+      if (r.enabled) {
+        const ctx = this.mechContext(r);
+        runIntake(r, ctx, dt);
+        runShooter(r, ctx, dt);
+      } else r.spinUp = Math.max(0, r.spinUp - dt);
     }
+    if (this.hpCanAct()) for (const a of ALLIANCES) this.humanPlayers[a].update(dt, this.hpContext(this.humanPlayers[a]));
     this.fuel.prePhysics(dt);
     this.pw.step();
     this.pw.events.drainCollisionEvents(() => {});

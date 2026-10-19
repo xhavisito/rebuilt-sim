@@ -100,6 +100,12 @@ export class App {
       fuelScored: (_hub, counted) => {
         if (counted) this.audio.score();
       },
+      launch: (_r, _kind, isPlayer) => {
+        if (isPlayer) this.audio.shoot();
+      },
+      hpAction: (a, what) => {
+        if (what === 'door') this.toast(s.humanPlayers[a].doorOpen ? t('chuteOpen') : t('chuteClosed'));
+      },
       impact: (strength, slot) => {
         this.audio.hit(strength);
         if (slot >= 0) {
@@ -113,6 +119,9 @@ export class App {
     this.renderer.setQuality(this.renderer.quality, s.rigs[0].camera);
     this.touch.setEnabled(this.input.lastDevice === 'touch');
     this.hud.setPractice(cfg.mode === 'practice');
+    const hpPlayer = Object.values(cfg.humanPlayers ?? {}).includes('player');
+    this.touch.setButtonVisible('chute', hpPlayer);
+    this.touch.setButtonVisible('throw', hpPlayer);
     this.hud.setVisible(true);
     this.closeOverlay();
     if (s.match) this.countdown = 3.2;
@@ -124,6 +133,7 @@ export class App {
     this.startSession({
       mode: 'practice',
       robots: [{ spec: presetById(m.robotId), alliance: m.alliance, station: m.station, control: { type: 'player', slot: 0 } }],
+      humanPlayers: { [m.alliance]: m.humanPlayer },
       fuelTotal: m.fuel,
       eventType: m.eventType,
       fouls: m.fouls,
@@ -146,6 +156,8 @@ export class App {
     this.startSession({
       mode: 'match',
       robots,
+      humanPlayers: { [m.alliance]: m.humanPlayer },
+      aiAccuracy: { easy: 0.6, normal: 0.78, hard: 0.88, einstein: 0.95 }[m.difficulty],
       fuelTotal: m.fuel,
       eventType: m.eventType,
       fouls: m.fouls,
@@ -328,6 +340,7 @@ export class App {
 
   private updateHud(s: GameSession): void {
     const r = s.playerRobot(0);
+    if (r) this.touch.setActive('intake', r.intakeOn);
     const rig = s.rigs[0];
     const phase = s.phase;
     this.hud.update(
@@ -345,6 +358,11 @@ export class App {
             intakeOn: r.intakeOn,
             autoAim: this.settings.drive.autoAim,
             climb: null,
+            outpost: (() => {
+              const hp = s.humanPlayers[r.alliance];
+              const f = s.fuel;
+              return `${t('chute')} ${f.chute[r.alliance].length}${hp.doorOpen ? ' ▼' : ''} · ${t('corral')} ${f.corral[r.alliance].length}`;
+            })(),
             disabled: r.disabled,
             note: phase === 'AUTO' ? t('autoRunning') : null,
           }

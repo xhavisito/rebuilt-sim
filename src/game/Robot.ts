@@ -4,6 +4,7 @@
  */
 import type { RobotSpec } from '../config/robots';
 import type { Alliance, StationNumber } from '../core/types';
+import type { ShotSolution } from '../physics/ballistics';
 import { RobotPhysics, type DriveCommand } from '../physics/RobotPhysics';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
 import { RobotView } from '../render/RobotView';
@@ -52,6 +53,16 @@ export class Robot {
   wheelSpin = 0;
   intakeSpin = 0;
   flywheelSpin = 0;
+  intakeAcc = 0;
+  spinUp = 0;
+  shootCooldown = 0;
+  lastSolution: ShotSolution | null = null;
+  solveTimer = 0;
+  corralSide = 1;
+  lastKind: 'shot' | 'pass' = 'shot';
+  lastShotKind: 'shot' | 'pass' | 'corral' = 'shot';
+  /** En la TOWER (Fase 4). */
+  climbing = false;
   /** Estadísticas del match (MVP). */
   stats = { fuelScored: 0, fuelShot: 0, towerPts: 0, fouls: 0, intaked: 0 };
 

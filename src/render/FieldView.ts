@@ -110,7 +110,7 @@ export class FieldView {
         });
         break;
       case 'alu':
-        m = new THREE.MeshStandardMaterial({ color: 0xc5c9cf, metalness: 0.75, roughness: 0.38 });
+        m = new THREE.MeshStandardMaterial({ color: 0xc5c9cf, metalness: 0.5, roughness: 0.55 });
         break;
       case 'steel':
         m = new THREE.MeshStandardMaterial({ color: 0x70757d, metalness: 0.6, roughness: 0.5 });

@@ -8,7 +8,7 @@ jugable con táctil, teclado/mouse y gamepad en celular, tablet y PC.
 - [x] Fase 0 — arranque: repo, Vite+TS, CLAUDE.md, este plan
 - [x] Fase 1 — campo a escala, FUEL con física, robot swerve manejable (teclado/gamepad/táctil), cámaras piloto y seguimiento
 - [x] Fase 2 — reloj, SHIFTS, luces/estado de HUBS, conteo y salidas del HUB, puntuación, HUD, sonidos
-- [ ] Fase 3 — intake, hopper, shooter balístico, pase, CORRAL/CHUTE/DEPOT, HUMAN PLAYER
+- [x] Fase 3 — intake, hopper, shooter balístico, pase, CORRAL/CHUTE/DEPOT, HUMAN PLAYER
 - [ ] Fase 4 — TOWER y climb, árbitro (sección 6 del prompt), RP, resultados
 - [ ] Fase 5 — IA (5 robots + HP), modos de juego, diseñador de AUTO, editor de robots
 - [ ] Fase 6 — pulido gráfico, presets de calidad, PWA/offline, móvil, README
@@ -118,3 +118,5 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
    extensión dentro del perímetro rival).
 10. **G412** no es alcanzable por diseño: el climber solo engancha RUNGS/UPRIGHTS.
 11. **Tarjetas** (G211): PIN > 15 s, ≥ 5 FUEL sacados del campo, ≥ 3 ráfagas de G407.
+12. **Umbral del CORRAL**: una cuña de 0.12 m (solo colisiona con FUEL) frente al umbral de 1.88 in
+    permite que el FUEL empujado entre al CORRAL (en la realidad la espuma se comprime). // TODO CAD

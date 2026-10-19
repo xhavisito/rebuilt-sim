@@ -358,8 +358,10 @@ export class FuelSystem {
           return;
         }
       }
-      // ---- Fuera del campo (G405)
-      if (Math.abs(t.z) > F.HALF_W + 0.08 || ax > wallX + 0.05 || t.y < -0.5) {
+      // ---- Fuera del campo (G405). Un tiro del HUMAN PLAYER empieza detrás de la pared:
+      //      solo cuenta como fuera si cae allá (no mientras va en el aire).
+      const hpInFlight = (this.flags[i] & FLAG_HP_THROW) !== 0 && t.y > 0.6;
+      if (!hpInFlight && (Math.abs(t.z) > F.HALF_W + 0.08 || ax > wallX + 0.05 || t.y < -0.5)) {
         this.store(i, FuelState.Out, -1);
         this.cb.onOut?.(i);
         return;

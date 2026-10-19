@@ -21,10 +21,13 @@ interface ButtonDef {
 
 const BUTTONS: ButtonDef[] = [
   { id: 'shoot', action: 'shoot', label: 'b_shoot', right: 3, bottom: 26, size: 92 },
-  { id: 'intake', action: 'intake', label: 'b_intake', right: 15, bottom: 8, size: 78, toggle: true },
+  { id: 'intake', action: 'intake', label: 'b_intake', right: 15, bottom: 8, size: 78 },
   { id: 'pass', action: 'pass', label: 'b_pass', right: 3, bottom: 6, size: 64 },
   { id: 'climb', action: 'climbUp', label: 'b_climb', right: 17, bottom: 30, size: 60 },
   { id: 'camera', action: 'cameraNext', label: 'b_camera', right: 3, bottom: 58, size: 50 },
+  // HUMAN PLAYER (solo visibles si el jugador controla al HP)
+  { id: 'chute', action: 'chuteDoor', label: 'b_chute', right: 30, bottom: 6, size: 58 },
+  { id: 'throw', action: 'hpThrow', label: 'b_throw', right: 30, bottom: 26, size: 58 },
 ];
 
 export interface TouchState {
@@ -86,7 +89,12 @@ export class TouchControls {
     if (el) el.style.display = v ? '' : 'none';
   }
 
-  /** Marca el estado de un toggle (p. ej. intake encendida). */
+  /** Resalta un botón (p. ej. intake encendida) sin cambiar su comportamiento. */
+  setActive(id: string, on: boolean): void {
+    this.buttons.get(id)?.classList.toggle('on', on);
+  }
+
+  /** Marca el estado de un toggle. */
   setToggle(action: ButtonAction, on: boolean): void {
     if (on) this.toggles.add(action);
     else this.toggles.delete(action);
