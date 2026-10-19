@@ -16,6 +16,10 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
 - `npm run preview` — sirve `dist/`
 - `npm run shots` — capturas Playwright (escritorio 1920×1080 + móvil 844×390 táctil)
   en `shots/`, más errores de consola y FPS. Requiere `npm run build` antes.
+  Opciones: `--query "mode=match&spectate=1"`, `--eval "app.openRobotEditor()"`, `--throttle 4`.
+- `npm run e2e` — escenarios en navegador real (`scripts/scenarios/*.mjs`): táctil, flujo del
+  match, mecanismos, HUMAN PLAYER, reglas del árbitro, modos y PWA offline.
+- FPS/tiempos en pantalla: tecla F3 o `?fps=1` (muestra ms de simulación y de render).
 - Node está instalado en `~/.local/bin` (v24); si `node` no aparece, agrega
   `~/.local/bin` al PATH.
 
@@ -31,6 +35,8 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
 - `audio/` sonidos sintetizados con Web Audio (sin archivos).
 - `ui/` DOM: menús, HUD, resultados, ajustes, diseñador de AUTO, editor de robot.
 - `game/` sesión de juego: une física + core + render + IA + árbitro.
+- `auto/` rutinas de AUTO (marco azul, se reflejan para rojo) y su ejecutor.
+- `pwa/` registro del service worker; `vite.config.ts` genera `sw.js` con el precache.
 
 ## Convenciones
 - Unidades internas: metros, kg, segundos. `inch(x)` convierte; deja la medida original en comentario.

@@ -11,7 +11,7 @@ jugable con táctil, teclado/mouse y gamepad en celular, tablet y PC.
 - [x] Fase 3 — intake, hopper, shooter balístico, pase, CORRAL/CHUTE/DEPOT, HUMAN PLAYER
 - [x] Fase 4 — TOWER y climb, árbitro (sección 6 del prompt), RP, resultados
 - [x] Fase 5 — IA (5 robots + HP), modos de juego, diseñador de AUTO, editor de robots
-- [ ] Fase 6 — pulido gráfico, presets de calidad, PWA/offline, móvil, README
+- [x] Fase 6 — pulido gráfico, presets de calidad, PWA/offline, móvil, README
 - [ ] Fase 7 — GitHub Actions → GitHub Pages
 
 (Se actualiza al cerrar cada fase. Al retomar: leer esto, `git log`, y la lista de tareas.)
@@ -122,3 +122,10 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 11. **Tarjetas** (G211): PIN > 15 s, ≥ 5 FUEL sacados del campo, ≥ 3 ráfagas de G407.
 12. **Umbral del CORRAL**: una cuña de 0.12 m (solo colisiona con FUEL) frente al umbral de 1.88 in
     permite que el FUEL empujado entre al CORRAL (en la realidad la espuma se comprime). // TODO CAD
+
+## Rendimiento medido (Fase 6)
+- Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
+- Celular emulado (CPU 4×, 844×390 @2×, Media): 30–50 FPS típicos; caídas breves a ~25 cuando
+  cientos de FUEL se mueven a la vez. La calidad Auto baja de nivel si el promedio < 42 FPS.
+- Claves: draw calls 596 → ~225 (Media), FUEL dormido tras 0.4 s quieto, margen predictivo de
+  Rapier 5 mm, 2 iteraciones de solver en Baja/Media, memo del solver balístico.

@@ -110,6 +110,8 @@ export interface ShotSolution {
 /** Busca ángulo y velocidad para llegar al objetivo (con caída suficientemente vertical). */
 export function solveShot(req: ShotRequest): ShotSolution | null {
   const minDescent = req.minDescent ?? 0;
+  // Robot casi quieto: no hace falta compensar (ahorra 2 iteraciones del solver)
+  if (req.robotVel && Math.hypot(req.robotVel.x, req.robotVel.z) < 0.15) req = { ...req, robotVel: undefined };
   let aim = { ...req.target };
   let best: ShotSolution | null = null;
   // Iteración de "lead": apunta a target − v_robot·tof
