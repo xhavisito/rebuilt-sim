@@ -127,7 +127,8 @@ export class FieldView {
         m = new THREE.MeshStandardMaterial({ color: 0x3b4049, metalness: 0.3, roughness: 0.55 });
         break;
       case 'hubTop':
-        m = new THREE.MeshStandardMaterial({ color: 0xd9dde2, metalness: 0.2, roughness: 0.5 });
+        // parte alta del HUB: policarbonato claro (se ven el embudo y el FUEL adentro)
+        m = new THREE.MeshStandardMaterial({ color: 0xdfe6ee, metalness: 0, roughness: 0.15, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide });
         break;
       case 'net':
         m = new THREE.MeshStandardMaterial({
@@ -142,7 +143,8 @@ export class FieldView {
         m = new THREE.MeshStandardMaterial({ color: ac, roughness: 0.55, bumpMap: orangePeelBump(), bumpScale: 0.6 });
         break;
       case 'panelA':
-        m = new THREE.MeshStandardMaterial({ color: new THREE.Color(ac).multiplyScalar(0.8), metalness: 0.35, roughness: 0.45 });
+        // paneles de policarbonato teñidos con el color de alianza (dentro de un marco de aluminio)
+        m = new THREE.MeshStandardMaterial({ color: ac, metalness: 0, roughness: 0.25, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
         break;
       case 'towerA':
         m = new THREE.MeshStandardMaterial({ color: ac, metalness: 0.25, roughness: 0.42 });
@@ -205,13 +207,41 @@ export class FieldView {
       if (!merged) continue;
       boxUV(merged, gr.mat === 'hdpeA' ? 0.6 : 0.5);
       const mesh = new THREE.Mesh(merged, this.mat(gr.mat, gr.alliance));
-      const transparent = gr.mat === 'poly' || gr.mat === 'net';
+      const transparent = gr.mat === 'poly' || gr.mat === 'net' || gr.mat === 'panelA' || gr.mat === 'hubTop';
       mesh.castShadow = gr.shadow && !transparent;
       mesh.receiveShadow = !transparent;
       mesh.renderOrder = transparent ? 2 : 0;
       mesh.name = `field-${gr.mat}`;
       this.group.add(mesh);
     }
+    // Marco de aluminio: tubos en las aristas de los paneles (look de estructura real)
+    const frame: THREE.BufferGeometry[] = [];
+    const tube = F.inch(1.2);
+    const edgeTubes = (cx: number, cy: number, cz: number, hx: number, hy: number, hz: number) => {
+      for (const sy of [-1, 1]) for (const sz of [-1, 1]) frame.push(new THREE.BoxGeometry(2 * hx + tube, tube, tube).translate(cx, cy + sy * hy, cz + sz * hz));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) frame.push(new THREE.BoxGeometry(tube, 2 * hy, tube).translate(cx + sx * hx, cy, cz + sz * hz));
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) frame.push(new THREE.BoxGeometry(tube, tube, 2 * hz + tube).translate(cx + sx * hx, cy + sy * hy, cz));
+    };
+    for (const p of fieldParts()) {
+      if (p.shape.type !== 'box' || (p.mat !== 'panelA' && p.mat !== 'hubBody')) continue;
+      const { hx, hy, hz } = p.shape;
+      if (Math.min(hx, hy, hz) * 2 < F.inch(3) && Math.max(hx, hz) * 2 < F.inch(3)) continue;
+      if (hy * 2 < F.inch(3)) continue;
+      edgeTubes(p.pos[0], p.pos[1], p.pos[2], Math.max(hx, tube / 2), hy, Math.max(hz, tube / 2));
+    }
+    // HUB: postes en las esquinas, rieles a media altura y en el borde de la abertura
+    for (const a of ['red', 'blue'] as Alliance[]) {
+      const c = F.hubCenter(a);
+      const hs = F.HUB_SIZE / 2;
+      edgeTubes(c.x, F.HUB_RIM_HEIGHT / 2, c.z, hs, F.HUB_RIM_HEIGHT / 2, hs);
+      edgeTubes(c.x, F.HUB_INNER_FLOOR, c.z, hs, 0.001, hs);
+    }
+    const frameMesh = new THREE.Mesh(mergeGeometries(frame.map((g) => g.toNonIndexed()))!, this.mat('alu'));
+    frameMesh.castShadow = true;
+    frameMesh.receiveShadow = true;
+    frameMesh.name = 'field-frame';
+    this.group.add(frameMesh);
+
     // Detalles del HUB: embudo hexagonal interior y franjas de color de alianza
     const funnelMat = new THREE.MeshStandardMaterial({ color: 0x2a2e36, roughness: 0.7, side: THREE.DoubleSide });
     for (const a of ['red', 'blue'] as Alliance[]) {
@@ -219,8 +249,6 @@ export class FieldView {
       const R = F.HUB_OPENING_HEX / 2;
       const depth = F.HUB_RIM_HEIGHT - F.HUB_INNER_FLOOR;
       const funnel = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.005, R * 0.62, depth, 6, 1, true), funnelMat);
-      funnel.rotation.y = Math.PI / 6; // vértices hacia ±X, como la abertura
-      funnel.rotation.y = 0;
       funnel.position.set(c.x, F.HUB_INNER_FLOOR + depth / 2, c.z);
       this.group.add(funnel);
       const stripe = new THREE.Mesh(

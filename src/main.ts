@@ -16,7 +16,8 @@ const progress = (p: number, msg: string) => {
 
 async function boot(): Promise<void> {
   progress(0.15, t('loadingPhysics'));
-  await initRapier();
+  // Las texturas de números (BUMPERS) usan la fuente display: cárgala antes de dibujarlas
+  await Promise.all([initRapier(), document.fonts?.load('400 64px Anton').catch(() => undefined)]);
   progress(0.55, t('loadingField'));
   await new Promise((r) => setTimeout(r, 0));
   const app = new App(document.getElementById('app')!, document.getElementById('ui')!);

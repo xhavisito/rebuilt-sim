@@ -45,7 +45,8 @@ export class AutoDesigner {
     const opts: Opt[] = this.routines.map((r) => ({ value: r.id, label: `${r.builtin ? '🔒 ' : ''}${r.name}` }));
     if (!this.routines.some((r) => r.id === this.cur.id)) opts.push({ value: this.cur.id, label: `✎ ${this.cur.name}` });
     this.root.innerHTML = `<div class="inner">
-      <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${t('autoDesigner')}</h2></div>
+      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      <h1>${t('autoDesigner')}</h1>
       <div class="split">
         <div class="designer panel"><canvas></canvas><div class="msg" data-info style="margin-top:6px"></div></div>
         <div class="panel form" data-side></div>

@@ -21,6 +21,7 @@ import { FieldView } from '../render/FieldView';
 import { Effects } from '../render/Effects';
 import { ALLIANCE_COLOR } from '../render/FieldView';
 import { QUALITY_ORDER, Renderer, type Quality } from '../render/Renderer';
+import { Showroom } from '../render/Showroom';
 import { Stadium } from '../render/Stadium';
 import { FLAG_SHOT, FuelState } from '../physics/FuelSystem';
 import { formatTimer, timerSeconds } from '../core/clock';
@@ -105,7 +106,7 @@ export class App {
       if (document.hidden && this.session && !this.session.paused) this.togglePause();
     });
     this.hud.setColorblind(this.settings.colorblind);
-    this.screens = new Screens(this, uiEl);
+    this.screens = new Screens(this, uiEl, new Showroom());
     const back = () => this.screens.main();
     this.designer = new AutoDesigner(this.screens.root, back, (id, st) => {
       this.settings.match.autoRoutine = id;
@@ -113,7 +114,7 @@ export class App {
       this.save();
       this.startMatch();
     });
-    this.editor = new RobotEditor(this.screens.root, back, (id) => {
+    this.editor = new RobotEditor(this.screens.root, this.screens.showroom, back, (id) => {
       this.settings.match.robotId = id;
       this.save();
       this.screens.setup('match');
@@ -154,8 +155,7 @@ export class App {
     this.hud.setVisible(false);
     this.touch.setEnabled(false);
     this.closeOverlay();
-    this.screens.root.classList.remove('hidden');
-    this.screens.root.scrollTop = 0;
+    this.screens.prepare(() => this.screens.main());
   }
 
   openAutoDesigner(): void {
@@ -604,6 +604,7 @@ export class App {
   private tick(dt: number): void {
     const inputs = this.input.poll();
     const s = this.session;
+    this.screens.tick(dt);
     this.clock += dt;
     this.stadium.update(dt, this.clock);
     this.effects.update(dt);
@@ -624,8 +625,8 @@ export class App {
       this.fpsAcc.sim += t1 - t0;
       this.fpsAcc.gpu += t2 - t1;
       this.updateHud(s);
-    } else {
-      // Menú: el campo gira lentamente de fondo
+    } else if (!this.screens.visible) {
+      // Sin menú encima: el campo gira lentamente de fondo
       this.menuAngle += dt * 0.06;
       this.menuCam.position.set(Math.cos(this.menuAngle) * 13, 6.5, Math.sin(this.menuAngle) * 9);
       this.menuCam.lookAt(0, 0.4, 0);

@@ -21,21 +21,21 @@
       /* Estilos mínimos de la pantalla de carga (el resto en src/ui/styles.css). */
       html, body { margin: 0; height: 100%; background: #0b0f17; color: #e8ecf3; overflow: hidden; }
       #loading {
-        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
-        justify-content: center; gap: 18px; font: 600 16px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-        background: radial-gradient(ellipse at center, #16233a 0%, #0b0f17 70%); z-index: 100;
-        transition: opacity .4s;
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: flex-start;
+        justify-content: flex-end; gap: 16px; padding: 7vh 8vw; font: 600 14px/1.3 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0b0c0f; z-index: 100; transition: opacity .4s;
       }
-      #loading h1 { margin: 0; font-size: clamp(28px, 6vw, 56px); letter-spacing: .08em; }
-      #loading h1 span { color: #f2c400; }
-      #loading .bar { width: min(420px, 70vw); height: 8px; border-radius: 4px; background: #1d2638; overflow: hidden; }
-      #loading .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #e53935, #f2c400, #1e88e5); transition: width .2s; }
-      #loading small { opacity: .6; font-weight: 400; }
+      #loading h1 { margin: 0; font: 400 clamp(56px, 12vw, 150px)/0.86 Impact, 'Arial Narrow Bold', sans-serif; letter-spacing: .01em; color: #ecebe6; }
+      #loading h1 span { color: #f5c518; }
+      #loading .bar { width: min(520px, 80vw); height: 4px; border-radius: 2px; background: #272a30; overflow: hidden; }
+      #loading .bar > i { display: block; height: 100%; width: 0%; background: #f5c518; transition: width .25s; }
+      #loading-text { color: #8b8e96; }
+      #loading small { color: #5b5f68; font-weight: 500; }
     </style>
   </head>
   <body>
     <div id="loading" role="status" aria-live="polite">
-      <h1>REBUILT <span>SIM</span></h1>
+      <h1>REBUILT<br /><span>SIM</span></h1>
       <div class="bar"><i id="loading-bar"></i></div>
       <div id="loading-text">Cargando…</div>
       <small>Simulador no oficial hecho por fans. No está afiliado a FIRST®.</small>

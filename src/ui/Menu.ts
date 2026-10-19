@@ -5,7 +5,7 @@
 import type { App } from '../app/App';
 import { loadRoutines } from '../auto/AutoRoutine';
 import * as F from '../config/field';
-import { allRobots, perimeterIn, robotById } from '../config/robots';
+import { allRobots, fitsUnderTrench, perimeterIn, robotById, type RobotSpec } from '../config/robots';
 import { DEFAULT_SETTINGS, type Settings } from '../config/settings';
 import { checkStart, defaultStart } from '../core/startRules';
 import type { Alliance, StationNumber } from '../core/types';
@@ -13,6 +13,9 @@ import { AXIS_ACTIONS, BUTTON_ACTIONS, keyLabel, PAD_LABELS, type AxisAction, ty
 import type { SlotDevice } from '../input/InputManager';
 import { bind, esc, range, seg, select, type Opt } from './forms';
 import { getLang, setLang, t, type TKey } from './i18n';
+import { keyToNav, MenuNav, PadNav, type NavOptions } from './nav';
+import { RULES_CONTENT } from './rulesContent';
+import type { Showroom } from '../render/Showroom';
 
 export type SetupMode = 'practice' | 'match';
 
@@ -25,18 +28,36 @@ export interface LocalPlayer {
 export class Screens {
   readonly root: HTMLElement;
   private cleanup: Array<() => void> = [];
+  /** Navegación con teclado/control de la pantalla actual. */
+  nav: MenuNav | null = null;
+  private padNav = new PadNav();
 
   constructor(
     private app: App,
     parent: HTMLElement,
+    readonly showroom: Showroom,
   ) {
     this.root = document.createElement('div');
     this.root.className = 'screen hidden';
     parent.appendChild(this.root);
+    window.addEventListener('keydown', (e) => {
+      if (!this.visible || !this.nav || this.app.input.captureOff) return;
+      const a = keyToNav(e);
+      if (!a) return;
+      e.preventDefault();
+      this.nav.handle(a);
+    });
   }
 
   get visible(): boolean {
     return !this.root.classList.contains('hidden');
+  }
+
+  /** Llamar cada frame: navegación con control y dibujo de la vitrina 3D. */
+  tick(dt: number): void {
+    if (!this.visible) return;
+    if (this.nav) for (const a of this.padNav.poll(dt)) this.nav.handle(a);
+    this.showroom.render(dt);
   }
 
   hide(): void {
@@ -48,6 +69,8 @@ export class Screens {
   private dispose(): void {
     for (const f of this.cleanup) f();
     this.cleanup = [];
+    this.nav = null;
+    this.showroom.unmount();
   }
 
   /** @param keep conserva los listeners de la pantalla actual (re-render de la misma pantalla) */
@@ -59,34 +82,107 @@ export class Screens {
     this.root.querySelectorAll<HTMLElement>('[data-back]').forEach((b) => b.addEventListener('click', () => this.main()));
   }
 
+  /** Prepara la raíz para otra pantalla (editor, diseñador, torneo): limpia la anterior y deja Esc/B = volver. */
+  prepare(onBack: () => void): void {
+    this.dispose();
+    this.root.classList.remove('hidden');
+    this.root.scrollTop = 0;
+    this.nav = new MenuNav(this.root, { onBack });
+  }
+
+  /** Activa la navegación con teclado/control para los elementos `[data-nav]`. */
+  private enableNav(opts: NavOptions = {}): void {
+    this.nav = new MenuNav(this.root, { onBack: () => this.main(), ...opts });
+  }
+
   private get s(): Settings {
     return this.app.settings;
   }
 
+  /** Barra superior con la marca. */
+  private brandbar(ctx = '', right = ''): string {
+    return `<div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div>${ctx ? `<div class="ctx">${ctx}</div>` : ''}<div class="grow"></div>${right}</div>`;
+  }
+
   // ------------------------------------------------------------------ principal
   main(): void {
+    const items: Array<[string, TKey, TKey]> = [
+      ['match', 'match', 'matchDesc'],
+      ['practice', 'practice', 'practiceDesc'],
+      ['local', 'local', 'localDesc'],
+      ['tournament', 'tournament', 'tournamentDesc'],
+      ['auto', 'autoDesigner', 'autoDesignerDesc'],
+      ['editor', 'robotEditor', 'robotEditorDesc'],
+      ['spectate', 'spectate', 'spectateDesc'],
+      ['settings', 'settings', 'settingsDesc'],
+    ];
+    const name = this.s.driverName || '';
     this.show(`
-      <h1>REBUILT <span>SIM</span></h1>
-      <div class="sub">FRC 2026 · REBUILT · ${t('disclaimer')}</div>
-      <div class="cards">
-        <button class="card-btn hero" data-go="match"><b>${t('match')}</b><span>${t('matchDesc')}</span></button>
-        <button class="card-btn" data-go="practice"><b>${t('practice')}</b><span>${t('practiceDesc')}</span></button>
-        <button class="card-btn" data-go="local"><b>${t('local')}</b><span>${t('localDesc')}</span></button>
-        <button class="card-btn" data-go="tournament"><b>${t('tournament')}</b><span>${t('tournamentDesc')}</span></button>
-        <button class="card-btn" data-go="auto"><b>${t('autoDesigner')}</b><span>${t('autoDesignerDesc')}</span></button>
-        <button class="card-btn" data-go="editor"><b>${t('robotEditor')}</b><span>${t('robotEditorDesc')}</span></button>
-        <button class="card-btn" data-go="settings"><b>${t('settings')}</b><span>${t('settingsDesc')}</span></button>
-        <button class="card-btn" data-go="spectate"><b>${t('spectate')}</b><span>${t('spectateDesc')}</span></button>
+      ${this.brandbar(
+        '',
+        `<button class="chipbtn ${getLang() === 'es' ? 'on' : ''}" data-lang="es">ES</button>
+         <button class="chipbtn ${getLang() === 'en' ? 'on' : ''}" data-lang="en">EN</button>
+         <button class="chipbtn" data-fs title="${t('fullscreen')}">⛶</button>
+         <button class="chipbtn" data-install style="display:${this.app.installPrompt ? '' : 'none'}">⬇ ${t('install')}</button>`,
+      )}
+      <div class="mm">
+        <div class="mm-left">
+          <div class="mm-season">${t('season2026')}</div>
+          <div class="mm-title">REBUILT</div>
+          <nav class="mm-menu">
+            ${items.map(([go, label, desc], i) => `<button class="mm-item" data-nav data-go="${go}" ${i === 0 ? 'data-nav-default' : ''}>${t(label)}<small>${t(desc)}</small></button>`).join('')}
+          </nav>
+          <div class="driver">
+            <div class="avatar" data-avatar>${esc((name || 'R').slice(0, 1))}</div>
+            <div><label>${t('driverName')}</label><input type="text" maxlength="24" data-driver value="${esc(name)}" placeholder="${t('driverPlaceholder')}"/></div>
+          </div>
+        </div>
+        <div class="mm-right">
+          <div class="showcase" data-showcase></div>
+          <div class="robotinfo" data-robotinfo></div>
+        </div>
       </div>
-      <div class="footer">
-        <button class="chipbtn ${getLang() === 'es' ? 'on' : ''}" data-lang="es">Español (MX)</button>
-        <button class="chipbtn ${getLang() === 'en' ? 'on' : ''}" data-lang="en">English</button>
-        <button class="chipbtn" data-fs>⛶ ${t('fullscreen')}</button>
-        <button class="chipbtn" data-install style="display:${this.app.installPrompt ? '' : 'none'}">⬇ ${t('install')}</button>
+      <div class="mm-bottom">
+        <div class="keyhints">
+          <span><i class="kbd">↑↓</i> ${t('hintMove')}</span>
+          <span><i class="kbd">Enter</i> ${t('hintSelect')}</span>
+          <span><i class="kbd">← →</i> ${t('hintRobot')}</span>
+        </div>
+        <div class="footer">${t('disclaimer')} · v${__APP_VERSION__}</div>
       </div>
-      <div class="footer">${t('version')} ${__APP_VERSION__} · ${t('credits')}: Three.js · Rapier · AprilTag 36h11 (AprilRobotics) · ${t('fanMade')}</div>
     `);
     const r = this.root;
+    this.showroom.mount(r.querySelector<HTMLElement>('[data-showcase]')!, 2.75);
+    const robots = allRobots();
+    const showRobot = () => {
+      let i = robots.findIndex((x) => x.id === this.s.match.robotId);
+      if (i < 0) i = 0;
+      const sp = robots[i];
+      this.showroom.setRobot(sp, this.s.match.alliance);
+      const info = r.querySelector<HTMLElement>('[data-robotinfo]')!;
+      info.innerHTML = `
+        <div class="statrow">
+          <span class="stat">${t('maxSpeed')}<b>${sp.maxSpeed.toFixed(1)} m/s</b></span>
+          <span class="stat">${t('hopper')}<b>${sp.hopperCapacity}</b></span>
+          <span class="stat">SHOOTER<b>${sp.shooter.rate}/s</b></span>
+          <span class="stat">TRENCH<b>${fitsUnderTrench(sp) ? '✓' : '—'}</b></span>
+        </div>
+        <div class="line1"><div class="num">${sp.teamNumber}</div>
+          <div class="meta"><b>${esc(sp.name)}</b><span>${robotSubtitle(sp)}</span></div></div>
+        <div class="nav"><button class="arrowbtn" data-prev aria-label="prev">‹</button>
+          <div class="track"><i style="width:${100 / robots.length}%;margin-left:${(100 * i) / robots.length}%"></i></div>
+          <span class="count">${i + 1}/${robots.length}</span><button class="arrowbtn" data-next aria-label="next">›</button></div>`;
+      info.querySelector('[data-prev]')!.addEventListener('click', () => step(-1));
+      info.querySelector('[data-next]')!.addEventListener('click', () => step(1));
+    };
+    const step = (d: -1 | 1) => {
+      let i = robots.findIndex((x) => x.id === this.s.match.robotId);
+      i = (Math.max(0, i) + d + robots.length) % robots.length;
+      this.s.match.robotId = robots[i].id;
+      this.app.save();
+      showRobot();
+    };
+    showRobot();
     r.querySelectorAll<HTMLElement>('[data-go]').forEach((b) =>
       b.addEventListener('click', () => {
         const go = b.dataset.go!;
@@ -111,58 +207,125 @@ export class Screens {
         this.main();
       }),
     );
+    const drv = r.querySelector<HTMLInputElement>('[data-driver]')!;
+    drv.addEventListener('input', () => {
+      this.s.driverName = drv.value.trim();
+      r.querySelector<HTMLElement>('[data-avatar]')!.textContent = (this.s.driverName || 'R').slice(0, 1);
+      this.app.save();
+    });
     r.querySelector('[data-fs]')!.addEventListener('click', () => this.app.toggleFullscreen());
     r.querySelector('[data-install]')!.addEventListener('click', () => this.app.install());
+    this.enableNav({ onBack: () => {}, onLeftRight: step });
   }
 
   // ------------------------------------------------------------------ configuración del match
   setup(mode: SetupMode): void {
     const m = this.s.match;
-    const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: `${r.name} (${r.teamNumber})` }));
     const routines: Opt[] = loadRoutines().map((r) => ({ value: r.id, label: r.name }));
     const isMatch = mode === 'match';
+    const robots = allRobots();
     this.show(`
-      <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${isMatch ? t('match') : t('practice')} · ${t('matchSetup')}</h2></div>
-      <div class="panel form">
-        <h3>${t('robot')}</h3>
-        <label>${t('robot')}</label>${select('robot', robots, m.robotId)}
-        <label>${t('alliance')}</label>${seg('alliance', [{ value: 'red', label: t('red'), cls: 'red' }, { value: 'blue', label: t('blue'), cls: 'blue' }], m.alliance)}
-        <label>${t('station')}</label>${seg('station', ['1', '2', '3'].map((v) => ({ value: v, label: v })), String(m.station))}
-        <label>${t('startPos')}</label><div>${range('offset', -2.5, 2.5, 0.05, m.startOffset, ' m')}<div class="msg" data-g303></div></div>
-        ${isMatch ? `<label>${t('autoRoutine')}</label>${select('routine', routines, m.autoRoutine)}` : ''}
-        <label>${t('humanPlayer')}</label>${seg('hp', [{ value: 'ai', label: t('hp_ai') }, { value: 'player', label: t('hp_player') }], m.humanPlayer)}
-        <h3>${t('matchSetup')}</h3>
-        ${isMatch ? `<label>${t('difficulty')}</label>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}` : ''}
-        <label>${t('eventType')}</label>${seg('event', (['regional', 'districtChamp', 'champs'] as const).map((e) => ({ value: e, label: t(`ev_${e}` as TKey) })), m.eventType)}
-        <label>${t('fuelCount')}</label>${seg('fuel', [{ value: '504', label: '504' }, { value: '600', label: '600 (Championship)' }], String(m.fuel))}
-        <label>${t('fouls')}</label>${seg('fouls', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], m.fouls ? '1' : '0')}
+      ${this.brandbar('2026 REBUILT')}
+      <h1 class="center">${isMatch ? t('match') : t('practice')}</h1>
+      <div class="setup">
+        <div class="setup-left">
+          <div><span class="label">${t('robot')}</span>
+            <div class="robotcard"><div><div class="num" data-rnum></div><b data-rname></b><span data-rsub></span></div>
+            <button class="btn" data-change data-nav style="min-height:40px;padding:10px 16px;font-size:15px">${t('change')}</button></div>
+          </div>
+          <div class="preview" data-preview></div>
+          <div><span class="label">${t('alliance')}</span>
+            <div class="alliance-pick">
+              <button class="blue ${m.alliance === 'blue' ? 'on' : ''}" data-al="blue" data-nav><i></i>${t('blue')}</button>
+              <button class="red ${m.alliance === 'red' ? 'on' : ''}" data-al="red" data-nav><i></i>${t('red')}</button>
+            </div>
+          </div>
+        </div>
+        <div class="setup-right">
+          <div class="mapwrap">
+            <div class="maphead"><span class="label">${t('startPos')}</span><button class="chipbtn" data-resetspot>↺ ${t('resetSpot')}</button></div>
+            <div data-map></div>
+            <div class="maphint"><span>${t('dragHint')}</span><span class="msg" data-g303></span></div>
+          </div>
+          <div class="opts">
+            <div class="opt"><span>${t('station')}</span>${seg('station', ['1', '2', '3'].map((v) => ({ value: v, label: `DS ${v}` })), String(m.station))}</div>
+            ${isMatch ? `<div class="opt"><span>${t('autoRoutine')}</span>${select('routine', routines, m.autoRoutine)}</div>` : ''}
+            ${isMatch ? `<div class="opt"><span>${t('difficulty')}</span>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}</div>` : ''}
+            <div class="opt"><span>${t('humanPlayer')}</span>${seg('hp', [{ value: 'ai', label: t('hp_ai') }, { value: 'player', label: t('hp_player') }], m.humanPlayer)}</div>
+            <div class="opt"><span>${t('eventType')}</span>${seg('event', (['regional', 'districtChamp', 'champs'] as const).map((e) => ({ value: e, label: t(`evs_${e}` as TKey) })), m.eventType)}</div>
+            <div class="opt"><span>FUEL</span>${seg('fuel', [{ value: '504', label: '504' }, { value: '600', label: '600' }], String(m.fuel))}</div>
+            <div class="opt"><span>${t('fouls')}</span>${seg('fouls', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], m.fouls ? '1' : '0')}</div>
+          </div>
+        </div>
       </div>
-      <button class="btn primary" data-start style="align-self:center;min-width:240px">${t('start')}</button>
+      <div class="actionbar">
+        <button class="btn" data-back data-nav>${t('back')}</button>
+        <div class="grow"></div>
+        <button class="btn" data-rules data-nav>${t('rules')}</button>
+        <button class="btn" data-settings data-nav>${t('settings')}</button>
+        <button class="btn primary" data-start data-nav data-nav-default>${isMatch ? t('startMatch') : t('startPractice')}</button>
+      </div>
     `);
-    const check = () => {
+    const r = this.root;
+    this.showroom.mount(r.querySelector<HTMLElement>('[data-preview]')!, 2.9);
+    const map = r.querySelector<HTMLElement>('[data-map]')!;
+    const refresh = () => {
       const spec = robotById(m.robotId);
-      const halfX = F.inch(spec.lengthIn / 2 + spec.bumperIn);
-      const st = defaultStart(m.alliance, m.station, halfX);
-      const issues = checkStart({
-        alliance: m.alliance,
-        x: st.x,
-        z: st.z + m.startOffset * (m.alliance === 'blue' ? 1 : -1),
-        halfX,
-        halfZ: F.inch(spec.widthIn / 2 + spec.bumperIn),
-        heightM: F.inch(spec.heightIn),
-        perimeterM: F.inch(perimeterIn(spec)),
-        preload: spec.preload,
-      });
-      const el = this.root.querySelector<HTMLElement>('[data-g303]')!;
+      this.showroom.setRobot(spec, m.alliance);
+      r.querySelector('[data-rnum]')!.textContent = String(spec.teamNumber);
+      r.querySelector('[data-rname]')!.textContent = spec.name;
+      r.querySelector('[data-rsub]')!.textContent = robotSubtitle(spec);
+      map.innerHTML = fieldMapSvg(m.alliance, m.station, spec, m.startOffset);
+      const issues = startIssues(m.alliance, m.station, spec, m.startOffset);
+      const el = r.querySelector<HTMLElement>('[data-g303]')!;
       el.className = `msg ${issues.length ? 'bad' : 'ok'}`;
-      el.textContent = issues.length ? `G303: ${issues.map((i) => t(`g303_${i.code}` as TKey)).join(' · ')}` : `G303 ✓ ${t('startLegal')}`;
-      (this.root.querySelector('[data-start]') as HTMLButtonElement).disabled = issues.length > 0;
+      el.textContent = issues.length ? `G303: ${issues.map((i) => t(`g303_${i}` as TKey)).join(' · ')}` : `G303 ✓ ${t('startLegal')}`;
+      (r.querySelector('[data-start]') as HTMLButtonElement).disabled = issues.length > 0;
     };
-    bind(this.root, (name, v) => {
-      if (name === 'robot') m.robotId = String(v);
-      if (name === 'alliance') m.alliance = v as Alliance;
+    // Arrastrar el robot en el mapa (a lo largo de su ROBOT STARTING LINE)
+    let drag = false;
+    const toOffset = (e: PointerEvent) => {
+      const svg = map.querySelector('svg')!;
+      const rect = svg.getBoundingClientRect();
+      const zWorld = ((e.clientY - rect.top) / rect.height) * F.FIELD_WIDTH - F.HALF_W;
+      const spec = robotById(m.robotId);
+      const st = defaultStart(m.alliance, m.station, F.inch(spec.lengthIn / 2 + spec.bumperIn));
+      const halfZ = F.inch(spec.widthIn / 2 + spec.bumperIn);
+      const z = Math.max(-F.HALF_W + halfZ, Math.min(F.HALF_W - halfZ, zWorld));
+      m.startOffset = Math.round((z - st.z) * (m.alliance === 'blue' ? 1 : -1) * 100) / 100;
+      refresh();
+    };
+    map.addEventListener('pointerdown', (e) => {
+      drag = true;
+      map.setPointerCapture(e.pointerId);
+      toOffset(e);
+    });
+    map.addEventListener('pointermove', (e) => drag && toOffset(e));
+    map.addEventListener('pointerup', () => {
+      drag = false;
+      this.app.save();
+    });
+    r.querySelector('[data-resetspot]')!.addEventListener('click', () => {
+      m.startOffset = 0;
+      this.app.save();
+      refresh();
+    });
+    r.querySelector('[data-change]')!.addEventListener('click', () => {
+      const i = robots.findIndex((x) => x.id === m.robotId);
+      m.robotId = robots[(Math.max(0, i) + 1) % robots.length].id;
+      this.app.save();
+      refresh();
+    });
+    r.querySelectorAll<HTMLElement>('[data-al]').forEach((b) =>
+      b.addEventListener('click', () => {
+        m.alliance = b.dataset.al as Alliance;
+        r.querySelectorAll('[data-al]').forEach((x) => x.classList.toggle('on', x === b));
+        this.app.save();
+        refresh();
+      }),
+    );
+    bind(r, (name, v) => {
       if (name === 'station') m.station = Number(v) as StationNumber;
-      if (name === 'offset') m.startOffset = Number(v);
       if (name === 'routine') m.autoRoutine = String(v);
       if (name === 'hp') m.humanPlayer = v as 'ai' | 'player';
       if (name === 'difficulty') m.difficulty = v as Settings['match']['difficulty'];
@@ -170,18 +333,52 @@ export class Screens {
       if (name === 'fuel') m.fuel = Number(v) as 504 | 600;
       if (name === 'fouls') m.fouls = v === '1';
       this.app.save();
-      check();
+      refresh();
     });
-    check();
-    this.root.querySelector('[data-start]')!.addEventListener('click', () => {
+    r.querySelector('[data-rules]')!.addEventListener('click', () => this.rules(() => this.setup(mode)));
+    r.querySelector('[data-settings]')!.addEventListener('click', () => this.settings(() => this.setup(mode)));
+    r.querySelector('[data-start]')!.addEventListener('click', () => {
       this.hide();
       if (isMatch) this.app.startMatch();
       else this.app.startPractice();
     });
+    refresh();
+    this.enableNav({
+      onLeftRight: (d) => {
+        // ←→ cambia de alianza en esta pantalla
+        m.alliance = d < 0 ? 'blue' : 'red';
+        r.querySelectorAll<HTMLElement>('[data-al]').forEach((x) => x.classList.toggle('on', x.dataset.al === m.alliance));
+        this.app.save();
+        refresh();
+      },
+    });
+  }
+
+  // ------------------------------------------------------------------ reglas
+  rules(back: () => void = () => this.main()): void {
+    const sections = RULES_CONTENT[getLang()];
+    this.show(`
+      ${this.brandbar('2026 REBUILT')}
+      <h1>${t('rules')}</h1>
+      <div class="rules">
+        ${sections
+          .map(
+            (s) => `<div class="panel"><h3>${esc(s.title)}</h3>
+          ${s.rows ? `<table>${s.rows.map(([a, b]) => `<tr><td>${esc(a)}</td><td>${esc(b)}</td></tr>`).join('')}</table>` : ''}
+          ${s.items ? `<ul>${s.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+          ${s.text ? `<p style="margin-top:8px">${esc(s.text)}</p>` : ''}</div>`,
+          )
+          .join('')}
+      </div>
+      <div class="footer">${t('rulesSource')}</div>
+      <div class="actionbar"><button class="btn primary" data-close data-nav>${t('back')}</button></div>
+    `);
+    this.root.querySelector('[data-close]')!.addEventListener('click', back);
+    this.enableNav({ onBack: back });
   }
 
   // ------------------------------------------------------------------ ajustes
-  settings(): void {
+  settings(back: () => void = () => this.main()): void {
     const s = this.s;
     const q = (['auto', 'low', 'medium', 'high', 'ultra'] as const).map((v) => ({ value: v, label: t(`q_${v}` as TKey) }));
     const cams = (['driver', 'chase', 'top', 'broadcast'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) }));
@@ -203,7 +400,8 @@ export class Screens {
       })
       .join('');
     this.show(`
-      <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${t('settings')}</h2></div>
+      ${this.brandbar('2026 REBUILT')}
+      <h1>${t('settings')}</h1>
       <div class="panel form">
         <h3>${t('general')}</h3>
         <label>${t('language')}</label>${seg('lang', [{ value: 'es', label: 'Español (MX)' }, { value: 'en', label: 'English' }], s.lang)}
@@ -237,7 +435,10 @@ export class Screens {
         <table class="keytable"><tr><td></td><td>${t('keyboard')}</td><td>${t('gamepad')}</td></tr>${keyRows}</table>
         <div class="msg warn" data-capture style="display:none"></div>
       </div>
+      <div class="actionbar"><button class="btn primary" data-sback data-nav>${t('back')}</button></div>
     `);
+    this.root.querySelector('[data-sback]')!.addEventListener('click', back);
+    this.enableNav({ onBack: back });
     bind(this.root, (name, v) => {
       const b = v === '1';
       switch (name) {
@@ -246,7 +447,7 @@ export class Screens {
           setLang(s.lang);
           this.app.relabel();
           this.app.save();
-          this.settings();
+          this.settings(back);
           return;
         case 'camera':
           s.camera = v as Settings['camera'];
@@ -307,7 +508,7 @@ export class Screens {
       this.app.save();
     });
     const r = this.root;
-    r.querySelector('[data-editlayout]')!.addEventListener('click', () => this.app.editTouchLayout(() => this.settings()));
+    r.querySelector('[data-editlayout]')!.addEventListener('click', () => this.app.editTouchLayout(() => this.settings(back)));
     r.querySelector('[data-resetlayout]')!.addEventListener('click', () => {
       s.touch.layout = {};
       this.app.save();
@@ -316,7 +517,7 @@ export class Screens {
       s.keys = structuredClone(DEFAULT_SETTINGS.keys);
       s.padBindings = structuredClone(DEFAULT_SETTINGS.padBindings);
       this.app.save();
-      this.settings();
+      this.settings(back);
     });
     const cap = r.querySelector<HTMLElement>('[data-capture]')!;
     // Reasignar teclado: la siguiente tecla (o clic) reemplaza la asignación
@@ -337,7 +538,7 @@ export class Screens {
             s.keys[action] = [e.code];
             this.app.save();
           }
-          this.settings();
+          this.settings(back);
         };
         window.addEventListener('keydown', onKey, true);
         this.cleanup.push(() => {
@@ -362,7 +563,7 @@ export class Screens {
                 for (const a of BUTTON_ACTIONS) s.padBindings[a] = s.padBindings[a].filter((x) => x !== i);
                 s.padBindings[action] = [i];
                 this.app.save();
-                this.settings();
+                this.settings(back);
               }
             });
         }, 50);
@@ -391,7 +592,8 @@ export class Screens {
           ${select(`rb${i}`, robots, p?.robotId ?? this.s.match.robotId)}</div>`;
       }).join('');
       this.show(`
-        <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${t('local')}</h2></div>
+        ${this.brandbar('2026 REBUILT')}
+        <h1>${t('local')}</h1>
         <div class="panel form">
           <label>${t('players')}</label>${seg('count', ['2', '3', '4'].map((v) => ({ value: v, label: v })), String(count))}
           <label>${t('camera')}</label>${seg('cam', [{ value: 'split', label: t('splitScreen') }, { value: 'shared', label: t('sharedCam') }], shared ? 'shared' : 'split')}
@@ -400,9 +602,12 @@ export class Screens {
           ${rows}
           <label></label><div class="row"><button class="chipbtn" data-touchslot>👆 ${t('touch')}</button><button class="chipbtn" data-clear>${t('reset')}</button></div>
         </div>
-        <button class="btn primary" data-start style="align-self:center;min-width:240px" ${players.slice(0, count).every(Boolean) ? '' : 'disabled'}>${t('start')}</button>
+        <div class="actionbar"><button class="btn" data-back data-nav>${t('back')}</button><div class="grow"></div>
+        <button class="btn primary" data-start ${players.slice(0, count).every(Boolean) ? '' : 'disabled'}>${t('start')}</button></div>
       `, !first);
       first = false;
+      if (this.nav) this.nav.refresh();
+      else this.enableNav();
       bind(this.root, (name, v) => {
         if (name === 'count') {
           count = Number(v);
@@ -451,4 +656,75 @@ export class Screens {
       window.clearInterval(timer);
     });
   }
+}
+
+// ------------------------------------------------------------------ helpers de las pantallas
+
+/** "Swerve · Turret · Climb L2" */
+export function robotSubtitle(s: RobotSpec): string {
+  const parts = [s.drivetrain === 'swerve' ? 'Swerve' : 'Tank', s.shooter.type === 'turret' ? 'Turret' : t('fixed'), s.climb.maxLevel ? `Climb L${s.climb.maxLevel}` : t('noClimb')];
+  return parts.join(' · ');
+}
+
+/** Códigos de G303 para la posición de salida elegida (vacío = legal). */
+function startIssues(a: Alliance, ds: StationNumber, spec: RobotSpec, offset: number): string[] {
+  const halfX = F.inch(spec.lengthIn / 2 + spec.bumperIn);
+  const st = defaultStart(a, ds, halfX);
+  return checkStart({
+    alliance: a,
+    x: st.x,
+    z: st.z + offset * (a === 'blue' ? 1 : -1),
+    halfX,
+    halfZ: F.inch(spec.widthIn / 2 + spec.bumperIn),
+    heightM: F.inch(spec.heightIn),
+    perimeterM: F.inch(perimeterIn(spec)),
+    preload: spec.preload,
+  }).map((i) => i.code);
+}
+
+/** Mapa del campo en líneas (vista superior, azul a la izquierda) con el robot del jugador. */
+function fieldMapSvg(a: Alliance, ds: StationNumber, spec: RobotSpec, offset: number): string {
+  const L = F.HALF_L;
+  const W = F.HALF_W;
+  const sw = 0.035;
+  const col = { blue: '#2f7df6', red: '#e5413a' };
+  const rect = (x0: number, z0: number, x1: number, z1: number, attrs: string) =>
+    `<rect x="${Math.min(x0, x1)}" y="${Math.min(z0, z1)}" width="${Math.abs(x1 - x0)}" height="${Math.abs(z1 - z0)}" ${attrs}/>`;
+  let g = rect(-L, -W, L, W, `fill="#0f1014" stroke="rgba(255,255,255,.25)" stroke-width="${sw}"`);
+  for (const al of ['blue', 'red'] as Alliance[]) {
+    const s = F.allianceSign(al);
+    const c = col[al];
+    const line = s * Math.abs(F.STARTING_LINE_X_BLUE);
+    g += rect(s * L, -W, line, W, `fill="${c}" fill-opacity="${al === a ? 0.13 : 0.07}"`);
+    g += `<line x1="${line}" y1="${-W}" x2="${line}" y2="${W}" stroke="${c}" stroke-width="${sw * 1.6}"/>`;
+    const hx = F.hubCenter(al).x;
+    g += rect(hx - F.HUB_SIZE / 2, -F.HUB_SIZE / 2, hx + F.HUB_SIZE / 2, F.HUB_SIZE / 2, `fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="${sw}"`);
+    for (const k of [-1, 1]) {
+      g += rect(hx - F.BUMP_DEPTH / 2, (k * F.HUB_SIZE) / 2, hx + F.BUMP_DEPTH / 2, k * (F.HUB_SIZE / 2 + F.BUMP_WIDTH), `fill="${c}" fill-opacity=".12" stroke="${c}" stroke-width="${sw}"`);
+      g += rect(hx - F.TRENCH_DEPTH / 2, k * F.TRENCH_INNER_Z, hx + F.TRENCH_DEPTH / 2, k * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), `fill="none" stroke="${c}" stroke-width="${sw}"`);
+      g += `<line x1="${hx}" y1="${k * (F.HALF_W - F.TRENCH_CLEAR_WIDTH)}" x2="${hx}" y2="${k * W}" stroke="${c}" stroke-width="${sw}" stroke-dasharray=".12 .08"/>`;
+    }
+    const tw = F.towerInfo(al);
+    g += rect(s * L, tw.cz - F.TOWER_BASE_WIDTH / 2, s * (L - F.TOWER_BASE_DEPTH), tw.cz + F.TOWER_BASE_WIDTH / 2, `fill="none" stroke="${c}" stroke-width="${sw}"`);
+    const dp = F.depotCenter(al);
+    g += rect(s * L, dp.z - F.DEPOT_WIDTH / 2, s * (L - F.DEPOT_DEPTH), dp.z + F.DEPOT_WIDTH / 2, `fill="#f5c518" fill-opacity=".18" stroke="#f5c518" stroke-opacity=".6" stroke-width="${sw}"`);
+    const op = F.outpostInfo(al);
+    g += rect(s * L, op.z - 0.42, s * (L + 0.18), op.z + 0.42, `fill="${c}"`);
+  }
+  g += `<line x1="0" y1="${-W}" x2="0" y2="${W}" stroke="rgba(255,255,255,.55)" stroke-width="${sw}" stroke-dasharray=".2 .14"/>`;
+  g += rect(-F.NEUTRAL_BOX_D / 2, -F.NEUTRAL_BOX_W / 2, F.NEUTRAL_BOX_D / 2, F.NEUTRAL_BOX_W / 2, `fill="#f5c518" fill-opacity=".14"`);
+  // Compañeros (posiciones por defecto) y el robot del jugador
+  const hx = F.inch(spec.lengthIn / 2 + spec.bumperIn);
+  const hz = F.inch(spec.widthIn / 2 + spec.bumperIn);
+  for (const other of [1, 2, 3] as StationNumber[]) {
+    if (other === ds) continue;
+    const st = defaultStart(a, other, 0.43);
+    g += rect(st.x - 0.43, st.z - 0.43, st.x + 0.43, st.z + 0.43, `fill="none" stroke="${col[a]}" stroke-opacity=".6" stroke-width="${sw}" stroke-dasharray=".1 .07"`);
+  }
+  const st = defaultStart(a, ds, hx);
+  const z = st.z + offset * (a === 'blue' ? 1 : -1);
+  const dir = a === 'blue' ? 1 : -1;
+  g += `<g class="me">${rect(st.x - hx, z - hz, st.x + hx, z + hz, `fill="${col[a]}" stroke="#fff" stroke-width="${sw * 1.5}" rx=".06"`)}
+    <polygon points="${st.x + dir * hx * 0.75},${z} ${st.x + dir * hx * 0.1},${z - hz * 0.45} ${st.x + dir * hx * 0.1},${z + hz * 0.45}" fill="#fff"/></g>`;
+  return `<svg viewBox="${-L - 0.25} ${-W - 0.05} ${2 * L + 0.5} ${2 * W + 0.1}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="field">${g}</svg>`;
 }

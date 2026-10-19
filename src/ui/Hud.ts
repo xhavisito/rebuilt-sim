@@ -70,6 +70,7 @@ export class Hud {
         <div class="banner" data-k="banner"></div>
         <div class="rp blue" data-k="blueRp"><b></b><div class="meter"><i></i></div><em></em></div>
       </div>
+      <div class="shiftline" data-k="shift"></div>
       <div class="player" data-k="player">
         <div class="pname" data-k="pname"></div>
         <div class="hopper"><div class="hbar"><i data-k="hbar"></i></div><span data-k="htext"></span></div>
@@ -122,7 +123,8 @@ export class Hud {
       e.timer.textContent = formatTimer(sec);
       e.timer.classList.toggle('low', (m.phase === 'END_GAME' && sec <= 10) || (m.phase === 'AUTO' && sec <= 3));
       const nx = timeToNextShiftChange(m.t);
-      e.next.textContent = nx !== null && m.phase !== 'AUTO_PAUSE' ? `${t('nextShift')} ${Math.ceil(nx)} s` : '';
+      const shiftTxt = nx !== null && m.phase !== 'AUTO_PAUSE' ? `${t('nextShift')} ${Math.ceil(nx)} s` : '';
+      if (e.shift.textContent !== shiftTxt) e.shift.textContent = shiftTxt;
       for (const a of ['red', 'blue'] as Alliance[]) {
         const [cls, label] = this.hubLabel(m.light(a));
         const h = e[`${a}Hub`];
@@ -138,6 +140,8 @@ export class Hud {
         rp.classList.toggle('energized', fuel >= th.energized);
         rp.classList.toggle('supercharged', fuel >= th.supercharged);
         rp.querySelector('em')!.textContent = `${t('towerPts')} ${m.towerPoints(a)}`;
+        // franja de progreso de FUEL dentro del bloque del marcador
+        e[`${a}Score`].parentElement!.style.setProperty('--fuel-pct', `${Math.min(100, (fuel / goal) * 100)}%`);
       }
       // Aviso de quién queda inactivo en SHIFT 1 (durante TRANSITION)
       const fi = m.firstInactive;

@@ -45,7 +45,8 @@ export class TournamentScreen {
 
   private setup(): void {
     this.root.innerHTML = `<div class="inner">
-      <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${t('tournament')}</h2></div>
+      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      <h1>${t('tournament')}</h1>
       <div class="panel form">
         <label>${t('teams')}</label>${seg('teams', ['12', '18', '24'].map((v) => ({ value: v, label: v })), String(this.cfg.teams))}
         <label>${t('matchesPerTeam')}</label>${seg('per', ['3', '5', '8'].map((v) => ({ value: v, label: v })), String(this.cfg.perTeam))}
@@ -114,7 +115,8 @@ export class TournamentScreen {
     const champ = tt.champion !== null ? `<div class="msg ok" style="font-size:16px;text-align:center">🏆 ${t('champion')}: A${tt.champion + 1} ${side(tt.alliances![tt.champion])}</div>` : '';
     const playerOut = next === null && tt.champion !== null;
     this.root.innerHTML = `<div class="inner">
-      <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${t('tournament')} · ${t(`ev_${tt.eventType}` as TKey)}</h2><button class="chipbtn" data-new>${t('newTournament')}</button></div>
+      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-new>${t('newTournament')}</button><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      <h1>${t('tournament')} · ${t(`ev_${tt.eventType}` as TKey)}</h1>
       ${champ}
       ${
         next

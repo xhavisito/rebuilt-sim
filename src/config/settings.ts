@@ -9,6 +9,8 @@ export type Lang = 'es' | 'en';
 
 export interface Settings {
   lang: Lang;
+  /** Nombre del piloto (menú principal). */
+  driverName: string;
   quality: Quality | 'auto';
   showFps: boolean;
   camera: CameraMode;
@@ -42,6 +44,7 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   lang: 'es',
+  driverName: '',
   quality: 'auto',
   showFps: false,
   camera: 'driver',

@@ -7,12 +7,14 @@ import * as F from '../config/field';
 import { allRobots, fitsUnderTrench, loadCustomRobots, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type RobotSpec } from '../config/robots';
 import { bind, esc, num, seg, select, type Opt } from './forms';
 import { t, tx } from './i18n';
+import type { Showroom } from '../render/Showroom';
 
 export class RobotEditor {
   private spec!: RobotSpec;
 
   constructor(
     private root: HTMLElement,
+    private showroom: Showroom,
     private onBack: () => void,
     private onUse: (id: string) => void,
   ) {}
@@ -31,9 +33,10 @@ export class RobotEditor {
     const ro = this.isPreset;
     const opts: Opt[] = allRobots().map((r) => ({ value: r.id, label: `${ROBOT_PRESETS.some((p) => p.id === r.id) ? '🔒 ' : ''}${r.name} (${r.teamNumber})` }));
     this.root.innerHTML = `<div class="inner">
-      <div class="topbar"><button class="chipbtn" data-back>← ${t('back')}</button><h2>${t('robotEditor')}</h2></div>
+      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      <h1>${t('robotEditor')}</h1>
       <div class="split">
-        <div class="panel"><canvas data-schem style="width:100%;height:auto;display:block"></canvas><div data-valid style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div></div>
+        <div class="panel" style="display:flex;flex-direction:column;gap:10px"><div class="preview" data-preview style="height:300px"></div><canvas data-schem style="width:100%;height:auto;display:block"></canvas><div data-valid style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div></div>
         <div class="panel form">
           <label>${t('robot')}</label>${select('pick', opts, s.id)}
           ${ro ? `<label></label><div class="msg warn">${t('presetReadonly')}</div>` : ''}
@@ -75,6 +78,7 @@ export class RobotEditor {
         </div>
       </div></div>`;
     const r = this.root;
+    this.showroom.mount(r.querySelector<HTMLElement>('[data-preview]')!, 2.6);
     r.querySelector('[data-back]')!.addEventListener('click', () => this.onBack());
     bind(r, (name, v) => {
       if (name === 'pick') {
@@ -159,6 +163,8 @@ export class RobotEditor {
     ];
     if (!issues.length) lines.push(`<div class="msg ok">✓ ${t('robotLegal')}</div>`);
     v.innerHTML = lines.join('');
+    // la vitrina 3D refleja los cambios (dimensiones, colores, número…)
+    if (!issues.some((i) => i.fatal)) this.showroom.setRobot(s, 'blue');
     this.drawSchematic();
   }
 
@@ -170,7 +176,7 @@ export class RobotEditor {
     c.width = Math.round(w * (window.devicePixelRatio || 1));
     c.height = Math.round(c.width * 0.62);
     const g = c.getContext('2d')!;
-    g.fillStyle = '#121a2a';
+    g.fillStyle = '#111216';
     g.fillRect(0, 0, c.width, c.height);
     const S = c.width / 100; // px por pulgada (vista superior ocupa ~la mitad)
     const bt = s.bumperIn;
