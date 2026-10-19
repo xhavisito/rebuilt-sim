@@ -95,7 +95,7 @@ export class App {
       this.settings.showFps = !this.settings.showFps;
       this.save();
     });
-    this.input.onDeviceChange.push((d) => this.touch.setEnabled(d === 'touch' && !!this.session));
+    this.input.onDeviceChange.push((d) => this.touch.setEnabled(d === 'touch' && !!this.session?.players().length));
     window.addEventListener('resize', () => {
       this.renderer.resize();
       this.renderer.onQualityChange.forEach((cb) => cb(this.renderer.preset));
@@ -275,7 +275,8 @@ export class App {
     };
     // recompone el composer con la cámara nueva
     this.renderer.setQuality(this.renderer.quality, s.rigs[0].camera);
-    this.touch.setEnabled(this.input.lastDevice === 'touch');
+    // Sin robot propio (espectador) no hay controles táctiles
+    this.touch.setEnabled(this.input.lastDevice === 'touch' && s.players().length > 0);
     this.hud.setPractice(cfg.mode === 'practice');
     const hpPlayer = Object.values(cfg.humanPlayers ?? {}).includes('player');
     this.touch.setButtonVisible('chute', hpPlayer);
