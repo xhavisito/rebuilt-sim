@@ -19,7 +19,7 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
 - **Match completo**: AUTO 0:20, 3 s de evaluación, TRANSITION, SHIFT 1–4 y END GAME con las
   luces del HUB (activo, aviso de 3 s, persecución blanca), gracia de 3 s, puntos y Ranking Points.
 - **Robots**: swerve o tank, intake, hopper, shooter fijo o turret con auto-aim balístico y
-  disparo en movimiento, pase, climb L1–L3. Cuatro presets + editor de robots.
+  disparo en movimiento, pase, climb L1–L3. Editor para diseñar robots propios.
 - **Árbitro automático**: G403, G404, G405, G407, G408, G413, G414, G415/416/417, G418 (PIN con
   contador visible), G419, G420 (+LEVEL 3), G427 y tarjetas (YELLOW + YELLOW = RED).
 - **HUMAN PLAYER**: CHUTE DOOR, CORRAL → CHUTE y lanzamientos por encima de la ALLIANCE WALL.
@@ -33,12 +33,20 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
   hood apuntan, el spindexer gira y el climber sube; se ve el FUEL dentro del hopper. Medidas,
   extensión de la intake y dirección del shooter (1678 y 6328 tiran hacia atrás, 190 de lado)
   tomadas del CAD y del código. Galería para elegirlos desde el menú (con una demostración de
-  sus mecanismos). En Difícil y Einstein la IA también los usa.
+  sus mecanismos); la IA también los usa. La intake y el hopper desplegados chocan con el campo
+  y los otros robots, y los dumpers (1678, 6328) sueltan ráfagas de 1 a 4 FUEL al azar a lo
+  ancho del shooter.
 - **6 cámaras**: tercera persona (como en MoSim: detrás del robot, siempre mirando al campo
-  contrario, no gira con el robot), DRIVER STATION, desde el robot (POV), superior,
+  contrario, no gira con el robot), DRIVER STATION, desde el robot (POV, sin el robot propio
+  tapando la vista), superior,
   transmisión y libre (práctica). La rueda del mouse acerca/aleja la tercera persona.
 - **Guía de tiro**: la trayectoria del siguiente FUEL en puntos (verde = entra al HUB activo,
   amarillo = HUB inactivo, blanco = no entra). Se apaga en Ajustes.
+- **HUD estilo transmisión** que escala con la pantalla (no se corta en laptops con zoom ni en
+  celulares): marcador con el estado de cada HUB y el progreso a ENERGIZED/SUPERCHARGED, avance
+  del periodo, panel del robot con el hopper. **Menú de pausa** con marcador, ajustes rápidos
+  (auto-aim, disparo en movimiento, guía de tiro, field-relative, volumen), cámara y controles;
+  se navega con control.
 - **Calidad** Baja / Media / Alta / Ultra / Auto (mide los FPS y se ajusta sola).
 - Español (México) e inglés; modo daltonismo; volumen separado de música, efectos y voces.
 

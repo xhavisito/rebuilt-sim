@@ -4,7 +4,8 @@
  *   ALLIANCE ZONE (G407) y dispara; incluso empieza ~1 s antes de que se active.
  * - COLLECT: junta FUEL del piso (nunca el que acaba de salir de un HUB → G408).
  * - STAGE: con el hopper lleno y su HUB inactivo, espera en posición de tiro.
- * - DEFEND: el "Defensor" estorba al rival con más FUEL cuando su propio HUB está inactivo,
+ * - DEFEND: el robot defensor de la alianza (lo elige la sesión) estorba al rival con más FUEL
+ *   cuando su propio HUB está inactivo,
  *   soltando antes de 3 s de PIN (G418).
  * - CLIMB: en END GAME sube a su TOWER si le alcanza el tiempo.
  * Evita G420 (no se acerca a rivales en su TOWER en los últimos 30 s) y G419.
@@ -53,6 +54,8 @@ export class RobotAI {
   private target: Pt | null = null;
   private retreatT = 0;
   private defendTarget = -1;
+  /** Juega defensa cuando su HUB está inactivo y el del rival activo (lo asigna la sesión). */
+  defender = false;
   private climbLevel = 0;
   private readonly d: (typeof DIFFICULTY)[Difficulty];
 
@@ -243,7 +246,7 @@ export class RobotAI {
     }
     // Defensor: con su HUB inactivo y el rival activo
     const opp = opponent(r.alliance);
-    if (r.spec.id === 'defender' && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && m.phase !== 'END_GAME') {
+    if (this.defender && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && m.phase !== 'END_GAME') {
       const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
       victims.sort((a, b) => this.ctx.fuel.robotCount(b.index) - this.ctx.fuel.robotCount(a.index));
       if (victims[0]) {

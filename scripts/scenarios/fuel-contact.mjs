@@ -1,6 +1,6 @@
 // Robots contra FUEL: ningún robot debe treparse al FUEL ni hundirlo bajo el piso.
 // Casos duros: montón de la NEUTRAL ZONE, FUEL suelto y apilado, FUEL atrapado contra la
-// pared, reversa, strafe en diagonal y giros, con los 5 presets.
+// pared, reversa, strafe en diagonal y giros, con varios robots reales.
 import { chromium } from 'playwright';
 import { startServer } from './_server.mjs';
 const server = await startServer(4197);
@@ -67,8 +67,8 @@ const hold = async (keys, ms) => {
 const phases = [];
 const merge = (a, b) => (phases.push(b), { maxY: Math.max(a.maxY, b.maxY), tiltDeg: Math.max(a.tiltDeg, b.tiltDeg), minFuel: Math.min(a.minFuel, b.minFuel), inside: Math.max(a.inside, b.inside) });
 const results = {};
-let frontTravel = 0;
-for (const id of (process.env.PRESETS ?? 'balanced,tank,climber,defender').split(',')) {
+let frontTravel = -1;
+for (const id of (process.env.PRESETS ?? 'cad-6328,cad-1678,cad-971,cad-190').split(',')) {
   const ok = await page.evaluate((id) => {
     const a = window.app;
     if (!a.settings.match) return false;
@@ -83,7 +83,7 @@ for (const id of (process.env.PRESETS ?? 'balanced,tank,climber,defender').split
   await page.evaluate(() => { const s = window.app.session; s.robots[0].intakeOn = false; s.robots[0].phys.teleport(-2.6, 0.8, 0); });
   await page.waitForTimeout(200);
   const front = await hold(['KeyW'], 1500);
-  if (id === 'balanced') frontTravel = front.travel;
+  if (frontTravel < 0) frontTravel = front.travel;
   let acc = merge(front, await hold(['KeyQ'], 900));
   acc = merge(acc, await hold(['KeyS'], 900)); // reversa
   acc = merge(acc, await hold(['KeyW', 'KeyD', 'KeyE'], 1000)); // diagonal girando
@@ -125,9 +125,11 @@ for (const id of (process.env.PRESETS ?? 'balanced,tank,climber,defender').split
 console.log(JSON.stringify(results));
 // Criterios: el robot no se levanta más de 2 cm ni se inclina más de 4° sobre FUEL, nunca
 // queda FUEL dentro de su huella, ningún
-// FUEL queda bajo la alfombra y el montón frena al robot (no lo cruza a toda velocidad).
+// FUEL queda bajo la alfombra y el montón frena un poco al robot, pero no lo atasca (0.2 kg de
+// espuma contra 55 kg de robot).
 const bad = Object.entries(results).filter(([, r]) => typeof r === 'string' || r.maxY > 0.02 || r.tiltDeg > 4 || r.minFuel < -0.01 || r.inside > 0);
-if (frontTravel > 4.6) bad.push(['front', `el montón no frena al robot (${frontTravel} m)`]);
+if (frontTravel > 5.6) bad.push(['front', `el montón no frena al robot (${frontTravel} m)`]);
+if (frontTravel >= 0 && frontTravel < 2.5) bad.push(['front', `el montón atasca al robot (${frontTravel} m)`]);
 console.log(bad.length ? `FAIL ${JSON.stringify(bad)}` : 'OK');
 if (bad.length || logs.length) process.exitCode = 1;
 console.log('LOGS', logs);

@@ -59,6 +59,9 @@ export class Robot {
   intakeAcc = 0;
   spinUp = 0;
   shootCooldown = 0;
+  /** FUEL de la ráfaga en curso que aún no sale (s que faltan, posición lateral en el shooter). */
+  burst: Array<{ delay: number; lat: number }> = [];
+  burstAim: { kind: 'shot' | 'pass' | 'corral'; yawRel: number; pitch: number; speed: number } = { kind: 'shot', yawRel: 0, pitch: 0, speed: 0 };
   lastSolution: ShotSolution | null = null;
   /** Solución para la guía de tiro cuando no está disparando (se recalcula a 10 Hz). */
   previewSolution: ShotSolution | null = null;

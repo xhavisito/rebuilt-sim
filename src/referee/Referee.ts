@@ -350,7 +350,7 @@ export class Referee {
     this.touchField.clear();
     const w = this.ctx.pw.world;
     for (const r of this.ctx.robots) {
-      for (const col of [r.phys.bumper, r.phys.frame]) {
+      for (const col of r.phys.solids()) {
         w.contactPairsWith(col, (other) => {
           const tag = this.ctx.pw.tagOf(other.handle);
           if (!tag) return;

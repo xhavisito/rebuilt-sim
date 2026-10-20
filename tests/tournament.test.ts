@@ -12,7 +12,7 @@ import {
   type TeamEntry,
 } from '../src/core/tournament';
 
-const pool = Array.from({ length: 12 }, (_, i) => ({ team: 100 + i, specId: 'balanced', name: `T${i}`, strength: (i + 1) / 12 }));
+const pool = Array.from({ length: 12 }, (_, i) => ({ team: 100 + i, specId: 'cad-1678', name: `T${i}`, strength: (i + 1) / 12 }));
 
 describe('torneo', () => {
   it('calendario: cada equipo juega casi el mismo número de matches, 3 vs 3 sin repetir equipo', () => {

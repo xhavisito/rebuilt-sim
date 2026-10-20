@@ -50,6 +50,8 @@ export interface Viewport {
   y: number;
   w: number;
   h: number;
+  /** Objetos que no se dibujan en esta vista (p. ej. el robot propio en la cámara a bordo). */
+  hide?: THREE.Object3D[];
 }
 
 export class Renderer {
@@ -180,13 +182,21 @@ export class Renderer {
   render(views: Viewport[]): void {
     const r = this.renderer;
     r.info.reset();
+    const was: boolean[] = [];
+    const hidden = (v: Viewport, on: boolean) =>
+      v.hide?.forEach((o, i) => {
+        if (on) was[i] = o.visible;
+        o.visible = on ? false : was[i];
+      });
     if (views.length === 1 && this.composer && this.renderPass) {
       const cam = views[0].camera;
       cam.aspect = this.width / this.height;
       cam.updateProjectionMatrix();
       this.renderPass.camera = cam;
       if (this.aoPass) this.aoPass.camera = cam;
+      hidden(views[0], true);
       this.composer.render();
+      hidden(views[0], false);
       return;
     }
     // Pantalla dividida (o calidad baja): render directo por viewport con scissor.
@@ -200,7 +210,9 @@ export class Renderer {
       r.setScissor(x, y, w, h);
       v.camera.aspect = w / h;
       v.camera.updateProjectionMatrix();
+      hidden(v, true);
       r.render(this.scene, v.camera);
+      hidden(v, false);
     }
     r.setScissorTest(false);
     r.setViewport(0, 0, this.width, this.height);

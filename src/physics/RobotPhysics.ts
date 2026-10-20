@@ -51,6 +51,8 @@ export class RobotPhysics {
   readonly intakeHalfW: number;
   /** Rodillo de la intake (solo FUEL), activo solo con la intake desplegada. */
   private intakeCol: RAPIER.Collider;
+  /** Intake (y hopper que se extiende) fuera del perímetro: sólidos contra campo y robots. */
+  readonly extension: RAPIER.Collider[] = [];
   /** Último mando aplicado (para detectar PIN: quiere moverse pero no puede). */
   lastCmd: DriveCommand = { vx: 0, vz: 0, omega: 0 };
   /** Interpolación: pose anterior y actual. */
@@ -135,6 +137,28 @@ export class RobotPhysics {
       this.body,
     );
     pw.tag(this.intakeCol, { kind: 'robot', robot: index, part: 'bumper' });
+    // Lo desplegado como sólido (R105: hasta 12 in fuera del perímetro): la intake, de la altura
+    // de los BUMPERS hasta sus brazos sobre ellos, y el hopper que se extiende con ella. Sin esto
+    // se atravesaban el TRENCH, las paredes y los otros robots con la intake abajo.
+    const extBox = (x0: number, x1: number, y0: number, y1: number, hw: number) => {
+      const c = w.createCollider(
+        RAPIER.ColliderDesc.cuboid((x1 - x0) / 2, (y1 - y0) / 2, hw)
+          .setTranslation((x0 + x1) / 2, (y0 + y1) / 2, 0)
+          .setMass(0)
+          .setFriction(0.3)
+          .setRestitution(0.1)
+          .setCollisionGroups(GROUPS.extension)
+          .setEnabled(false),
+        this.body,
+      );
+      pw.tag(c, { kind: 'robot', robot: index, part: 'extension' });
+      this.extension.push(c);
+    };
+    if (this.intakeFront > this.outerL + 0.01) extBox(this.outerL - 0.02, this.intakeFront, by0, inch(10), this.intakeHalfW);
+    if (spec.deployedHopperIn) {
+      const [fIn, topIn] = spec.deployedHopperIn;
+      if (inch(fIn) > this.halfL) extBox(this.halfL * 0.9, inch(fIn), BUMPER_TOP, inch(topIn), this.halfW * 0.98);
+    }
     // Superestructura dentro del perímetro (hasta la altura del robot), más lo que sobresalga
     // hacia el frente por encima de los BUMPERS (p. ej. el hopper de 971)
     const fy0 = BUMPER_TOP;
@@ -234,9 +258,10 @@ export class RobotPhysics {
     let tx = cmd.vx;
     let tz = cmd.vz;
     const mag = Math.hypot(tx, tz);
-    // Empujar un montón de FUEL cuesta: las pelotas se atoran entre sí y se arrastran sobre la
-    // alfombra. Supuesto 13: −3.5 % de velocidad por FUEL empujado, hasta 40 % de la máxima.
-    const vMax = s.maxSpeed * Math.max(0.4, 1 - 0.035 * this.plow);
+    // Empujar un montón de FUEL cuesta un poco: las pelotas ruedan y se arrastran sobre la
+    // alfombra, pero 0.2 kg de espuma casi no frenan a un robot de 55 kg. Supuesto 13: −1 % de
+    // velocidad por FUEL empujado, a lo más −15 %.
+    const vMax = s.maxSpeed * Math.max(0.85, 1 - 0.01 * this.plow);
     if (mag > vMax) {
       tx *= vMax / mag;
       tz *= vMax / mag;
@@ -315,6 +340,19 @@ export class RobotPhysics {
   }
 
   intakeDeployed = false;
+
+  /** Intake/hopper fuera del perímetro (sólidos) según el despliegue. */
+  setExtended(on: boolean): void {
+    this.extended = on;
+    for (const c of this.extension) if (c.isEnabled() !== on) c.setEnabled(on);
+  }
+
+  extended = false;
+
+  /** Colisionadores que chocan con el campo y los robots (para el árbitro). */
+  solids(): RAPIER.Collider[] {
+    return this.extended ? [this.bumper, this.frame, ...this.extension] : [this.bumper, this.frame];
+  }
 
   /** Cambia a cinemático (climb) o de vuelta a dinámico. */
   setKinematic(on: boolean): void {

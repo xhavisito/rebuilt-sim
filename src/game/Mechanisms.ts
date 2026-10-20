@@ -338,8 +338,22 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   }
   if (solution) r.hoodAngle += (solution.pitch - r.hoodAngle) * Math.min(1, dt * 10);
 
-  if (!(wantShoot || wantPass) || r.spinUp < 1 || r.shootCooldown > 0) return;
-  if (ctx.fuel.robotCount(r.index) === 0) return;
+  // ---- FUEL de una ráfaga que ya estaba en el flywheel: sale aunque se suelte el gatillo
+  if (r.burst.length) {
+    const yawNow = s.type === 'turret' ? h + r.turretYaw : hs;
+    for (let k = r.burst.length - 1; k >= 0; k--) {
+      const b = r.burst[k];
+      b.delay -= dt;
+      if (b.delay > 0) continue;
+      r.burst.splice(k, 1);
+      const a = r.burstAim;
+      launchOne(r, ctx, a.kind, yawNow + a.yawRel, a.pitch, a.speed, b.lat);
+    }
+  }
+
+  if (!(wantShoot || wantPass) || r.spinUp < 1 || r.shootCooldown > 0 || r.burst.length) return;
+  const available = ctx.fuel.robotCount(r.index);
+  if (available === 0) return;
   if (ctx.requireAlign && solution && kind !== 'corral') {
     const aimYaw = s.type === 'turret' ? h + r.turretYaw : hs;
     if (Math.abs(wrap(solution.yaw - aimYaw)) > 0.09) return;
@@ -356,51 +370,86 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   } else if (solution && s.type === 'turret') yaw = solution.yaw;
   // Un shooter fijo solo puede tirar hacia su frente: si la solución cae fuera (±6°), dispara de frente.
   if (s.type === 'fixed' && solution && Math.abs(wrap(solution.yaw - hs)) < 6 * DEG) yaw = solution.yaw;
-  // Un "dumper" (shooter de varios FUEL de ancho) suelta una ráfaga: un FUEL por carril al mismo
-  // tiempo, de lado a lado del shooter; una turret doble, uno por turret. La cadencia media
-  // sigue siendo `rate` (la siguiente ráfaga espera carriles / rate).
-  const lanes = kind === 'corral' ? 1 : Math.max(1, s.lanes ?? 1);
-  const spacing = s.laneSpacingIn ? F.inch(s.laneSpacingIn) : F.FUEL_DIAMETER * 1.05;
-  const sig = 1 - s.accuracy;
-  let fired = 0;
-  for (let k = 0; k < lanes; k++) {
-    // Dispersión según la precisión del diseño (cada FUEL de la ráfaga sale un poco distinto)
-    const yk = yaw + ctx.rng.gauss() * sig * 0.07;
-    const pk = pitch + ctx.rng.gauss() * sig * 0.05;
-    const sk = speed * (1 + ctx.rng.gauss() * sig * 0.04);
-    const i = ctx.fuel.popRobot(r.index);
-    if (i === undefined) break;
-    const lv = launchVector(yk, pk, sk);
-    let start = { x: from.x + Math.cos(yk) * 0.05, y: from.y, z: from.z - Math.sin(yk) * 0.05 };
-    if (lanes > 1) {
-      const lat = (k - (lanes - 1) / 2) * spacing;
-      start = { x: start.x + Math.sin(yaw) * lat, y: start.y, z: start.z + Math.cos(yaw) * lat };
-    }
-    if (kind === 'corral') {
-      // La abertura del CORRAL está dividida por un tubo al centro: alterna entre las dos mitades.
-      r.corralSide = -r.corralSide;
-      const lat = r.corralSide * Math.min(0.19, F.inch(r.spec.intake.widthIn) / 2 - 0.05);
-      const fwd = r.phys.outerL + F.FUEL_RADIUS + 0.03;
-      start = { x: p.x + Math.cos(h) * fwd + Math.sin(h) * lat, y: F.FUEL_RADIUS + 0.01, z: p.z - Math.sin(h) * fwd + Math.cos(h) * lat };
-    }
-    ctx.fuel.launch(
-      i,
-      start,
-      { x: lv.x + v.x, y: kind === 'corral' ? 0.6 : lv.y, z: lv.z + v.z },
-      kind === 'corral' ? null : backspinAxis(yk, s.backspin),
-      kind === 'corral' ? 0 : FLAG_SHOT,
-    );
-    ctx.fuel.shotBy[i] = r.index;
-    ctx.fuel.shotTime[i] = ctx.time;
-    ctx.fuel.shotOrigin[i * 2] = p.x;
-    ctx.fuel.shotOrigin[i * 2 + 1] = p.z;
-    ctx.fuel.lastTouch[i] = r.index;
-    ctx.fuel.lastTouchTime[i] = ctx.time;
-    r.stats.fuelShot++;
-    ctx.onLaunch?.(r, i, kind);
-    fired++;
+  if (kind === 'corral') {
+    launchOne(r, ctx, kind, yaw, pitch, speed, 0);
+    r.shootCooldown = 1 / Math.max(0.5, s.rate);
+    return;
   }
-  if (fired) r.shootCooldown = lanes / Math.max(0.5, s.rate);
+  // Un "dumper" (shooter de varios FUEL de ancho) no suelta filas perfectas: en cada ráfaga
+  // llegan al flywheel de 1 a `lanes` FUEL (los que alcance a empujar el indexer), en lugares
+  // al azar a lo ancho del shooter y con unas centésimas de diferencia. Una turret doble tira
+  // con una, la otra o ambas. La cadencia media sigue siendo `rate`.
+  const lanes = Math.max(1, s.lanes ?? 1);
+  const n = Math.min(available, ctx.rng.int(1, lanes));
+  const lats = burstPositions(lanes, n, s.laneSpacingIn ? F.inch(s.laneSpacingIn) : 0, ctx.rng);
+  r.burstAim = { kind, yawRel: wrap(yaw - yawShooter), pitch, speed };
+  lats.forEach((lat, k) => {
+    // el primero sale ya; los demás, hasta 70 ms después (el indexer los empuja uno tras otro)
+    if (k === 0) launchOne(r, ctx, kind, yaw, pitch, speed, lat);
+    else r.burst.push({ delay: ctx.rng.range(0.012, 0.07), lat });
+  });
+  r.shootCooldown = (n / Math.max(0.5, s.rate)) * ctx.rng.range(0.75, 1.25);
+}
+
+/**
+ * Posiciones laterales (m, + = a la izquierda del shooter) de `n` FUEL de una ráfaga. Dos turrets
+ * (`turretSpacing` > 0): una por turret. Dumper: lugares al azar a lo ancho (`lanes` FUEL), sin
+ * encimarse.
+ */
+export function burstPositions(lanes: number, n: number, turretSpacing: number, rng: Rng): number[] {
+  if (lanes <= 1) return [0];
+  if (turretSpacing > 0) {
+    const slots = Array.from({ length: lanes }, (_, k) => (k - (lanes - 1) / 2) * turretSpacing);
+    rng.shuffle(slots);
+    return slots.slice(0, n);
+  }
+  const D = F.FUEL_DIAMETER * 1.02;
+  const half = ((lanes - 1) * D * 1.03) / 2;
+  // n puntos al azar en el hueco que sobra (ordenados) + un FUEL de separación entre cada uno:
+  // nunca se enciman y cualquier acomodo es igual de probable
+  const slack = Math.max(0, 2 * half - (Math.min(n, lanes) - 1) * D);
+  const u = Array.from({ length: Math.min(n, lanes) }, () => rng.range(0, slack)).sort((a, b) => a - b);
+  return rng.shuffle(u.map((x, k) => x + k * D - half));
+}
+
+/** Lanza un FUEL del hopper desde el shooter (o lo entrega al CORRAL). */
+function launchOne(r: Robot, ctx: MechContext, kind: 'shot' | 'pass' | 'corral', yaw: number, pitch: number, speed: number, lat: number): void {
+  const i = ctx.fuel.popRobot(r.index);
+  if (i === undefined) return;
+  const s = r.spec.shooter;
+  const h = r.phys.heading();
+  const p = r.phys.curPos;
+  const v = r.phys.velocity();
+  const from = shooterOrigin(r, h);
+  // Dispersión según la precisión del diseño (cada FUEL sale un poco distinto)
+  const sig = 1 - s.accuracy;
+  const yk = yaw + ctx.rng.gauss() * sig * 0.07;
+  const pk = pitch + ctx.rng.gauss() * sig * 0.05;
+  const sk = speed * (1 + ctx.rng.gauss() * sig * 0.04);
+  const lv = launchVector(yk, pk, sk);
+  let start = { x: from.x + Math.cos(yk) * 0.05 + Math.sin(yaw) * lat, y: from.y, z: from.z - Math.sin(yk) * 0.05 + Math.cos(yaw) * lat };
+  if (kind === 'corral') {
+    // La abertura del CORRAL está dividida por un tubo al centro: alterna entre las dos mitades.
+    r.corralSide = -r.corralSide;
+    const cl = r.corralSide * Math.min(0.19, F.inch(r.spec.intake.widthIn) / 2 - 0.05);
+    const fwd = r.phys.outerL + F.FUEL_RADIUS + 0.03;
+    start = { x: p.x + Math.cos(h) * fwd + Math.sin(h) * cl, y: F.FUEL_RADIUS + 0.01, z: p.z - Math.sin(h) * fwd + Math.cos(h) * cl };
+  }
+  ctx.fuel.launch(
+    i,
+    start,
+    { x: lv.x + v.x, y: kind === 'corral' ? 0.6 : lv.y, z: lv.z + v.z },
+    kind === 'corral' ? null : backspinAxis(yk, s.backspin),
+    kind === 'corral' ? 0 : FLAG_SHOT,
+  );
+  ctx.fuel.shotBy[i] = r.index;
+  ctx.fuel.shotTime[i] = ctx.time;
+  ctx.fuel.shotOrigin[i * 2] = p.x;
+  ctx.fuel.shotOrigin[i * 2 + 1] = p.z;
+  ctx.fuel.lastTouch[i] = r.index;
+  ctx.fuel.lastTouchTime[i] = ctx.time;
+  r.stats.fuelShot++;
+  ctx.onLaunch?.(r, i, kind);
 }
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));

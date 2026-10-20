@@ -4,7 +4,7 @@
  * y esquema 2D (vista superior y lateral). Se guarda en localStorage.
  */
 import * as F from '../config/field';
-import { allRobots, fitsUnderTrench, loadCustomRobots, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type RobotSpec } from '../config/robots';
+import { allRobots, DEFAULT_ROBOT_ID, fitsUnderTrench, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type RobotSpec } from '../config/robots';
 import { bind, esc, num, seg, select, type Opt } from './forms';
 import { t, tx } from './i18n';
 import type { Showroom } from '../render/Showroom';
@@ -20,7 +20,7 @@ export class RobotEditor {
   ) {}
 
   open(id?: string): void {
-    this.spec = robotById(id ?? 'balanced');
+    this.spec = id === 'new' ? newRobotTemplate() : robotById(id ?? DEFAULT_ROBOT_ID);
     this.render();
   }
 
@@ -31,7 +31,10 @@ export class RobotEditor {
   private render(): void {
     const s = this.spec;
     const ro = this.isPreset;
-    const opts: Opt[] = allRobots().map((r) => ({ value: r.id, label: `${ROBOT_PRESETS.some((p) => p.id === r.id) ? '🔒 ' : ''}${r.name} (${r.teamNumber})` }));
+    const list = allRobots();
+    const opts: Opt[] = list.map((r) => ({ value: r.id, label: `${ROBOT_PRESETS.some((p) => p.id === r.id) ? '🔒 ' : ''}${r.name} (${r.teamNumber})` }));
+    if (!list.some((r) => r.id === s.id)) opts.push({ value: s.id, label: `${s.name} *` }); // nuevo, sin guardar
+    opts.push({ value: 'new', label: `＋ ${t('newRobot')}` });
     this.root.innerHTML = `<div class="inner">
       <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
       <h1>${t('robotEditor')}</h1>
@@ -82,7 +85,7 @@ export class RobotEditor {
     r.querySelector('[data-back]')!.addEventListener('click', () => this.onBack());
     bind(r, (name, v) => {
       if (name === 'pick') {
-        this.spec = robotById(String(v));
+        this.spec = v === 'new' ? newRobotTemplate() : robotById(String(v));
         this.render();
         return;
       }
@@ -127,13 +130,14 @@ export class RobotEditor {
       this.update();
     });
     r.querySelector('[data-saveas]')!.addEventListener('click', () => {
-      this.spec = { ...structuredClone(this.spec), id: `custom-${Date.now().toString(36)}`, name: this.isPreset ? `${this.spec.name} (mío)` : this.spec.name };
+      // Copia propia: ya no es el robot real (sin ficha de la galería), aunque conserve su modelo
+      this.spec = { ...structuredClone(this.spec), id: `custom-${Date.now().toString(36)}`, name: this.isPreset ? `${this.spec.name} (mío)` : this.spec.name, real: undefined };
       this.persist();
     });
     r.querySelector('[data-save]')?.addEventListener('click', () => this.persist());
     r.querySelector('[data-del]')?.addEventListener('click', () => {
       saveCustomRobots(loadCustomRobots().filter((x) => x.id !== this.spec.id));
-      this.open('balanced');
+      this.open(DEFAULT_ROBOT_ID);
     });
     r.querySelector('[data-use]')!.addEventListener('click', () => {
       if (validateSpec(this.spec).some((i) => i.fatal)) return;

@@ -5,13 +5,18 @@ const browser = await chromium.launch({ args: ['--use-angle=vulkan', '--enable-g
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.log('PAGEERR', e.message));
 page.on('console', (m) => m.type() === 'error' && console.log('ERR', m.text()));
-// Fácil = robots genéricos en orden fijo (rojo 3 = Escalador L3, azul 1 = Defensor L1)
+// Fácil = robots reales en orden fijo; al rojo 3 y al azul 1 se les da un climber (L3 y L1)
 await page.goto('http://localhost:4191/?mode=match&cam=broadcast&difficulty=easy');
 await page.waitForFunction(() => !document.getElementById('loading'));
 await page.waitForTimeout(3600);
 const E = (f) => page.evaluate(f);
 // Escenario determinista: sin IA ni rutinas de AUTO (los robots quedan quietos)
 await E(() => { const s = window.app.session; s.ais.clear(); s.autos.clear(); });
+await E(() => {
+  const s = window.app.session;
+  s.robots[2].spec.climb = { maxLevel: 3, timeL1: 2.2, timeL2: 4.8, timeL3: 7.5 };
+  s.robots[3].spec.climb = { maxLevel: 1, timeL1: 3.5, timeL2: 99, timeL3: 99 };
+});
 // Robots: 0..2 rojos, 3..5 azules. Jugador = azul DS2 (índice 4).
 // AUTO: el robot azul 3 (DS1) trepa L1 en su TOWER (climber manual vía cmd)
 await E(() => { const s = window.app.session; const r = s.robots[3]; const tw = { x: -8.27 + 1.07 + r.phys.outerL + 0.05, z: 0.29 }; r.phys.teleport(tw.x, tw.z, Math.PI); window.__climb3 = true; const orig = s.step; });
