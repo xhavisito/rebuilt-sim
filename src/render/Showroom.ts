@@ -125,10 +125,12 @@ export class Showroom {
   /**
    * Miniatura (data URL) del robot en la tornamesa, con ángulo fijo de 3/4. Se cachea.
    */
-  snapshot(spec: RobotSpec, alliance: Alliance, w = 360, h = 240): string {
+  async snapshot(spec: RobotSpec, alliance: Alliance, w = 360, h = 240): Promise<string> {
     const k = JSON.stringify(spec) + alliance + w + 'x' + h;
     const hit = this.thumbs.get(k);
     if (hit) return hit;
+    const view = new RobotView(spec, alliance);
+    await view.ready;
     if (!this.thumbRenderer) {
       const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       r.setClearColor(0x000000, 0);
@@ -142,7 +144,6 @@ export class Showroom {
     const r = this.thumbRenderer;
     r.setPixelRatio(1);
     r.setSize(w, h, false);
-    const view = new RobotView(spec, alliance);
     view.marker.visible = false;
     view.update(
       { intakeDeploy: 1, turretYaw: 0.5, hoodAngle: 1.0, climbHeight: 0, hopper: Math.min(spec.hopperCapacity, 30), enabled: true, wheelYaw: 0, wheelSpin: 0, intakeSpin: 0, flywheelSpin: 0 },

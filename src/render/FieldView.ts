@@ -174,7 +174,7 @@ export class FieldView {
     // Piso del recinto (fuera del campo) y ALLIANCE AREAS
     const outside = new THREE.Mesh(
       new THREE.PlaneGeometry(60, 40),
-      new THREE.MeshStandardMaterial({ color: 0x101217, roughness: 0.95 }),
+      new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.55, metalness: 0.1 }), // concreto pulido
     );
     outside.rotation.x = -Math.PI / 2;
     outside.position.y = -0.004;

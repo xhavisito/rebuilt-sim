@@ -19,23 +19,28 @@ export class Stadium {
   private screenCanvas: HTMLCanvasElement;
   private screenTex: THREE.CanvasTexture;
   private lastScreen = '';
+  private ledBoards: THREE.Texture[] = [];
 
   constructor() {
     this.group.name = 'stadium';
     const rng = new Rng(11);
-    // ---- Gradas: filas escalonadas en los lados largos y detrás de las ALLIANCE AREAS
+    // ---- Gradas de aluminio (como en los eventos): por fila, tabla de asiento y de pies con
+    //      hueco entre filas; abajo una estructura oscura (no se ve a través).
     const tierGeos: THREE.BufferGeometry[] = [];
+    const seatGeos: THREE.BufferGeometry[] = [];
     const seats: Array<{ x: number; y: number; z: number; ry: number }> = [];
     const rows = 12;
+    const place = (g: THREE.BufferGeometry, ry: number, cx: number, cz: number) => g.rotateY(ry).translate(cx, 0, cz);
     const addStand = (cx: number, cz: number, len: number, ry: number, start: number) => {
       for (let r = 0; r < rows; r++) {
         const d = start + r * 0.85;
         const h = 0.45 + r * 0.42;
-        const g = new THREE.BoxGeometry(len, h, 0.85);
-        g.translate(0, h / 2, d + 0.42);
-        g.rotateY(ry);
-        g.translate(cx, 0, cz);
-        tierGeos.push(g);
+        // estructura escalonada oscura bajo las tablas
+        tierGeos.push(place(new THREE.BoxGeometry(len, h - 0.12, 0.85).translate(0, (h - 0.12) / 2, d + 0.42), ry, cx, cz));
+        // asiento (atrás de la fila) y tabla de pies (adelante); barandal en la primera fila
+        seatGeos.push(place(new THREE.BoxGeometry(len, 0.045, 0.3).translate(0, h, d + 0.62), ry, cx, cz));
+        seatGeos.push(place(new THREE.BoxGeometry(len, 0.03, 0.34).translate(0, h - 0.1, d + 0.2), ry, cx, cz));
+        if (r === 0) seatGeos.push(place(new THREE.BoxGeometry(len, 0.05, 0.05).translate(0, h + 0.55, d - 0.05), ry, cx, cz));
         for (let s = -len / 2 + 0.35; s < len / 2 - 0.35; s += 0.55) {
           if (rng.next() < 0.12) continue;
           const local = new THREE.Vector3(s + rng.range(-0.08, 0.08), h, d + 0.45).applyAxisAngle(new THREE.Vector3(0, 1, 0), ry);
@@ -47,14 +52,25 @@ export class Stadium {
     addStand(0, 0, 30, Math.PI, F.HALF_W + 4.5); // lado −Z (detrás de la mesa/pantalla)
     addStand(0, 0, 11, Math.PI / 2, F.HALF_L + 5.2); // detrás de la alianza roja
     addStand(0, 0, 11, -Math.PI / 2, F.HALF_L + 5.2); // detrás de la alianza azul
-    const stands = new THREE.Mesh(mergeGeometries(tierGeos)!, new THREE.MeshStandardMaterial({ color: 0x1a2030, roughness: 0.9 }));
-    stands.receiveShadow = false;
-    this.group.add(stands);
+    const stands = new THREE.Mesh(mergeGeometries(tierGeos)!, new THREE.MeshStandardMaterial({ color: 0x101217, roughness: 0.95 }));
+    const seatBoards = new THREE.Mesh(mergeGeometries(seatGeos)!, new THREE.MeshStandardMaterial({ color: 0x9aa1aa, metalness: 0.7, roughness: 0.38 }));
+    this.group.add(stands, seatBoards);
+    // Tableros de LED al frente de las gradas largas (franja emisiva con texto genérico)
+    for (const [len, ry, start] of [
+      [30, 0, F.HALF_W + 3.0],
+      [30, Math.PI, F.HALF_W + 4.5],
+    ] as Array<[number, number, number]>) {
+      const tex = ledBoardTexture();
+      tex.repeat.set(len / 6, 1);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false });
+      const g = place(new THREE.PlaneGeometry(len, 0.42).rotateY(Math.PI).translate(0, 0.62, start - 0.02), ry, 0, 0);
+      this.group.add(new THREE.Mesh(g, mat));
+      this.ledBoards.push(tex);
+    }
 
-    // ---- Público: torso + cabeza, una sola InstancedMesh con fase por instancia
-    // Torso (playera de color) y cabeza (tono de piel) en dos InstancedMesh con la misma matriz
-    const personGeo = new THREE.BoxGeometry(0.36, 0.5, 0.22).translate(0, 0.25, 0);
-    const headGeo = new THREE.SphereGeometry(0.11, 6, 4).translate(0, 0.62, 0);
+    // ---- Público sentado: torso redondeado + cabeza, en dos InstancedMesh con la misma matriz
+    const personGeo = new THREE.CapsuleGeometry(0.15, 0.26, 3, 8).scale(1, 1, 0.75).translate(0, 0.33, 0);
+    const headGeo = new THREE.SphereGeometry(0.1, 10, 8).translate(0, 0.66, 0.01);
     rng.shuffle(seats);
     const n = Math.min(MAX_CROWD, seats.length);
     const phase = new Float32Array(n);
@@ -83,7 +99,8 @@ export class Stadium {
     const skins = [0x8d5524, 0xc68642, 0xe0ac69, 0xf1c27d, 0xffdbac, 0x5c3a1e];
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
-    const palette = [0xd32f2f, 0x1e66d0, 0xf2c400, 0xffffff, 0x2e7d32, 0x6a1b9a, 0xef6c00, 0x37474f, 0x00897b];
+    // Ropa: sobre todo oscura/neutra, con playeras de equipo (rojo, azul, amarillo, verde…)
+    const palette = [0x2b2f36, 0x3a3f47, 0x1f2329, 0x55595f, 0x8b8f96, 0xc9ccd1, 0x23344f, 0x7a1f1f, 0x1d3f7a, 0xb08a1a, 0x2f5a35, 0x4a2a5e];
     const c = new THREE.Color();
     for (let i = 0; i < n; i++) {
       const s = seats[i];
@@ -92,7 +109,7 @@ export class Stadium {
       m.compose(new THREE.Vector3(s.x, s.y, s.z), q, new THREE.Vector3(sc, sc, sc));
       this.crowd.setMatrixAt(i, m);
       this.heads.setMatrixAt(i, m);
-      c.setHex(palette[Math.floor(rng.next() * palette.length)]).multiplyScalar(rng.range(0.45, 0.85));
+      c.setHex(palette[Math.floor(rng.next() * palette.length)]).multiplyScalar(rng.range(0.55, 0.9));
       this.crowd.setColorAt(i, c);
       c.setHex(skins[Math.floor(rng.next() * skins.length)]);
       this.heads.setColorAt(i, c);
@@ -144,6 +161,7 @@ export class Stadium {
 
   update(dt: number, time: number): void {
     this.excite = Math.max(0, this.excite - dt * 0.35);
+    for (const t of this.ledBoards) t.offset.x = (time * 0.04) % 1;
     for (const sh of this.crowdShaders) {
       sh.uniforms.uTime.value = time;
       sh.uniforms.uExcite.value = this.excite;
@@ -179,4 +197,26 @@ export class Stadium {
     g.fillText(center, W / 2, H / 2);
     this.screenTex.needsUpdate = true;
   }
+}
+
+/** Franja de LED genérica (sin logos): "REBUILT" sobre un degradado rojo → azul. */
+function ledBoardTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 72;
+  const g = c.getContext('2d')!;
+  const grd = g.createLinearGradient(0, 0, 1024, 0);
+  grd.addColorStop(0, '#8e1414');
+  grd.addColorStop(0.5, '#0b0d12');
+  grd.addColorStop(1, '#0d3a8e');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 1024, 72);
+  g.fillStyle = '#ffffff';
+  g.font = '400 52px Anton, Impact, sans-serif';
+  g.textBaseline = 'middle';
+  for (const [x, t] of [[40, 'REBUILT'], [380, '2026 SEASON'], [760, 'REBUILT']] as Array<[number, string]>) g.fillText(t, x, 38);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
 }

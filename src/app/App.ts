@@ -5,7 +5,7 @@ import { AudioEngine } from '../audio/Audio';
 import { DIFFICULTY } from '../ai/RobotAI';
 import * as THREE from 'three';
 import * as F from '../config/field';
-import { robotById, ROBOT_PRESETS, TOP_ROBOTS, type RobotSpec } from '../config/robots';
+import { CAD_ROBOTS, robotById, ROBOT_PRESETS, type RobotSpec } from '../config/robots';
 import type { Tournament, TMatch } from '../core/tournament';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
@@ -779,7 +779,7 @@ export class App {
  * Einstein = los mejores robots de la temporada. Sin repetir el robot del jugador.
  */
 function aiRobotPool(difficulty: string, playerId: string): RobotSpec[] {
-  const top = TOP_ROBOTS.filter((r) => r.id !== playerId);
+  const top = CAD_ROBOTS.filter((r) => r.id !== playerId);
   const generic = ROBOT_PRESETS.filter((r) => !r.real && r.id !== playerId);
   const shuffle = <T,>(a: T[]) => a.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
   if (difficulty === 'easy') return generic; // orden fijo (lo usan los escenarios e2e)

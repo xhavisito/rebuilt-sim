@@ -131,17 +131,17 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 13. **Robot contra FUEL**: las ruedas no colisionan con el FUEL; lo empuja la cara vertical de los
     BUMPERS, que un "faldón" (solo FUEL) baja hasta 0.5 in del piso, y el robot domina al FUEL
     (grupo de dominancia de Rapier: 0.2 kg de espuma no levantan a un robot de 55 kg). Así el
-    robot no se trepa al FUEL ni lo hunde en la alfombra. Los robots usan soft-CCD de Rapier
-    (predicción de contactos de 15 cm, solo en los robots; en el FUEL creaba contactos "fantasma" con el embudo del HUB): a 60 Hz un robot avanza 8 cm por paso y sin eso
-    se metía dentro de las pelotas en vez de empujarlas. La intake desplegada tiene su propio
-    colisionador (solo FUEL) donde se ve el rodillo, y captura lo que toca.
-14. **Robots de la temporada** (`TOP_ROBOTS` en `src/config/robots.ts`): 4414, 254, 7769, 1323,
-    2056, 1690, 2481, 2910 y 1678, recreados con el ranking EPA de Statbotics y las fichas del
-    "FRC 2026 REBUILT Robot Study Dashboard" (tech binders, CAD, videos Behind the Bumpers) y
-    fotos de The Blue Alliance / Chief Delphi. Aspecto aproximado; altura exacta, nivel de climb
-    y algunas tasas son estimados. El perímetro se ajusta a R104 (≤ 110 in). Empujar FUEL frena: −3.5 % de velocidad máxima por
-    pelota pegada al BUMPER (0.5 por cada una de las dos filas siguientes; 0.3 si la intake
-    desplegada la está tragando), hasta 40 % de la velocidad máxima. Calibrado a ojo.
+    robot no se trepa al FUEL ni lo hunde en la alfombra. Con un montón denso el solver no
+    alcanza a sacar todas las pelotas a tiempo (el robot "se deslizaba" a través de ellas), así
+    que después de cada paso `shoveFuel` saca por el lado más cercano cualquier FUEL que haya
+    quedado dentro de la huella (o del rodillo de la intake desplegada) con la velocidad del
+    robot. La intake desplegada tiene su propio colisionador (solo FUEL) y captura lo que toca.
+14. **Robots reales** (`CAD_ROBOTS` en `src/config/robots.ts`): 1678, 5000, 604, 6328, 971,
+    341, 190 y 4915, con el modelo 3D que cada equipo publicó en su repo de código (asset de
+    AdvantageScope; licencias en `public/robots/LICENSES.md`), simplificado con
+    `scripts/robots/` (fetch-sources → build-models). Medidas del chasis y altura del CAD;
+    rendimiento de sus tech binders / Robot Study Dashboard (estimado si no se publicó). Las
+    partes móviles del CAD se muestran en su posición de diseño (sin animar).
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.

@@ -24,11 +24,10 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
 - **Modos**: práctica libre, match 3 vs 3 contra IA (Fácil → Einstein), multijugador local 2–4
   (pantalla dividida o cámara compartida), torneo rápido (Qualifications, rankings, alianzas y
   Playoffs), espectador IA vs IA, diseñador de AUTO y editor de robots.
-- **Los mejores robots de 2026** recreados: 4414 Rip Current y 1323 MadTown (campeones), 254
-  Overload, 7769 CHUNK, 2056 Desperate Measures, 1690 Kepler, 2481 Roboteers, 2910 ReBlitz y
-  1678 Limestone, con su tipo de shooter (turret o "dumper" de varios carriles), capacidad y
-  velocidad estimadas de datos públicos. Galería para elegirlos desde el menú. En Difícil y
-  Einstein la IA también los usa.
+- **Robots reales de 2026 con su CAD**: 1678 Limestone, 5000 Icarus, 604 Toploader, 6328 Darwin,
+  971 Mixtape, 341 Miss Daisy, 190 Turnover y 4915 Artemis, con el modelo 3D que cada equipo
+  publicó en su repositorio de código (simplificado para la web), su tipo de shooter, capacidad
+  y velocidad. Galería para elegirlos desde el menú. En Difícil y Einstein la IA también los usa.
 - **6 cámaras**: tercera persona (como en MoSim: detrás del robot, siempre mirando al campo
   contrario, no gira con el robot), DRIVER STATION, desde el robot (POV), superior,
   transmisión y libre (práctica). La rueda del mouse acerca/aleja la tercera persona.
@@ -146,7 +145,10 @@ contador lógico y los 504 FUEL se dibujan en una sola malla instanciada.
 - Códigos de AprilTag 36h11: [AprilRobotics/apriltag](https://github.com/AprilRobotics/apriltag) (BSD-2).
 - Posiciones de AprilTags: layout "2026-rebuilt-welded" de [WPILib](https://github.com/wpilibsuite/allwpilib) (BSD).
 - Todo el audio es sintetizado en el navegador; todas las texturas se generan con código.
-- Robots de la temporada: recreaciones de fan de los diseños de los equipos 4414, 254, 7769,
-  1323, 2056, 1690, 2481, 2910 y 1678 (los nombres y números son de sus equipos). Datos:
-  [Statbotics](https://www.statbotics.io), [FRC 2026 REBUILT Robot Study Dashboard](https://dmeglan.github.io/frc2026-rebuilt-dashboard/),
-  [The Blue Alliance](https://www.thebluealliance.com) y [Chief Delphi](https://www.chiefdelphi.com).
+- Modelos 3D de robots: publicados por los equipos 1678, 5000, 604, 6328, 971, 341, 190 y 4915
+  en sus repositorios de código (licencias MIT / BSD; detalle y textos en
+  [public/robots/LICENSES.md](public/robots/LICENSES.md)). Datos de rendimiento:
+  [Statbotics](https://www.statbotics.io) y el
+  [FRC 2026 REBUILT Robot Study Dashboard](https://dmeglan.github.io/frc2026-rebuilt-dashboard/).
+  Para regenerarlos: `node scripts/robots/fetch-sources.mjs <dir>` y
+  `RATIO=0.25 node scripts/robots/build-models.mjs <dir>`.

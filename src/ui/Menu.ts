@@ -343,19 +343,18 @@ export class Screens {
       if (first) showDetail(first.id);
       // Miniaturas una por una (no congela la pantalla)
       const imgs = Array.from(r.querySelectorAll<HTMLImageElement>('[data-thumb]'));
-      const next = () => {
+      const next = async () => {
         const img = imgs.shift();
         if (!img || !img.isConnected) return;
         const sp = all.find((x) => x.id === img.dataset.thumb);
-        if (sp) img.src = this.showroom.snapshot(sp, m.alliance);
+        if (sp) img.src = await this.showroom.snapshot(sp, m.alliance);
         setTimeout(next, 0);
       };
       setTimeout(next, 30);
     };
     const badge = (r: RobotSpec) => {
       if (!r.real) return '';
-      const champ = r.teamNumber === 4414 || r.teamNumber === 1323 || r.teamNumber === 4065 || r.teamNumber === 1538;
-      return `<span class="rc-badge ${champ ? 'gold' : ''}">${champ ? `🏆 ${t('champion2026')}` : 'TOP 2026'}</span>`;
+      return `<span class="rc-badge gold">${t('realCad')}</span>`;
     };
     const chips = (r: RobotSpec) => {
       const lanes = r.shooter.lanes ?? 1;

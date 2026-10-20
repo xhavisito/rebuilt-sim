@@ -29,6 +29,8 @@ export interface AiContext {
   towerOcc: Record<Alliance, TowerOccupancy>;
   /** Segundos de PIN que lleva este robot como "pinner" (0 si ninguno). */
   pinSeconds(robot: number): number;
+  /** FUEL "apartado" por cada robot de la IA (índice de FUEL → robot): no persiguen el mismo. */
+  claims: Map<number, number>;
 }
 
 type State = 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'idle';
@@ -45,6 +47,8 @@ export class RobotAI {
   private nav: Navigator;
   private thinkT = 0;
   private targetBall = -1;
+  /** Hace cuánto eligió su FUEL objetivo (lo re-evalúa cada ~1.5 s, no en cada decisión). */
+  private targetAge = 0;
   private target: Pt | null = null;
   private retreatT = 0;
   private defendTarget = -1;
@@ -108,8 +112,9 @@ export class RobotAI {
     switch (this.state) {
       case 'collect': {
         r.intakeOn = true;
+        this.targetAge += dt;
         if (this.targetBall >= 0 && f.state[this.targetBall] !== FuelState.Field) this.targetBall = -1;
-        if (this.targetBall < 0) this.pickBall();
+        if (this.targetBall < 0 || this.targetAge > 1.5) this.pickBall();
         if (this.targetBall >= 0) {
           const o = this.targetBall * 3;
           // apunta un poco más allá de la pelota para que entre en la intake
@@ -120,8 +125,9 @@ export class RobotAI {
           const dz = bz - p.z;
           const dd = Math.hypot(dx, dz) || 1;
           this.nav.plan({ x: bx + (dx / dd) * 0.25, z: bz + (dz / dd) * 0.25 });
+          // La intake va al frente, hacia donde avanza (al final del acercamiento = hacia la pelota)
           const near = dd < 1.6;
-          const res = this.nav.follow(dt, others, { speed: near ? speed * 0.75 : speed, heading: near ? Math.atan2(-dz, dx) : null, tol: 0.1 });
+          const res = this.nav.follow(dt, others, { speed: near ? speed * 0.8 : speed, heading: null, tol: 0.1 });
           cmd.drive = res.cmd;
           if (res.arrived) this.targetBall = -1;
         }
@@ -136,7 +142,9 @@ export class RobotAI {
         const p = r.phys.curPos;
         const faceHub = r.lastSolution?.yaw ?? Math.atan2(-(hub.z - p.z), hub.x - p.x);
         const inZone = r.alliance === 'blue' ? p.x - r.phys.outerL < F.STARTING_LINE_X_BLUE - 0.15 : p.x + r.phys.outerL > -F.STARTING_LINE_X_BLUE + 0.15;
-        const res = this.nav.follow(dt, others, { speed, heading: inZone ? faceHub : null, tol: 0.35 });
+        // Shooter fijo: el chasis apunta al HUB; con turret el chasis conserva su rumbo
+        const turret = r.spec.shooter.type === 'turret';
+        const res = this.nav.follow(dt, others, { speed, heading: turret ? (inZone ? 'keep' : null) : inZone ? faceHub : null, tol: 0.35 });
         cmd.drive = res.cmd;
         // Dispara (también en movimiento) dentro de su zona y si el HUB contará el FUEL
         const tof = r.lastSolution?.tof ?? 1.0;
@@ -253,8 +261,17 @@ export class RobotAI {
     if (this.ctx.rng.next() < this.d.mistakes * 0.3) this.targetBall = -1;
   }
 
-  /** FUEL más conveniente: cerca, en su lado o en la NEUTRAL ZONE, lejos de las salidas del HUB. */
+  /**
+   * FUEL más conveniente: cerca, de preferencia enfrente (no gira de más), en su lado o en la
+   * NEUTRAL ZONE, lejos de las salidas del HUB. Conserva el objetivo actual salvo que otro
+   * sea claramente mejor (un piloto no cambia de pelota a cada rato).
+   */
   private pickBall(): void {
+    this.targetAge = 0;
+    const prev = this.targetBall;
+    const claims = this.ctx.claims;
+    if (prev >= 0 && claims.get(prev) === this.r.index) claims.delete(prev);
+    const h0 = this.r.phys.heading();
     const f = this.ctx.fuel;
     const r = this.r;
     const p = r.phys.curPos;
@@ -275,6 +292,8 @@ export class RobotAI {
       if (y > 0.2) continue;
       const zx = zoneOf(x);
       if (zx === oppZone) continue;
+      const owner = claims.get(i);
+      if (owner !== undefined && owner !== r.index) continue;
       // lejos de las salidas de los HUBS (G408) y de las estructuras
       if (Math.abs(Math.abs(x) - Math.abs(F.HUB_CENTER_X_BLUE)) < 1.0 && Math.abs(z) < 1.0) continue;
       if (Math.abs(Math.abs(x) - Math.abs(F.HUB_CENTER_X_BLUE)) < 0.8) continue;
@@ -286,13 +305,23 @@ export class RobotAI {
         if (Math.hypot(x - tw.cx, z - tw.cz) < 2.2) continue;
       }
       let c = Math.hypot(x - p.x, z - p.z);
+      // girar cuesta: ~0.5 m por cada radián de giro hacia la pelota
+      const turn = Math.abs(Math.atan2(Math.sin(Math.atan2(-(z - p.z), x - p.x) - h0), Math.cos(Math.atan2(-(z - p.z), x - p.x) - h0)));
+      c += turn * 0.5;
+      if (i === prev) c -= 0.8; // histéresis
       if (zx !== myZone) c += 2.2;
-      for (const a of allies) if (Math.hypot(a.phys.curPos.x - x, a.phys.curPos.z - z) < 1.2) c += 2.5;
+      // FUEL más cerca de un compañero que de mí: que lo tome él (se reparten el campo)
+      for (const a of allies) {
+        const da = Math.hypot(a.phys.curPos.x - x, a.phys.curPos.z - z);
+        if (da < 1.2) c += 2.5;
+        else if (da < Math.hypot(x - p.x, z - p.z) - 0.5) c += 1.2;
+      }
       if (c < bestC) {
         bestC = c;
         best = i;
       }
     }
     this.targetBall = best;
+    if (best >= 0) claims.set(best, r.index);
   }
 }

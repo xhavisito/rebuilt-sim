@@ -73,6 +73,63 @@ export function plowLoad(r: Robot, fuel: FuelSystem): number {
   return n;
 }
 
+/**
+ * Ningún FUEL puede quedar dentro del robot. Con un montón denso el solver no alcanza a
+ * empujar todas las pelotas a tiempo y el robot "se desliza" a través de ellas; después de
+ * cada paso, las que quedaron dentro de la huella (BUMPERS, o hasta el rodillo si la intake
+ * está desplegada) salen por el lado más cercano con la velocidad del robot en esa dirección.
+ */
+export function shoveFuel(r: Robot, fuel: FuelSystem): void {
+  const ph = r.phys;
+  if (ph.isKinematic()) return;
+  const R = F.FUEL_RADIUS;
+  const p = ph.body.translation();
+  const v = ph.body.linvel();
+  const h = ph.heading();
+  const c = Math.cos(h);
+  const sn = Math.sin(h);
+  const front = ph.intakeDeployed ? Math.max(ph.outerL, ph.intakeFront) : ph.outerL;
+  const ex = Math.max(front, ph.outerL);
+  const reach = Math.hypot(ex, ph.outerW) + R;
+  const maxY = p.y + ph.height + R;
+  fuel.forEachNear(p.x, p.z, reach, (i) => {
+    const b = fuel.bodies[i];
+    const t = b.translation();
+    if (t.y > maxY || t.y < p.y - 0.05) return;
+    const dx = t.x - p.x;
+    const dz = t.z - p.z;
+    // marco local: x adelante, z derecha
+    const lx = dx * c - dz * sn;
+    const lz = dx * sn + dz * c;
+    const fx = lx >= 0 ? front : ph.outerL;
+    const px = fx + R - Math.abs(lx); // penetración en x (por el lado de lx)
+    const pz = ph.outerW + R - Math.abs(lz);
+    if (px <= 0.002 || pz <= 0.002) return;
+    // Sale por el eje de menor penetración (con un poco de holgura)
+    let nlx = lx;
+    let nlz = lz;
+    let nx: number;
+    let nz: number;
+    if (px < pz) {
+      nlx = Math.sign(lx || 1) * (fx + R + 0.003);
+      [nx, nz] = [Math.sign(lx || 1) * c, Math.sign(lx || 1) * sn];
+    } else {
+      nlz = Math.sign(lz || 1) * (ph.outerW + R + 0.003);
+      [nx, nz] = [Math.sign(lz || 1) * -sn, Math.sign(lz || 1) * c];
+    }
+    // local → mundo (inversa de la rotación de arriba)
+    const wx = p.x + nlx * c + nlz * sn;
+    const wz = p.z - nlx * sn + nlz * c;
+    b.setTranslation({ x: wx, y: Math.max(R, t.y), z: wz }, true);
+    // velocidad: al menos la del robot en la normal de salida (+ un empujón de espuma)
+    const bv = b.linvel();
+    const rvn = v.x * nx + v.z * nz;
+    const bvn = bv.x * nx + bv.z * nz;
+    const want = Math.max(rvn * 1.15 + 0.15, bvn);
+    b.setLinvel({ x: bv.x + (want - bvn) * nx, y: Math.max(0, bv.y), z: bv.z + (want - bvn) * nz }, true);
+  });
+}
+
 /** Captura FUEL dentro de la zona de la intake (marco local del robot), con tasa máxima. */
 export function runIntake(r: Robot, ctx: MechContext, dt: number): void {
   if (!r.intakeOn || r.intakeDeploy < 0.6 || r.climbing) {

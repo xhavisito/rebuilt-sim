@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
     alliance: 'blue',
     station: 2,
     difficulty: 'normal',
-    robotId: 'top-4414',
+    robotId: 'cad-1678',
     autoRoutine: 'default-score',
     humanPlayer: 'ai',
     startOffset: 0,
@@ -94,6 +94,8 @@ export function loadSettings(): Settings {
       const s = merge(structuredClone(DEFAULT_SETTINGS), JSON.parse(raw));
       // Cámaras que ya no existen (la de "seguimiento" se fusionó con tercera persona)
       if (!CAMERAS.includes(s.camera)) s.camera = 'third';
+      // Las recreaciones aproximadas ("top-…") se reemplazaron por robots con su CAD real
+      if (s.match.robotId.startsWith('top-')) s.match.robotId = 'cad-1678';
       return s;
     }
   } catch {

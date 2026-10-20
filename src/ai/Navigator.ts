@@ -43,6 +43,9 @@ export class Navigator {
   private stuckT = 0;
   private escapeT = 0;
   private escapeDir = { x: 0, z: 0 };
+  /** Mando anterior (suavizado: un piloto no cambia de dirección de golpe en cada cuadro). */
+  private sv = { x: 0, z: 0 };
+  private sw = 0;
 
   constructor(private r: Robot) {}
 
@@ -92,13 +95,29 @@ export class Navigator {
   }
 
   /**
-   * Sigue la ruta. Devuelve el mando y si llegó al objetivo final.
-   * @param heading rumbo deseado (null = mirar hacia donde avanza, útil para la intake)
+   * Sigue la ruta. Devuelve el mando (suavizado) y si llegó al objetivo final.
+   * @param heading rumbo deseado: número, null = mirar hacia donde avanza (intake al frente),
+   *   'keep' = conservar el rumbo actual (robots con turret: el chasis no necesita girar)
    */
   follow(
     dt: number,
     others: Robot[],
-    opts: { speed: number; heading: number | null; tol?: number; avoidRobots?: boolean },
+    opts: { speed: number; heading: number | null | 'keep'; tol?: number; avoidRobots?: boolean },
+  ): { cmd: DriveCommand; arrived: boolean } {
+    const out = this.followRaw(dt, others, opts);
+    // Suavizado: velocidad con constante de ~0.15 s y giro con ~0.12 s
+    const kv = Math.min(1, dt * 7);
+    const kw = Math.min(1, dt * 8);
+    this.sv.x += (out.cmd.vx - this.sv.x) * kv;
+    this.sv.z += (out.cmd.vz - this.sv.z) * kv;
+    this.sw += (out.cmd.omega - this.sw) * kw;
+    return { cmd: { vx: this.sv.x, vz: this.sv.z, omega: this.sw }, arrived: out.arrived };
+  }
+
+  private followRaw(
+    dt: number,
+    others: Robot[],
+    opts: { speed: number; heading: number | null | 'keep'; tol?: number; avoidRobots?: boolean },
   ): { cmd: DriveCommand; arrived: boolean } {
     const r = this.r;
     const p = r.phys.curPos;
@@ -158,9 +177,13 @@ export class Navigator {
       vx = this.escapeDir.x * vmax * 0.6;
       vz = this.escapeDir.z * vmax * 0.6;
     }
-    // Rumbo: el pedido, o hacia donde avanza (tank siempre hacia donde avanza)
-    let want = opts.heading;
-    if (want === null || r.spec.drivetrain === 'tank') want = Math.hypot(vx, vz) > 0.3 ? Math.atan2(-vz, vx) : r.phys.heading();
+    // Rumbo: el pedido, el actual ('keep') o hacia donde avanza (tank siempre hacia donde avanza)
+    let want = opts.heading === 'keep' ? r.phys.heading() : opts.heading;
+    // (a poca velocidad o pegado a otro robot no gira: así no "baila" con los empujones)
+    let crowded = false;
+    for (const o of others) if (o !== r && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < o.phys.outerW + r.phys.outerW + 0.25) crowded = true;
+    if (want === null || r.spec.drivetrain === 'tank') want = Math.hypot(vx, vz) > 0.9 && !crowded ? Math.atan2(-vz, vx) : r.phys.heading();
+    else if (crowded && opts.heading === null) want = r.phys.heading();
     if (r.spec.drivetrain === 'tank') {
       const h = r.phys.heading();
       const err = Math.abs(Math.atan2(Math.sin(want - h), Math.cos(want - h)));
@@ -172,13 +195,16 @@ export class Navigator {
     return { cmd: { vx, vz, omega: this.omegaTo(want) }, arrived: false };
   }
 
-  private turnOnly(heading: number | null): DriveCommand {
-    return { vx: 0, vz: 0, omega: heading === null ? 0 : this.omegaTo(heading) };
+  private turnOnly(heading: number | null | 'keep'): DriveCommand {
+    return { vx: 0, vz: 0, omega: heading === null || heading === 'keep' ? 0 : this.omegaTo(heading) };
   }
 
+  /** Giro hacia `want`: proporcional suave, con zona muerta de ~6° y tope de 5 rad/s. */
   omegaTo(want: number): number {
     const h = this.r.phys.heading();
     const d = Math.atan2(Math.sin(want - h), Math.cos(want - h));
-    return Math.max(-this.r.spec.maxOmega, Math.min(this.r.spec.maxOmega, d * 6));
+    if (Math.abs(d) < 0.1) return 0;
+    const lim = Math.min(this.r.spec.maxOmega, 5);
+    return Math.max(-lim, Math.min(lim, d * 3.5));
   }
 }

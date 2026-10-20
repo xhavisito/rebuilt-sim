@@ -1,5 +1,5 @@
 /**
- * Especificación de robots, presets inventados y validación contra el manual.
+ * Especificación de robots: robots reales de 2026 (con su CAD), presets genéricos y validación.
  * R103 peso ≤ 115 lb sin BUMPERS ni batería · R104 perímetro ≤ 110 in y altura ≤ 30 in
  * R105 extensión ≤ 12 in · R106 un solo lado · R107 altura ≤ 30 in siempre.
  */
@@ -7,27 +7,6 @@ import { inch, MAX_EXTENSION, MAX_HEIGHT, MAX_PERIMETER, TRENCH_CLEAR_HEIGHT } f
 import { loadJSON, saveJSON } from './settings';
 
 export type Drivetrain = 'swerve' | 'tank';
-
-/**
- * Aspecto de los robots de la temporada ("bumper hopper"): caja de policarbonato sobre los
- * BUMPERS. Sin `look`, el robot usa el estilo genérico de placas.
- */
-export interface RobotLook {
-  walls: 'smoke' | 'clear' | 'black';
-  /** Red encima del hopper (más capacidad). */
-  net: boolean;
-  /** Fracción del hopper cubierta por una tapa de policarbonato (desde atrás). */
-  cover?: number;
-  /** Color del marco (postes, rieles, placas). */
-  frame: string;
-  corners: 'tube' | 'truss';
-  /** Intake por cremallera (se desliza) o slapdown/four-bar (pivota). */
-  intake: 'rack' | 'pivot';
-  /** Posición de la turret a lo largo del robot (0 = atrás, 1 = adelante). */
-  turretAt?: number;
-  /** Nombre del robot en las paredes. */
-  label?: string;
-}
 export type ShooterType = 'fixed' | 'turret';
 
 export interface RobotSpec {
@@ -87,7 +66,8 @@ export interface RobotSpec {
   };
   colors: { primary: string; accent: string };
   preload: number;
-  look?: RobotLook;
+  /** Modelo 3D real del equipo (public/robots/<file>), ver scripts/robots/. */
+  cad?: { file: string };
   /** Robot real de la temporada: fuente de los datos (para la galería). */
   real?: { team: string; robot: string; note: { es: string; en: string } };
 }
@@ -182,240 +162,151 @@ const base = (o: Partial<RobotSpec> & Pick<RobotSpec, 'id' | 'name'>): RobotSpec
 
 const NO_CLIMB = { maxLevel: 0 as const, timeL1: 99, timeL2: 99, timeL3: 99 };
 
+const cadReal = (team: string, robot: string, es: string, en: string) => ({ team, robot, note: { es, en } });
+
 /**
- * Los mejores robots de REBUILT 2026, recreados (aspecto aproximado y rendimiento estimado).
- * Fuentes: ranking EPA de Statbotics y fichas de mecanismos del "FRC 2026 REBUILT Robot Study
- * Dashboard" (tech binders, CAD y videos "Behind the Bumpers"), fotos de The Blue Alliance y
- * Chief Delphi. Lo que ningún equipo publicó (altura exacta, nivel de climb) es estimado.
- * El perímetro respeta R104 (≤ 110 in) aunque el real use esquinas recortadas.
+ * Robots de 2026 con su modelo 3D REAL (publicado por cada equipo en su repo de código como
+ * asset de AdvantageScope; ver scripts/robots/ y public/robots/LICENSES.md). Medidas del
+ * chasis y altura tomadas del CAD; rendimiento según sus tech binders / Robot Study Dashboard
+ * y EPA de Statbotics (estimado donde no se publicó).
  */
-export const TOP_ROBOTS: RobotSpec[] = [
+export const CAD_ROBOTS: RobotSpec[] = [
   base({
-    id: 'top-4414',
-    name: 'Rip Current',
-    teamNumber: 4414,
-    widthIn: 30.5, // 25 × 32 in con esquinas traseras recortadas (binder)
-    lengthIn: 24.5,
-    heightIn: 22,
-    massKg: 63,
-    maxSpeed: 4.75, // WCP X2 7.67:1
-    traction: 1.2,
-    maxAccel: 10,
-    intake: { widthIn: 28, extensionIn: 10, rate: 18 },
-    hopperCapacity: 60,
-    shooter: { type: 'turret', rate: 16, maxSpeed: 13, minAngle: 40, maxAngle: 75, accuracy: 0.95, exitHeightIn: 22, backspin: 20, lanes: 1 },
-    climb: NO_CLIMB,
-    colors: { primary: '#1d8fa3', accent: '#e8eef0' },
-    look: { walls: 'smoke', net: false, cover: 0.7, frame: '#1d8fa3', corners: 'truss', intake: 'rack', turretAt: 0.32, label: 'Rip Current' },
-    real: {
-      team: 'HighTide',
-      robot: 'Rip Current',
-      note: {
-        es: 'Campeón mundial 2026 (capitán de la alianza Daly) y EPA #1 de la temporada. Turret de un solo chorro con alimentación tipo "dye rotor", tiro en movimiento.',
-        en: '2026 World Champion (Daly alliance captain) and #1 EPA of the season. Single-stream turret fed by a "dye rotor", shoots on the move.',
-      },
-    },
-  }),
-  base({
-    id: 'top-254',
-    name: 'Overload',
-    teamNumber: 254,
-    widthIn: 28,
-    lengthIn: 27,
-    heightIn: 22,
-    massKg: 63.5,
-    maxSpeed: 4.9,
-    traction: 1.2,
-    maxAccel: 10,
-    intake: { widthIn: 26, extensionIn: 10, rate: 22 }, // cremallera, 3 rodillos
-    hopperCapacity: 78, // "bumper hopper" de 8 in + red: 75–80 FUEL
-    shooter: { type: 'fixed', rate: 26, maxSpeed: 12.5, minAngle: 42, maxAngle: 80, accuracy: 0.93, exitHeightIn: 21, backspin: 15, lanes: 4 },
-    climb: NO_CLIMB,
-    colors: { primary: '#202227', accent: '#2f6df6' },
-    look: { walls: 'smoke', net: false, cover: 0.85, frame: '#1b1c20', corners: 'tube', intake: 'rack', label: 'Overload' },
-    real: {
-      team: 'The Cheesy Poofs',
-      robot: 'Overload',
-      note: {
-        es: 'EPA #2. "Dumper" de 4 FUEL de ancho con hood articulado: ~25–28 FUEL/s. Hopper de policarbonato que sale de los BUMPERS.',
-        en: '#2 EPA. 4-wide dumper with an articulating hood: ~25–28 FUEL/s. Polycarbonate hopper rising from the BUMPERS.',
-      },
-    },
-  }),
-  base({
-    id: 'top-7769',
-    name: 'CHUNK',
-    teamNumber: 7769,
-    widthIn: 28,
-    lengthIn: 27,
-    heightIn: 22,
-    massKg: 64,
-    maxSpeed: 4.7,
-    traction: 1.2,
-    intake: { widthIn: 26, extensionIn: 10, rate: 18 }, // slapdown lineal (cremallera)
-    hopperCapacity: 70,
-    shooter: { type: 'fixed', rate: 20, maxSpeed: 13, minAngle: 45, maxAngle: 78, accuracy: 0.95, exitHeightIn: 21, backspin: 20, lanes: 3 },
-    climb: { maxLevel: 1, timeL1: 3, timeL2: 99, timeL3: 99 }, // tiene climber; nivel no publicado
-    colors: { primary: '#3a3d44', accent: '#2d6be0' },
-    look: { walls: 'smoke', net: false, frame: '#3a3d44', corners: 'tube', intake: 'rack', label: 'CHUNK' },
-    real: {
-      team: 'The CREW',
-      robot: 'CHUNK',
-      note: {
-        es: 'EPA #3. Dumper ancho de un chorro, elogiado por su alcance y precisión; ~70 FUEL. Tiene climber.',
-        en: '#3 EPA. Wide single-stream dumper praised for range and accuracy; ~70 FUEL. Has a climber.',
-      },
-    },
-  }),
-  base({
-    id: 'top-1323',
-    name: 'MadTown',
-    teamNumber: 1323,
-    widthIn: 28,
-    lengthIn: 27,
-    heightIn: 26,
-    massKg: 63,
-    maxSpeed: 4.8,
-    traction: 1.2,
-    intake: { widthIn: 26, extensionIn: 10, rate: 16 }, // four-bar
-    hopperCapacity: 70,
-    shooter: { type: 'turret', rate: 14, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 26, backspin: 20, lanes: 1 },
-    climb: NO_CLIMB,
-    colors: { primary: '#15161a', accent: '#2f6df6' },
-    look: { walls: 'black', net: true, frame: '#15161a', corners: 'tube', intake: 'pivot', turretAt: 0.5, label: 'MadTown' },
-    real: {
-      team: 'MadTown Robotics',
-      robot: 'MadTown',
-      note: {
-        es: 'Campeón mundial 2026 (alianza Daly), EPA #4. Turret con tambor ("dye rotor") e intake de four-bar; hopper negro con red.',
-        en: '2026 World Champion (Daly alliance), #4 EPA. Drum ("dye rotor") turret and four-bar intake; black hopper with a net.',
-      },
-    },
-  }),
-  base({
-    id: 'top-2056',
-    name: 'Desperate Measures',
-    teamNumber: 2056,
-    widthIn: 29.5, // 25.5 × 29.5 in (binder)
-    lengthIn: 25.5,
-    heightIn: 27,
-    massKg: 63,
-    maxSpeed: 4.57, // 15 ft/s, MK5n R1
-    traction: 1.25, // ruedas "spike"
-    intake: { widthIn: 27, extensionIn: 10, rate: 14 }, // cremallera de un motor
-    hopperCapacity: 62,
-    shooter: { type: 'turret', rate: 12, maxSpeed: 13, minAngle: 39.5, maxAngle: 73.5, accuracy: 0.93, exitHeightIn: 27, backspin: 25, lanes: 1 },
-    climb: NO_CLIMB,
-    colors: { primary: '#c0c4ca', accent: '#e53935' },
-    look: { walls: 'clear', net: true, frame: '#b9bec5', corners: 'truss', intake: 'rack', turretAt: 0.3, label: 'Desperate Measures' },
-    real: {
-      team: 'OP Robotics',
-      robot: 'Desperate Measures',
-      note: {
-        es: 'EPA #5, reconstruido a media temporada. Turret con hood continuo (73.5°–39.5°), piso de rodillos y hopper con red de ~62 FUEL.',
-        en: '#5 EPA, rebuilt mid-season. Turret with a continuous hood (73.5°–39.5°), roller floor and a ~62-FUEL net hopper.',
-      },
-    },
-  }),
-  base({
-    id: 'top-1690',
-    name: 'Kepler',
-    teamNumber: 1690,
-    widthIn: 29.5, // el lado ancho es el de la intake
-    lengthIn: 24.5,
-    heightIn: 21.5, // "trench-runner": pasa bajo el TRENCH
-    massKg: 62,
-    maxSpeed: 5.0,
-    traction: 1.25,
-    intake: { widthIn: 28, extensionIn: 10, rate: 16 },
-    hopperCapacity: 60,
-    shooter: { type: 'turret', rate: 14, maxSpeed: 13, minAngle: 40, maxAngle: 75, accuracy: 0.95, exitHeightIn: 21, backspin: 5, lanes: 1 },
-    climb: NO_CLIMB,
-    colors: { primary: '#2b2f36', accent: '#3fa9ff' },
-    look: { walls: 'clear', net: true, frame: '#2b2f36', corners: 'tube', intake: 'rack', turretAt: 0.22, label: 'Kepler' },
-    real: {
-      team: 'Orbit',
-      robot: 'Kepler',
-      note: {
-        es: 'EPA #6. Robot bajo que pasa por el TRENCH, turret de 640° que tira en movimiento y hopper transparente con red (~60 FUEL).',
-        en: '#6 EPA. Low-profile trench runner with a 640° shoot-on-the-move turret and a clear net hopper (~60 FUEL).',
-      },
-    },
-  }),
-  base({
-    id: 'top-2481',
-    name: 'Roboteers',
-    teamNumber: 2481,
-    widthIn: 29,
-    lengthIn: 26,
-    heightIn: 28,
-    massKg: 64.5,
-    maxSpeed: 4.3, // engranado lento por la carga de FUEL
-    traction: 1.2,
-    intake: { widthIn: 29, extensionIn: 10, rate: 24 }, // 5 FUEL de ancho, "touch and take"
-    hopperCapacity: 115,
-    shooter: { type: 'fixed', rate: 20, maxSpeed: 12.5, minAngle: 48, maxAngle: 72, accuracy: 0.9, exitHeightIn: 27, backspin: 25, lanes: 4 },
-    climb: NO_CLIMB,
-    colors: { primary: '#c9cdd3', accent: '#ff8a00' },
-    look: { walls: 'clear', net: false, frame: '#c9cdd3', corners: 'tube', intake: 'pivot', label: 'Roboteers' },
-    real: {
-      team: 'Roboteers',
-      robot: 'Roboteers',
-      note: {
-        es: 'EPA #9. El "big dumper": hopper de 115 FUEL, intake de 5 de ancho y shooter fijo de 4 carriles (~20 FUEL/s).',
-        en: '#9 EPA. The "big dumper": 115-FUEL hopper, 5-wide intake and a fixed 4-lane shooter (~20 FUEL/s).',
-      },
-    },
-  }),
-  base({
-    id: 'top-2910',
-    name: 'ReBlitz',
-    teamNumber: 2910,
-    widthIn: 28,
-    lengthIn: 27,
-    heightIn: 22,
-    massKg: 63,
-    maxSpeed: 4.8,
-    traction: 1.2,
-    intake: { widthIn: 26, extensionIn: 10, rate: 20 },
-    hopperCapacity: 55,
-    shooter: { type: 'fixed', rate: 30, maxSpeed: 12.5, minAngle: 45, maxAngle: 76, accuracy: 0.9, exitHeightIn: 21, backspin: 20, lanes: 3 },
-    climb: NO_CLIMB,
-    colors: { primary: '#bfc4ca', accent: '#3bb54a' },
-    look: { walls: 'clear', net: false, frame: '#bfc4ca', corners: 'truss', intake: 'pivot', label: 'ReBlitz' },
-    real: {
-      team: 'Jack in the Bot',
-      robot: 'Blitz → ReBlitz',
-      note: {
-        es: 'Finalista mundial 2026 (alianza Newton), EPA #11. Reconstruido a media temporada como dumper: más de 30 FUEL/s.',
-        en: '2026 World Finalist (Newton alliance), #11 EPA. Rebuilt mid-season into a dumper: over 30 FUEL/s.',
-      },
-    },
-  }),
-  base({
-    id: 'top-1678',
+    id: 'cad-1678',
     name: 'Limestone',
     teamNumber: 1678,
-    widthIn: 27, // MK5n, 27 × 27 in
+    widthIn: 27,
     lengthIn: 27,
-    heightIn: 26,
+    heightIn: 22,
     massKg: 63,
     maxSpeed: 4.8,
     traction: 1.25,
-    intake: { widthIn: 26, extensionIn: 10, rate: 18 }, // slapdown de ancho completo
+    intake: { widthIn: 26, extensionIn: 10, rate: 18 },
     hopperCapacity: 70,
-    shooter: { type: 'fixed', rate: 22, maxSpeed: 13, minAngle: 40, maxAngle: 78, accuracy: 0.92, exitHeightIn: 25, backspin: 20, lanes: 4 },
+    shooter: { type: 'fixed', rate: 22, maxSpeed: 13, minAngle: 40, maxAngle: 78, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 4 },
     climb: NO_CLIMB,
     colors: { primary: '#c9cdd3', accent: '#2fbf4a' },
-    look: { walls: 'clear', net: true, frame: '#c9cdd3', corners: 'truss', intake: 'pivot', label: 'Limestone' },
-    real: {
-      team: 'Citrus Circuits',
-      robot: 'Limestone',
-      note: {
-        es: 'Ganador de la división Milstein. Flywheel con hood alimentado por un tambor de 3.5 in de ancho completo; hopper expandible con red.',
-        en: 'Milstein division winner. Hooded flywheel fed by a full-width 3.5 in drum; expanding hopper with a net.',
-      },
-    },
+    cad: { file: '1678.glb' },
+    real: cadReal('Citrus Circuits', 'Limestone', 'Ganador de la división Milstein, EPA #15. Flywheel con hood alimentado por un tambor de ancho completo; intake slapdown de ancho completo; hopper expandible.', 'Milstein division winner, #15 EPA. Hooded flywheel fed by a full-width drum; full-width slapdown intake; expanding hopper.'),
+  }),
+  base({
+    id: 'cad-5000',
+    name: 'Icarus',
+    teamNumber: 5000,
+    widthIn: 26,
+    lengthIn: 28.5,
+    heightIn: 22,
+    massKg: 62,
+    maxSpeed: 4.8,
+    intake: { widthIn: 24, extensionIn: 10, rate: 14 }, // cremallera
+    hopperCapacity: 50,
+    shooter: { type: 'turret', rate: 14, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 21, backspin: 20, lanes: 1 },
+    climb: NO_CLIMB,
+    colors: { primary: '#2b2f36', accent: '#00b3ff' },
+    cad: { file: '5000.glb' },
+    real: cadReal('Hammerheads', 'Icarus', 'EPA #34. Turret con visión que tira en movimiento, alimentada por un "dye rotor"; intake de cremallera.', '#34 EPA. Vision-tracking turret that shoots on the move, fed by a "dye rotor"; rack-and-pinion intake.'),
+  }),
+  base({
+    id: 'cad-604',
+    name: 'Toploader',
+    teamNumber: 604,
+    widthIn: 27,
+    lengthIn: 27,
+    heightIn: 20.5,
+    massKg: 62,
+    maxSpeed: 4.8,
+    intake: { widthIn: 25, extensionIn: 10, rate: 15 },
+    hopperCapacity: 50,
+    shooter: { type: 'turret', rate: 15, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 20, backspin: 20, lanes: 1 },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#ff8800' },
+    cad: { file: '604.glb' },
+    real: cadReal('Quixilver', 'Toploader', 'EPA #48. Turret de un chorro (~15 FUEL/s) alimentada por un "dye rotor" circular para tirar en movimiento; brazos de intake independientes.', '#48 EPA. Single-stream turret (~15 FUEL/s) fed by a circular "dye rotor" to shoot on the move; independent intake arms.'),
+  }),
+  base({
+    id: 'cad-6328',
+    name: 'Darwin',
+    teamNumber: 6328,
+    widthIn: 27,
+    lengthIn: 28,
+    heightIn: 22,
+    massKg: 62,
+    maxSpeed: 4.9,
+    intake: { widthIn: 25, extensionIn: 10, rate: 12 },
+    hopperCapacity: 40,
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 21, backspin: 25, lanes: 1 },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#1a5cff' },
+    cad: { file: '6328.glb' },
+    real: cadReal('Mechanical Advantage', 'Darwin', 'Turret con hood ajustable impreso en 3D y rueda Fairlane de 4 in; los creadores de AdvantageKit y AdvantageScope.', 'Turret with a 3D-printed adjustable hood and a 4 in Fairlane wheel; the makers of AdvantageKit and AdvantageScope.'),
+  }),
+  base({
+    id: 'cad-971',
+    name: 'Mixtape',
+    teamNumber: 971,
+    widthIn: 29,
+    lengthIn: 26,
+    heightIn: 19.5,
+    massKg: 63,
+    maxSpeed: 4.8,
+    intake: { widthIn: 26, extensionIn: 10, rate: 16 },
+    hopperCapacity: 45,
+    shooter: { type: 'turret', rate: 18, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 19, backspin: 20, lanes: 2 },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#b088b8' },
+    cad: { file: '971.glb' },
+    real: cadReal('Spartan Robotics', 'Mixtape', 'Doble turret: dos shooters con hood de tornillo, alimentados por un spindexer.', 'Double turret: two shooters with lead-screw hoods, fed by a spindexer.'),
+  }),
+  base({
+    id: 'cad-341',
+    name: 'Miss Daisy XXIV',
+    teamNumber: 341,
+    widthIn: 27,
+    lengthIn: 27,
+    heightIn: 27,
+    massKg: 64,
+    maxSpeed: 4.8,
+    intake: { widthIn: 26, extensionIn: 10, rate: 12 }, // 4 FUEL de ancho
+    hopperCapacity: 10, // sin hopper: camino directo 4-2-1 (~8 en tránsito)
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 26, backspin: 20, lanes: 1 },
+    climb: { maxLevel: 1, timeL1: 3, timeL2: 99, timeL3: 99 },
+    colors: { primary: '#30343b', accent: '#2340d0' },
+    cad: { file: '341.glb' },
+    real: cadReal('Miss Daisy', 'Miss Daisy XXIV', 'Sin hopper: intake de 4 FUEL de ancho que va directo (4-2-1) a una turret de 360°; climber L1 ligero.', 'Hopperless: a 4-wide intake feeding straight (4-2-1) into a 360° turret; lightweight L1 climber.'),
+  }),
+  base({
+    id: 'cad-190',
+    name: 'Turnover',
+    teamNumber: 190,
+    widthIn: 30.5,
+    lengthIn: 22,
+    heightIn: 22,
+    massKg: 61,
+    maxSpeed: 4.9,
+    intake: { widthIn: 28, extensionIn: 10, rate: 14 },
+    hopperCapacity: 40,
+    shooter: { type: 'turret', rate: 12, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 1 },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#c62828' },
+    cad: { file: '190.glb' },
+    real: cadReal('Gompei and the HERD', 'Doomspiral / Turnover', 'Turret con "kicker" de banda que comprime el FUEL contra la flywheel; intake de rodillos.', 'Turret with a belt "kicker" that compresses FUEL into the flywheel; roller intake.'),
+  }),
+  base({
+    id: 'cad-4915',
+    name: 'Artemis',
+    teamNumber: 4915,
+    widthIn: 28.5,
+    lengthIn: 26.5,
+    heightIn: 25,
+    massKg: 63,
+    maxSpeed: 4.6,
+    intake: { widthIn: 26, extensionIn: 8.4, rate: 12 }, // 213 mm de extensión (código)
+    hopperCapacity: 45,
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 24, backspin: 20, lanes: 1 },
+    climb: { maxLevel: 1, timeL1: 3.2, timeL2: 99, timeL3: 99 },
+    colors: { primary: '#30343b', accent: '#ef3e00' },
+    cad: { file: '4915.glb' },
+    real: cadReal('Spartronics', 'ARTEMIS', 'Ganador de división. Turret con hood ajustable sobre una superestructura que pivota; tiene climber.', 'Division winner. Turret with an adjustable hood on a pivoting superstructure; has a climber.'),
   }),
 ];
 
@@ -520,7 +411,7 @@ const GENERIC_PRESETS: RobotSpec[] = [
   }),
 ];
 
-export const ROBOT_PRESETS: RobotSpec[] = [...TOP_ROBOTS, ...GENERIC_PRESETS];
+export const ROBOT_PRESETS: RobotSpec[] = [...CAD_ROBOTS, ...GENERIC_PRESETS];
 
 export function presetById(id: string): RobotSpec {
   return structuredClone(ROBOT_PRESETS.find((p) => p.id === id) ?? GENERIC_PRESETS[1]);

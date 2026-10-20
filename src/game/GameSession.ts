@@ -28,7 +28,7 @@ import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
 import { climbSlots, type TowerOccupancy } from './Climber';
 import { HumanPlayer, type HpContext } from './HumanPlayer';
-import { plowLoad, predictLaunch, runIntake, runShooter, type MechContext } from './Mechanisms';
+import { plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
 import { AimGuide } from '../render/AimGuide';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
@@ -180,6 +180,7 @@ export class GameSession {
       rng: this.rng,
       towerOcc: this.towerOcc,
       pinSeconds: (i) => this.referee?.activePins().find((p) => p.pinner === i)?.seconds ?? 0,
+      claims: new Map(),
     };
     for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
   }
@@ -285,7 +286,9 @@ export class GameSession {
       time: this.match?.t ?? this.simTime,
       autoAim: isPlayer ? this.settings.drive.autoAim : true,
       shootOnMove: isPlayer ? this.settings.drive.shootOnMove : true,
-      requireAlign: !isPlayer || this.match?.phase === 'AUTO',
+      // Con auto-aim, el jugador también espera a estar alineado (un dumper de 20+ FUEL/s vaciaría
+      // el hopper mientras el chasis todavía gira hacia el HUB)
+      requireAlign: !isPlayer || this.match?.phase === 'AUTO' || this.settings.drive.autoAim,
       onLaunch: (rb, i, kind) => {
         this.referee?.onLaunch(rb, i, kind);
         this.hooks.launch?.(rb, kind, rb.control.type === 'player');
@@ -505,6 +508,7 @@ export class GameSession {
     if (this.hpCanAct()) for (const a of ALLIANCES) this.humanPlayers[a].update(dt, this.hpContext(this.humanPlayers[a]));
     this.fuel.prePhysics(dt);
     this.pw.step();
+    for (const r of this.robots) shoveFuel(r, this.fuel);
     this.pw.events.drainCollisionEvents((h1, h2, started) => {
       if (!started) return;
       const a = this.pw.tagOf(h1);

@@ -20,22 +20,33 @@ const sample = (ms) =>
         const s = window.app.session;
         const r = s.robots[0];
         const R = 0.0751;
-        let maxY = 0, maxTilt = 0, minFuel = 1, at = null;
+        let maxY = 0, maxTilt = 0, minFuel = 1, at = null, inside = 0;
         const t0 = performance.now();
         const p0 = { ...r.phys.curPos };
         const tick = () => {
           const ax = Math.abs(r.phys.curPos.x);
-          // Fuera de BUMPS (con el largo del robot: los BUMPS sí lo levantan e inclinan, legalmente)
-          if (ax < 2.55 || ax > 4.75) {
+          // Fuera de BUMPS (con la diagonal del robot al girar: los BUMPS sí lo levantan e inclinan, legalmente)
+          if (ax < 2.4 || ax > 4.9) {
             maxY = Math.max(maxY, r.phys.curPos.y);
             if (r.phys.tilt() > maxTilt) { maxTilt = r.phys.tilt(); at = [r.phys.curPos.x.toFixed(2), r.phys.curPos.z.toFixed(2)]; }
           }
-          for (let i = 0; i < s.fuel.count; i++) if (s.fuel.state[i] === 0) minFuel = Math.min(minFuel, s.fuel.pos[i * 3 + 1]);
+          const ph = r.phys, h = ph.heading(), c = Math.cos(h), sn = Math.sin(h);
+          let n = 0;
+          for (let i = 0; i < s.fuel.count; i++) {
+            if (s.fuel.state[i] !== 0) continue;
+            minFuel = Math.min(minFuel, s.fuel.pos[i * 3 + 1]);
+            // FUEL dentro de la huella del robot (no debe pasar: el robot no atraviesa FUEL)
+            const dx = s.fuel.pos[i * 3] - ph.curPos.x, dz = s.fuel.pos[i * 3 + 2] - ph.curPos.z;
+            const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+            if (Math.abs(lx) < ph.outerL - 0.03 && Math.abs(lz) < ph.outerW - 0.03 && s.fuel.pos[i * 3 + 1] < 0.3) n++;
+          }
+          inside = Math.max(inside, n);
           if (performance.now() - t0 < ms) requestAnimationFrame(tick);
           else
             res({
               maxY: +maxY.toFixed(3),
               tiltDeg: +((maxTilt * 180) / Math.PI).toFixed(1),
+              inside,
               minFuel: +(minFuel - R).toFixed(3),
               at,
               travel: +Math.hypot(r.phys.curPos.x - p0.x, r.phys.curPos.z - p0.z).toFixed(2),
@@ -54,7 +65,7 @@ const hold = async (keys, ms) => {
 };
 
 const phases = [];
-const merge = (a, b) => (phases.push(b), { maxY: Math.max(a.maxY, b.maxY), tiltDeg: Math.max(a.tiltDeg, b.tiltDeg), minFuel: Math.min(a.minFuel, b.minFuel) });
+const merge = (a, b) => (phases.push(b), { maxY: Math.max(a.maxY, b.maxY), tiltDeg: Math.max(a.tiltDeg, b.tiltDeg), minFuel: Math.min(a.minFuel, b.minFuel), inside: Math.max(a.inside, b.inside) });
 const results = {};
 let frontTravel = 0;
 for (const id of (process.env.PRESETS ?? 'balanced,tank,climber,defender').split(',')) {
@@ -112,9 +123,10 @@ for (const id of (process.env.PRESETS ?? 'balanced,tank,climber,defender').split
   if (process.env.DEBUG) console.log(id, JSON.stringify(phases.splice(0)));
 }
 console.log(JSON.stringify(results));
-// Criterios: el robot no se levanta más de 2 cm ni se inclina más de 4° sobre FUEL, ningún
+// Criterios: el robot no se levanta más de 2 cm ni se inclina más de 4° sobre FUEL, nunca
+// queda FUEL dentro de su huella, ningún
 // FUEL queda bajo la alfombra y el montón frena al robot (no lo cruza a toda velocidad).
-const bad = Object.entries(results).filter(([, r]) => typeof r === 'string' || r.maxY > 0.02 || r.tiltDeg > 4 || r.minFuel < -0.01);
+const bad = Object.entries(results).filter(([, r]) => typeof r === 'string' || r.maxY > 0.02 || r.tiltDeg > 4 || r.minFuel < -0.01 || r.inside > 0);
 if (frontTravel > 4.6) bad.push(['front', `el montón no frena al robot (${frontTravel} m)`]);
 console.log(bad.length ? `FAIL ${JSON.stringify(bad)}` : 'OK');
 if (bad.length || logs.length) process.exitCode = 1;
