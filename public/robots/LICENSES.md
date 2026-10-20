@@ -1,6 +1,6 @@
 # Modelos 3D de robots (public/robots/)
 
-Los archivos `*.glb` de esta carpeta son versiones simplificadas (sin tornillería, con menos triángulos y comprimidas con meshopt) de los modelos 3D que cada equipo publicó en su repositorio de código como asset de AdvantageScope. Se generan con `scripts/robots/build-models.mjs`. Los BUMPERS que se ven en el simulador los dibuja el propio simulador (color de alianza), no vienen de estos archivos.
+Los archivos `*.glb` de esta carpeta son versiones simplificadas (sin tornillería, con menos triángulos y comprimidas con meshopt) de los modelos 3D que cada equipo publicó en su repositorio de código como asset de AdvantageScope, con sus componentes articulados (intake, hopper, turret, hood…) por separado. Se generan con `scripts/robots/fetch-sources.mjs` y `scripts/robots/build-models.mjs`; el simulador los mueve como el código de cada equipo (`src/render/cadRigs.ts`). Los BUMPERS que se ven en el simulador los dibuja el propio simulador (color de alianza), no vienen de estos archivos.
 
 | Archivo | Equipo | Fuente | Licencia |
 |---|---|---|---|

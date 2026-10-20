@@ -50,6 +50,8 @@ export class Robot {
   turretYaw = 0;
   hoodAngle = Math.PI / 3;
   climbHeight = 0;
+  /** Climber desplegado (0–1, cosmético para el CAD articulado). */
+  climbDeploy = 0;
   wheelYaw = 0;
   wheelSpin = 0;
   intakeSpin = 0;
@@ -121,6 +123,7 @@ export class Robot {
         turretYaw: this.turretYaw,
         hoodAngle: this.hoodAngle,
         climbHeight: this.climbHeight,
+        climb: this.climbDeploy,
         hopper,
         enabled: this.enabled,
         wheelYaw: this.wheelYaw,
@@ -152,5 +155,7 @@ export class Robot {
     this.intakeSpin += (this.intakeOn ? 40 : 0) * dt;
     const target = this.intakeOn ? 1 : 0;
     this.intakeDeploy += Math.sign(target - this.intakeDeploy) * Math.min(Math.abs(target - this.intakeDeploy), dt * 4);
+    const climbT = this.climbing ? 1 : 0;
+    this.climbDeploy += Math.sign(climbT - this.climbDeploy) * Math.min(Math.abs(climbT - this.climbDeploy), dt * 2.5);
   }
 }

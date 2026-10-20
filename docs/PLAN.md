@@ -44,7 +44,8 @@ src/
     FieldView.ts           geometría visual del campo
     textures.ts            texturas procedurales (alfombra, HDPE, diamond plate)
     apriltag.ts            texturas 36h11 reales (códigos de AprilRobotics)
-    RobotView.ts           robot visual desde RobotSpec
+    RobotView.ts           robot visual desde RobotSpec (procedural o CAD real articulado)
+    cadRigs.ts             poses de los componentes de cada CAD real (del código de cada equipo)
     FuelView.ts            InstancedMesh de FUEL
     Effects.ts             partículas, estelas, chispas, temblor de cámara
     Stadium.ts             gradas, público instanciado, focos, pantalla
@@ -139,9 +140,29 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 14. **Robots reales** (`CAD_ROBOTS` en `src/config/robots.ts`): 1678, 5000, 604, 6328, 971,
     341, 190 y 4915, con el modelo 3D que cada equipo publicó en su repo de código (asset de
     AdvantageScope; licencias en `public/robots/LICENSES.md`), simplificado con
-    `scripts/robots/` (fetch-sources → build-models). Medidas del chasis y altura del CAD;
-    rendimiento de sus tech binders / Robot Study Dashboard (estimado si no se publicó). Las
-    partes móviles del CAD se muestran en su posición de diseño (sin animar).
+    `scripts/robots/` (fetch-sources → build-models): sin tornillería ni BUMPERS propios, error
+    de simplificación ajustado a ~140k triángulos, materiales PBR según el color del CAD y
+    normales con pliegue calculadas al cargar (el GLB va sin normales: pesa un tercio).
+    **Articulados como en AdvantageScope**: el GLB conserva `main` y cada componente `cN` con
+    su transformación "zeroed"; `src/render/cadRigs.ts` calcula la pose de cada componente con
+    las fórmulas y constantes del código de cada equipo (intake, extensión del hopper, cuatro
+    barras de 190, turret, hood, spindexer, climber). 4915 no publica poses: sus pivotes se
+    dedujeron del CAD. 971 se gira 180° y 5000 −90° para que la intake quede al frente del
+    simulador (5000 tiene dos intakes laterales: solo despliega la del frente). 604 no publicó
+    el rodillo de su intake: se dibuja un cilindro entre los brazos. Chasis, altura, extensión
+    y ancho de la intake medidos sobre el CAD armado; los shooters fijos tiran hacia donde dice
+    el código (1678 y 6328 hacia atrás, 190 hacia la derecha) desde su posición en el robot.
+    El hopper de 971 sobresale 11 in al frente sobre los BUMPERS (colisionador incluido).
+    Rendimiento de sus tech binders / Robot Study Dashboard (estimado si no se publicó).
+15. **FUEL contra el perímetro**: el barandal (3 cm) y la ALLIANCE WALL tienen un respaldo
+    invisible de 0.3–0.6 m (fuera de las aberturas del CORRAL y de la CHUTE), `shoveFuel` nunca
+    saca un FUEL hacia afuera del campo (se escurre a lo largo de la pared) y un FUEL metido en
+    la pared por debajo de su borde superior regresa a la cara interior. Antes un robot que
+    aprisionaba FUEL contra la pared lo sacaba del campo y le marcaban G405.
+16. **FUEL que sale del campo** (G405, nota): FIELD STAFF lo regresa "aproximadamente por donde
+    salió": 2–4 s después rueda despacio desde 0.3 m dentro de la pared (se corre si hay un
+    robot encima). G405 solo se cobra si el robot lo sacó a propósito: lo lanzó y salió todavía
+    en vuelo.
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.

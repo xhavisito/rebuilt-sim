@@ -135,12 +135,15 @@ export class RobotPhysics {
       this.body,
     );
     pw.tag(this.intakeCol, { kind: 'robot', robot: index, part: 'bumper' });
-    // Superestructura dentro del perímetro (hasta la altura del robot)
+    // Superestructura dentro del perímetro (hasta la altura del robot), más lo que sobresalga
+    // hacia el frente por encima de los BUMPERS (p. ej. el hopper de 971)
     const fy0 = BUMPER_TOP;
     const fhy = Math.max(0.02, (this.height - fy0) / 2);
+    const fx0 = -this.halfL * 0.98;
+    const fx1 = this.halfL * 0.98 + inch(spec.overhangIn ?? 0);
     this.frame = w.createCollider(
-      RAPIER.ColliderDesc.cuboid(this.halfL * 0.98, fhy, this.halfW * 0.98)
-        .setTranslation(0, fy0 + fhy, 0)
+      RAPIER.ColliderDesc.cuboid((fx1 - fx0) / 2, fhy, this.halfW * 0.98)
+        .setTranslation((fx0 + fx1) / 2, fy0 + fhy, 0)
         .setMass(superMass)
         .setFriction(0.3)
         .setRestitution(0.1)

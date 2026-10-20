@@ -39,7 +39,8 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
 - `pwa/` registro del service worker; `vite.config.ts` genera `sw.js` con el precache.
 - `public/robots/*.glb` modelos 3D reales de robots 2026 (assets de AdvantageScope de cada
   equipo, simplificados con `scripts/robots/`; licencias en `public/robots/LICENSES.md`).
-  `CAD_ROBOTS` en `src/config/robots.ts`; `RobotView` los carga con GLTFLoader + meshopt.
+  `CAD_ROBOTS` en `src/config/robots.ts`; `RobotView` los carga con GLTFLoader + meshopt y mueve
+  sus componentes (intake, hopper, turret, hood…) con `src/render/cadRigs.ts`, como AdvantageScope.
 
 ## Convenciones
 - Unidades internas: metros, kg, segundos. `inch(x)` convierte; deja la medida original en comentario.

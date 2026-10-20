@@ -5,6 +5,7 @@
 import { Navigator } from '../ai/Navigator';
 import * as F from '../config/field';
 import type { FuelSystem } from '../physics/FuelSystem';
+import { chassisYawFor } from '../game/Mechanisms';
 import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { toAlliance, type AutoRoutine } from './AutoRoutine';
 
@@ -37,7 +38,7 @@ export class AutoExecutor {
       // shooter fijo: girar hacia la solución
       if (r.spec.shooter.type === 'fixed') {
         const hub = F.hubCenter(r.alliance);
-        const want = r.lastSolution?.yaw ?? Math.atan2(-(hub.z - r.phys.curPos.z), hub.x - r.phys.curPos.x);
+        const want = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(hub.z - r.phys.curPos.z), hub.x - r.phys.curPos.x));
         cmd.drive.omega = this.nav.omegaTo(want);
       }
     };
