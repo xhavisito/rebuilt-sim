@@ -17,6 +17,7 @@ import type { Match } from '../core/match';
 import type { Rng } from '../core/rng';
 import { opponent, type Alliance } from '../core/types';
 import { climbSlots, type TowerOccupancy } from '../game/Climber';
+import { chassisYawFor } from '../game/Mechanisms';
 import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
 import { Navigator, zoneOf, type Pt } from './Navigator';
@@ -140,7 +141,8 @@ export class RobotAI {
         this.nav.plan(spot);
         const hub = F.hubCenter(r.alliance);
         const p = r.phys.curPos;
-        const faceHub = r.lastSolution?.yaw ?? Math.atan2(-(hub.z - p.z), hub.x - p.x);
+        // Rumbo del chasis para que el shooter (fijo, quizá hacia atrás) apunte al HUB
+        const faceHub = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(hub.z - p.z), hub.x - p.x));
         const inZone = r.alliance === 'blue' ? p.x - r.phys.outerL < F.STARTING_LINE_X_BLUE - 0.15 : p.x + r.phys.outerL > -F.STARTING_LINE_X_BLUE + 0.15;
         // Shooter fijo: el chasis apunta al HUB; con turret el chasis conserva su rumbo
         const turret = r.spec.shooter.type === 'turret';

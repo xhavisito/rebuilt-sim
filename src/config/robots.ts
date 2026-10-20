@@ -56,6 +56,10 @@ export interface RobotSpec {
     backspin: number;
     /** FUEL a lo ancho del shooter ("dumper" de 3–5 carriles); 1 = un solo chorro. */
     lanes?: number;
+    /** Shooter fijo: hacia dónde tira respecto al frente (grados, + = a la izquierda; 180 = atrás). */
+    yawDeg?: number;
+    /** Posición del shooter en el robot (pulgadas: x adelante, y a la izquierda). */
+    posIn?: [number, number];
   };
   climb: {
     maxLevel: 0 | 1 | 2 | 3;
@@ -66,8 +70,10 @@ export interface RobotSpec {
   };
   colors: { primary: string; accent: string };
   preload: number;
-  /** Modelo 3D real del equipo (public/robots/<file>), ver scripts/robots/. */
+  /** Modelo 3D real del equipo (public/robots/<file>), ver scripts/robots/ y src/render/cadRigs.ts. */
   cad?: { file: string };
+  /** Superestructura que sobresale del chasis hacia el frente, arriba de los BUMPERS (pulgadas). */
+  overhangIn?: number;
   /** Robot real de la temporada: fuente de los datos (para la galería). */
   real?: { team: string; robot: string; note: { es: string; en: string } };
 }
@@ -166,24 +172,27 @@ const cadReal = (team: string, robot: string, es: string, en: string) => ({ team
 
 /**
  * Robots de 2026 con su modelo 3D REAL (publicado por cada equipo en su repo de código como
- * asset de AdvantageScope; ver scripts/robots/ y public/robots/LICENSES.md). Medidas del
- * chasis y altura tomadas del CAD; rendimiento según sus tech binders / Robot Study Dashboard
- * y EPA de Statbotics (estimado donde no se publicó).
+ * asset de AdvantageScope; ver scripts/robots/ y public/robots/LICENSES.md), articulado como en
+ * el código de cada equipo (src/render/cadRigs.ts). Chasis, altura, extensión y ancho de la
+ * intake medidos sobre el CAD armado (guardado y desplegado); hacia dónde y desde dónde tira el
+ * shooter, del código. Rendimiento según sus tech binders / Robot Study Dashboard y EPA de
+ * Statbotics (estimado donde no se publicó).
  */
 export const CAD_ROBOTS: RobotSpec[] = [
   base({
     id: 'cad-1678',
     name: 'Limestone',
     teamNumber: 1678,
-    widthIn: 27,
-    lengthIn: 27,
+    widthIn: 27.5,
+    lengthIn: 27.5,
     heightIn: 22,
     massKg: 63,
     maxSpeed: 4.8,
     traction: 1.25,
-    intake: { widthIn: 26, extensionIn: 10, rate: 18 },
+    intake: { widthIn: 27, extensionIn: 11.2, rate: 18 },
     hopperCapacity: 70,
-    shooter: { type: 'fixed', rate: 22, maxSpeed: 13, minAngle: 40, maxAngle: 78, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 4 },
+    // Tira hacia atrás desde 11.28 in detrás del centro (DriveConstants.SHOOTER_OFFSET)
+    shooter: { type: 'fixed', rate: 22, maxSpeed: 13, minAngle: 40, maxAngle: 78, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 4, yawDeg: 180, posIn: [-11.28, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#c9cdd3', accent: '#2fbf4a' },
     cad: { file: '1678.glb' },
@@ -193,18 +202,19 @@ export const CAD_ROBOTS: RobotSpec[] = [
     id: 'cad-5000',
     name: 'Icarus',
     teamNumber: 5000,
-    widthIn: 26,
-    lengthIn: 28.5,
-    heightIn: 22,
+    // El modelo va girado −90°: su intake izquierda es el frente del simulador
+    widthIn: 28.5,
+    lengthIn: 26,
+    heightIn: 21.7,
     massKg: 62,
     maxSpeed: 4.8,
-    intake: { widthIn: 24, extensionIn: 10, rate: 14 }, // cremallera
+    intake: { widthIn: 27.5, extensionIn: 10.6, rate: 14 }, // cremallera en diagonal
     hopperCapacity: 50,
     shooter: { type: 'turret', rate: 14, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 21, backspin: 20, lanes: 1 },
     climb: NO_CLIMB,
     colors: { primary: '#2b2f36', accent: '#00b3ff' },
     cad: { file: '5000.glb' },
-    real: cadReal('Hammerheads', 'Icarus', 'EPA #34. Turret con visión que tira en movimiento, alimentada por un "dye rotor"; intake de cremallera.', '#34 EPA. Vision-tracking turret that shoots on the move, fed by a "dye rotor"; rack-and-pinion intake.'),
+    real: cadReal('Hammerheads', 'Icarus', 'EPA #34. Turret con visión que tira en movimiento, alimentada por un "dye rotor"; dos intakes de cremallera que salen en diagonal hacia los lados.', '#34 EPA. Vision-tracking turret that shoots on the move, fed by a "dye rotor"; two rack-and-pinion intakes that slide out diagonally to the sides.'),
   }),
   base({
     id: 'cad-604',
@@ -212,12 +222,12 @@ export const CAD_ROBOTS: RobotSpec[] = [
     teamNumber: 604,
     widthIn: 27,
     lengthIn: 27,
-    heightIn: 20.5,
+    heightIn: 28.8, // turret arriba de la torre del serializer (27.5 in, Constants.Turret)
     massKg: 62,
     maxSpeed: 4.8,
-    intake: { widthIn: 25, extensionIn: 10, rate: 15 },
+    intake: { widthIn: 26, extensionIn: 10.5, rate: 15 },
     hopperCapacity: 50,
-    shooter: { type: 'turret', rate: 15, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 20, backspin: 20, lanes: 1 },
+    shooter: { type: 'turret', rate: 15, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 28, backspin: 20, lanes: 1, posIn: [0, -1] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#ff8800' },
     cad: { file: '604.glb' },
@@ -229,16 +239,17 @@ export const CAD_ROBOTS: RobotSpec[] = [
     teamNumber: 6328,
     widthIn: 27,
     lengthIn: 28,
-    heightIn: 22,
+    heightIn: 21.8,
     massKg: 62,
     maxSpeed: 4.9,
-    intake: { widthIn: 25, extensionIn: 10, rate: 12 },
+    intake: { widthIn: 25.5, extensionIn: 11.6, rate: 12 },
     hopperCapacity: 40,
-    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 21, backspin: 25, lanes: 1 },
+    // Launcher fijo hacia atrás (LauncherConstants.robotToLauncher: x −0.151 m, yaw π): el chasis apunta
+    shooter: { type: 'fixed', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 21, backspin: 25, lanes: 1, yawDeg: 180, posIn: [-5.9, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#1a5cff' },
     cad: { file: '6328.glb' },
-    real: cadReal('Mechanical Advantage', 'Darwin', 'Turret con hood ajustable impreso en 3D y rueda Fairlane de 4 in; los creadores de AdvantageKit y AdvantageScope.', 'Turret with a 3D-printed adjustable hood and a 4 in Fairlane wheel; the makers of AdvantageKit and AdvantageScope.'),
+    real: cadReal('Mechanical Advantage', 'Darwin', 'Launcher fijo hacia atrás con hood ajustable impreso en 3D; la "slamtake" empuja el frente del hopper al desplegarse. Los creadores de AdvantageKit y AdvantageScope.', 'Rear-facing fixed launcher with a 3D-printed adjustable hood; the "slamtake" pushes the hopper front out as it deploys. The makers of AdvantageKit and AdvantageScope.'),
   }),
   base({
     id: 'cad-971',
@@ -246,12 +257,14 @@ export const CAD_ROBOTS: RobotSpec[] = [
     teamNumber: 971,
     widthIn: 29,
     lengthIn: 26,
-    heightIn: 19.5,
+    heightIn: 21.4,
     massKg: 63,
     maxSpeed: 4.8,
-    intake: { widthIn: 26, extensionIn: 10, rate: 16 },
+    // El modelo va girado 180°: la intake (atrás en el CAD) es el frente del simulador
+    intake: { widthIn: 28, extensionIn: 10.8, rate: 16 },
+    overhangIn: 11, // el hopper sobresale del chasis sobre la intake
     hopperCapacity: 45,
-    shooter: { type: 'turret', rate: 18, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 19, backspin: 20, lanes: 2 },
+    shooter: { type: 'turret', rate: 18, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 2, posIn: [-5.8, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#b088b8' },
     cad: { file: '971.glb' },
@@ -263,12 +276,12 @@ export const CAD_ROBOTS: RobotSpec[] = [
     teamNumber: 341,
     widthIn: 27,
     lengthIn: 27,
-    heightIn: 27,
+    heightIn: 24.6, // con la intake levantada
     massKg: 64,
     maxSpeed: 4.8,
-    intake: { widthIn: 26, extensionIn: 10, rate: 12 }, // 4 FUEL de ancho
+    intake: { widthIn: 26.4, extensionIn: 5.5, rate: 12 }, // 4 FUEL de ancho
     hopperCapacity: 10, // sin hopper: camino directo 4-2-1 (~8 en tránsito)
-    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 26, backspin: 20, lanes: 1 },
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 21, backspin: 20, lanes: 1, posIn: [-3.9, 3] },
     climb: { maxLevel: 1, timeL1: 3, timeL2: 99, timeL3: 99 },
     colors: { primary: '#30343b', accent: '#2340d0' },
     cad: { file: '341.glb' },
@@ -276,20 +289,21 @@ export const CAD_ROBOTS: RobotSpec[] = [
   }),
   base({
     id: 'cad-190',
-    name: 'Turnover',
+    name: 'Doomspiral',
     teamNumber: 190,
-    widthIn: 30.5,
-    lengthIn: 22,
-    heightIn: 22,
+    widthIn: 32,
+    lengthIn: 23,
+    heightIn: 21.7,
     massKg: 61,
     maxSpeed: 4.9,
-    intake: { widthIn: 28, extensionIn: 10, rate: 14 },
+    intake: { widthIn: 30, extensionIn: 11.6, rate: 14 }, // cuatro barras
     hopperCapacity: 40,
-    shooter: { type: 'turret', rate: 12, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 1 },
+    // Doomspiral: shooter fijo hacia la derecha (V1_DoomSpiralShooterConstants.SHOOTER_POSE: yaw −90°)
+    shooter: { type: 'fixed', rate: 12, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 1, yawDeg: -90, posIn: [-0.6, 10] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#c62828' },
     cad: { file: '190.glb' },
-    real: cadReal('Gompei and the HERD', 'Doomspiral / Turnover', 'Turret con "kicker" de banda que comprime el FUEL contra la flywheel; intake de rodillos.', 'Turret with a belt "kicker" that compresses FUEL into the flywheel; roller intake.'),
+    real: cadReal('Gompei and the HERD', 'Doomspiral', 'Shooter fijo de lado alimentado por un spindexer ("doom spiral"); intake de cuatro barras que se mete bajo el hopper.', 'Side-firing fixed shooter fed by a spindexer (the "doom spiral"); four-bar intake that tucks under the hopper.'),
   }),
   base({
     id: 'cad-4915',
@@ -297,16 +311,16 @@ export const CAD_ROBOTS: RobotSpec[] = [
     teamNumber: 4915,
     widthIn: 28.5,
     lengthIn: 26.5,
-    heightIn: 25,
+    heightIn: 25.6,
     massKg: 63,
     maxSpeed: 4.6,
-    intake: { widthIn: 26, extensionIn: 8.4, rate: 12 }, // 213 mm de extensión (código)
+    intake: { widthIn: 26.8, extensionIn: 10.9, rate: 12 }, // pivote de −2° a 132° (PivotConstants)
     hopperCapacity: 45,
-    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 24, backspin: 20, lanes: 1 },
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 24, backspin: 20, lanes: 1, posIn: [-4.7, -6.2] },
     climb: { maxLevel: 1, timeL1: 3.2, timeL2: 99, timeL3: 99 },
     colors: { primary: '#30343b', accent: '#ef3e00' },
     cad: { file: '4915.glb' },
-    real: cadReal('Spartronics', 'ARTEMIS', 'Ganador de división. Turret con hood ajustable sobre una superestructura que pivota; tiene climber.', 'Division winner. Turret with an adjustable hood on a pivoting superstructure; has a climber.'),
+    real: cadReal('Spartronics', 'ARTEMIS', 'Ganador de división. Turret con hood ajustable sobre un spindexer; intake que pivota; tiene climber.', 'Division winner. Turret with an adjustable hood over a spindexer; pivoting intake; has a climber.'),
   }),
 ];
 

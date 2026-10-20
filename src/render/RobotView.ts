@@ -18,12 +18,15 @@ import { ALLIANCE_COLOR } from './FieldView';
 import { mergeStaticChildren } from './merge';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { CAD_RIGS, type CadRig, type MechState } from './cadRigs';
 
 export interface RobotVisualState {
   intakeDeploy: number; // 0–1
   turretYaw: number; // rad relativo al robot
   hoodAngle: number; // rad sobre la horizontal
   climbHeight: number; // m de extensión del climber
+  /** Climber desplegado 0–1 (CAD articulado). */
+  climb?: number;
   hopper: number; // FUEL dentro
   enabled: boolean;
   wheelYaw: number; // rad (swerve)
@@ -166,6 +169,10 @@ export class RobotView {
   private rackDeploy = new THREE.Vector2();
   /** Indicador (anillo) sobre el robot del jugador. */
   readonly marker: THREE.Mesh;
+  /** CAD articulado: rig y nodos que reciben la pose de cada componente (marco WPILib). */
+  private rig: CadRig | null = null;
+  private cadHolders: Array<THREE.Object3D | null> = [];
+  private mech: MechState = { intake: 0, hood: 0, turret: 0, climb: 0, spin: 0 };
 
   constructor(
     readonly spec: RobotSpec,
@@ -584,25 +591,139 @@ export class RobotView {
   }
 
   /**
-   * Carga el modelo 3D real del equipo (GLB optimizado por scripts/robots/build-models.mjs).
-   * Cada archivo se descarga una vez y se clona para cada robot que lo use.
+   * Carga el modelo 3D real del equipo (GLB de scripts/robots/build-models.mjs) y lo arma como
+   * en AdvantageScope: `main` fijo y cada componente `cN` colgado de un nodo que recibe su pose
+   * (src/render/cadRigs.ts), todo dentro de un marco WPILib (Z arriba) girado a Y arriba.
+   * Cada archivo se descarga y prepara una vez; cada robot usa un clon.
    */
   private loadCad(file: string): Promise<void> {
     return loadRobotModel(file)
       .then((scene) => {
         const m = scene.clone(true);
+        const rig = CAD_RIGS[file] ?? null;
+        const root = new THREE.Group();
+        root.name = 'cad';
+        root.rotation.y = ((rig?.yawDeg ?? 0) * Math.PI) / 180;
+        const wpi = new THREE.Group();
+        wpi.rotation.x = -Math.PI / 2; // WPILib (Z arriba, Y izquierda) → simulador (Y arriba, Z derecha)
+        root.add(wpi);
+        const nodes = new Map<string, THREE.Object3D>();
         m.traverse((o) => {
+          if (/^(main|c\d+)$/.test(o.name)) nodes.set(o.name, o);
           const mesh = o as THREE.Mesh;
           if (!mesh.isMesh) return;
           const mat = mesh.material as THREE.MeshStandardMaterial;
           mesh.castShadow = !mat.transparent;
           mesh.receiveShadow = true;
         });
-        m.name = 'cad';
-        this.group.add(m);
+        const main = nodes.get('main');
+        if (main) wpi.add(main);
+        else wpi.add(m); // GLB viejo sin partes
+        if (rig) {
+          this.rig = rig;
+          for (let i = 0; nodes.has(`c${i}`); i++) {
+            const holder = new THREE.Group();
+            const comp = nodes.get(`c${i}`)!;
+            if (rig.opaque?.includes(i))
+              comp.traverse((o) => {
+                const mesh = o as THREE.Mesh;
+                if (!mesh.isMesh) return;
+                const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+                mat.transparent = false;
+                mat.opacity = 1;
+                mat.depthWrite = true;
+                mesh.material = mat;
+                mesh.castShadow = true;
+              });
+            holder.add(comp);
+            wpi.add(holder);
+            this.cadHolders[i] = holder;
+          }
+          for (const e of rig.extras ?? []) {
+            const holder = this.cadHolders[e.comp];
+            if (!holder) continue;
+            const a = new THREE.Vector3(...e.a);
+            const b = new THREE.Vector3(...e.b);
+            const len = a.distanceTo(b);
+            const geo = new THREE.CylinderGeometry(e.r, e.r, len, 16);
+            const cyl = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: e.color, roughness: 0.75 }));
+            cyl.position.copy(a).add(b).multiplyScalar(0.5);
+            cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+            cyl.castShadow = true;
+            holder.add(cyl);
+          }
+          if (rig.hopper) this.buildCadHopper(wpi, rig.hopper.min, rig.hopper.maxDeployed ?? rig.hopper.max);
+        }
+        this.group.add(root);
         this.cadLoaded = true;
+        this.applyMech();
       })
       .catch((e) => console.warn('robot model', file, e));
+  }
+
+  /** FUEL visible dentro del hopper del CAD (caja en el marco WPILib: Z arriba). */
+  private buildCadHopper(parent: THREE.Object3D, min: number[], max: number[]): void {
+    const d = FUEL_RADIUS * 2;
+    const nx = Math.max(1, Math.floor((max[0] - min[0]) / d));
+    const ny = Math.max(1, Math.floor((max[1] - min[1]) / d));
+    const nz = Math.max(1, Math.floor((max[2] - min[2] - d) / (d * 0.86)) + 1);
+    const cx = (min[0] + max[0]) / 2;
+    const cy = (min[1] + max[1]) / 2;
+    const slots: THREE.Vector3[] = [];
+    for (let z = 0; z < nz; z++)
+      for (let x = 0; x < nx; x++)
+        for (let y = 0; y < ny; y++) {
+          if (slots.length >= MAX_SHOWN) break;
+          const odd = z % 2 ? d * 0.25 : 0;
+          slots.push(new THREE.Vector3(cx + (x - (nx - 1) / 2) * d + odd, cy + (y - (ny - 1) / 2) * d + odd, min[2] + FUEL_RADIUS + 0.004 + z * d * 0.86));
+        }
+    this.hopperSlots = slots;
+    this.hopperBalls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(FUEL_RADIUS * 0.97, 1), SHARED.fuel, Math.max(1, slots.length));
+    this.hopperBalls.count = 0;
+    const m4 = new THREE.Matrix4();
+    slots.forEach((p, i) => this.hopperBalls.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z)));
+    this.hopperBalls.frustumCulled = false;
+    this.hopperBalls.castShadow = true;
+    parent.add(this.hopperBalls);
+  }
+
+  private cadFill = -1;
+  private cadFillX = NaN;
+
+  /**
+   * FUEL del hopper del CAD: los primeros `n` lugares que caben en la caja actual (crece hacia
+   * el frente al desplegar la intake; guardada, la intake ocupa esa parte del hopper).
+   */
+  private fillCadHopper(n: number, deploy: number): void {
+    const h = this.rig!.hopper!;
+    const maxX = h.max[0] + ((h.maxDeployed ?? h.max)[0] - h.max[0]) * deploy;
+    if (n === this.cadFill && Math.abs(maxX - this.cadFillX) < 0.01) return;
+    this.cadFill = n;
+    this.cadFillX = maxX;
+    const m4 = new THREE.Matrix4();
+    let k = 0;
+    for (const p of this.hopperSlots) {
+      if (k >= n) break;
+      if (p.x + FUEL_RADIUS > maxX + 0.01) continue;
+      this.hopperBalls.setMatrixAt(k++, m4.makeTranslation(p.x, p.y, p.z));
+    }
+    this.hopperBalls.count = k;
+    this.hopperBalls.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Aplica las poses del rig al estado actual de los mecanismos. */
+  private applyMech(): void {
+    if (!this.rig) return;
+    const poses = this.rig.poses(this.mech);
+    for (let i = 0; i < this.cadHolders.length; i++) {
+      const h = this.cadHolders[i];
+      if (!h) continue;
+      const p = poses[i];
+      h.visible = !!p;
+      if (!p) continue;
+      h.position.set(p.t[0], p.t[1], p.t[2]);
+      h.quaternion.set(p.q[0], p.q[1], p.q[2], p.q[3]);
+    }
   }
 
   /** El modelo real ya se cargó (los robots con CAD no tienen otra geometría). */
@@ -618,6 +739,16 @@ export class RobotView {
   update(s: RobotVisualState, time: number): void {
     // Intake: pivota de guardada (pasada la vertical) a desplegada (adelante y abajo)
     const e = s.intakeDeploy * s.intakeDeploy * (3 - 2 * s.intakeDeploy);
+    if (this.rig) {
+      const sh = this.spec.shooter;
+      const m = this.mech;
+      m.intake = e;
+      m.hood = THREE.MathUtils.clamp((s.hoodAngle * 180 / Math.PI - sh.minAngle) / Math.max(1, sh.maxAngle - sh.minAngle), 0, 1);
+      m.turret = s.turretYaw;
+      m.climb = s.climb ?? 0;
+      m.spin = s.flywheelSpin * 0.08;
+      this.applyMech();
+    }
     if (this.intakeMode === 'pivot') this.intakeArm.rotation.z = this.stowAngle + (this.deployAngle - this.stowAngle) * e;
     else this.intake.position.set(this.rackStow.x + (this.rackDeploy.x - this.rackStow.x) * e, this.rackStow.y + (this.rackDeploy.y - this.rackStow.y) * e, 0);
     for (const r of this.intakeRollers) r.rotation.z = -s.intakeSpin;
@@ -627,8 +758,11 @@ export class RobotView {
     for (const c of this.climberInners) c.position.y = BUMPER_TOP + s.climbHeight;
     for (const w of this.wheels) w.rotation.y = this.spec.drivetrain === 'swerve' ? s.wheelYaw : 0;
     for (const w of this.wheelSpinners) w.rotation.z = -s.wheelSpin;
-    const n = Math.min(s.hopper, this.hopperSlots.length);
-    if (this.hopperBalls.count !== n) this.hopperBalls.count = n;
+    if (this.rig?.hopper) this.fillCadHopper(s.hopper, e);
+    else {
+      const n = Math.min(s.hopper, this.hopperSlots.length);
+      if (this.hopperBalls.count !== n) this.hopperBalls.count = n;
+    }
     this.led.emissiveIntensity = s.enabled ? 2.4 : 0.7;
     // RSL: parpadea cuando está habilitado, fija cuando no
     this.rsl.emissiveIntensity = s.enabled ? (Math.floor(time * 2.5) % 2 ? 3 : 0.3) : 2;
@@ -666,8 +800,126 @@ export function loadRobotModel(file: string): Promise<THREE.Group> {
       gltfLoader.setMeshoptDecoder(MeshoptDecoder);
     }
     const url = new URL(`robots/${file}`, document.baseURI).href;
-    p = gltfLoader.loadAsync(url).then((g) => g.scene);
+    p = gltfLoader.loadAsync(url).then((g) => creaseNormals(g.scene).then(() => g.scene));
     modelCache.set(file, p);
   }
   return p;
+}
+
+/**
+ * Los GLB de robots vienen soldados y sin normales (pesan un tercio): se calculan aquí con
+ * ángulo de pliegue de 40° (superficies curvas suaves, aristas vivas), en tramos cortos para
+ * no congelar la pantalla.
+ */
+async function creaseNormals(scene: THREE.Object3D): Promise<void> {
+  const meshes: THREE.Mesh[] = [];
+  scene.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.isMesh && !m.geometry.getAttribute('normal')) meshes.push(m);
+  });
+  let slice = performance.now();
+  for (const m of meshes) {
+    // Cede el hilo cada ~15 ms de trabajo (no por malla: cada pausa espera un frame entero)
+    if (performance.now() - slice > 15) {
+      await new Promise((r) => setTimeout(r, 0));
+      slice = performance.now();
+    }
+    const g = creaseGeometry(m.geometry, (40 * Math.PI) / 180);
+    m.geometry.dispose();
+    m.geometry = g;
+    const mat = m.material as THREE.MeshStandardMaterial;
+    if (mat.transparent) mat.depthWrite = false;
+  }
+}
+
+/**
+ * Normales con ángulo de pliegue sobre una malla indexada y soldada: cada esquina promedia
+ * (por área) las caras vecinas cuya normal difiere menos que `angle` de la suya; las esquinas
+ * de un vértice con la misma normal se comparten. Con arreglos planos (lineal en caras), a
+ * diferencia de BufferGeometryUtils.toCreasedNormals, que es lento con 100k+ triángulos.
+ */
+export function creaseGeometry(geo: THREE.BufferGeometry, angle: number): THREE.BufferGeometry {
+  const pa = geo.getAttribute('position');
+  const nv = pa.count;
+  const P = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) {
+    P[i * 3] = pa.getX(i);
+    P[i * 3 + 1] = pa.getY(i);
+    P[i * 3 + 2] = pa.getZ(i);
+  }
+  const src = geo.getIndex();
+  const I = src ? Uint32Array.from(src.array as ArrayLike<number>) : Uint32Array.from({ length: nv }, (_, i) => i);
+  const nf = Math.floor(I.length / 3);
+  // Normales de cara: sin normalizar (peso = área) y unitarias
+  const FN = new Float32Array(nf * 3);
+  const FU = new Float32Array(nf * 3);
+  for (let f = 0; f < nf; f++) {
+    const a = I[f * 3] * 3;
+    const b = I[f * 3 + 1] * 3;
+    const c = I[f * 3 + 2] * 3;
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2];
+    const vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    FN[f * 3] = nx;
+    FN[f * 3 + 1] = ny;
+    FN[f * 3 + 2] = nz;
+    FU[f * 3] = nx / l;
+    FU[f * 3 + 1] = ny / l;
+    FU[f * 3 + 2] = nz / l;
+  }
+  // Caras por vértice (CSR)
+  const start = new Uint32Array(nv + 1);
+  for (let k = 0; k < nf * 3; k++) start[I[k] + 1]++;
+  for (let i = 0; i < nv; i++) start[i + 1] += start[i];
+  const fill = start.slice(0, nv);
+  const adj = new Uint32Array(nf * 3);
+  for (let k = 0; k < nf * 3; k++) adj[fill[I[k]]++] = (k / 3) | 0;
+  const cos = Math.cos(angle);
+  const outP: number[] = [];
+  const outN: number[] = [];
+  const outI = new Uint32Array(nf * 3);
+  // Esquinas ya emitidas por vértice: lista enlazada de (normal, índice nuevo)
+  const head = new Int32Array(nv).fill(-1);
+  const next: number[] = [];
+  for (let f = 0; f < nf; f++) {
+    const ux = FU[f * 3], uy = FU[f * 3 + 1], uz = FU[f * 3 + 2];
+    for (let k = 0; k < 3; k++) {
+      const v = I[f * 3 + k];
+      let nx = 0, ny = 0, nz = 0;
+      for (let j = start[v]; j < start[v + 1]; j++) {
+        const g = adj[j];
+        if (ux * FU[g * 3] + uy * FU[g * 3 + 1] + uz * FU[g * 3 + 2] >= cos) {
+          nx += FN[g * 3];
+          ny += FN[g * 3 + 1];
+          nz += FN[g * 3 + 2];
+        }
+      }
+      const l = Math.hypot(nx, ny, nz) || 1;
+      nx /= l;
+      ny /= l;
+      nz /= l;
+      let found = -1;
+      for (let e = head[v]; e >= 0; e = next[e]) {
+        if (outN[e * 3] * nx + outN[e * 3 + 1] * ny + outN[e * 3 + 2] * nz > 0.9995) {
+          found = e;
+          break;
+        }
+      }
+      if (found < 0) {
+        found = outP.length / 3;
+        outP.push(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]);
+        outN.push(nx, ny, nz);
+        next.push(head[v]);
+        head[v] = found;
+      }
+      outI[f * 3 + k] = found;
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(outP, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(outN, 3));
+  out.setIndex(new THREE.BufferAttribute(outP.length / 3 > 65535 ? outI : Uint16Array.from(outI), 1));
+  out.computeBoundingSphere();
+  return out;
 }

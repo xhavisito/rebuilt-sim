@@ -192,11 +192,31 @@ export class Showroom {
     const s = this.turntable.scale.x;
     if (s < 1) this.turntable.scale.setScalar(Math.min(1, s + dt * 0.9));
     (this.ring.material as THREE.MeshBasicMaterial).opacity = 0.45 + 0.15 * Math.sin(this.time * 2);
-    if (this.robot)
+    if (this.robot) {
+      // Demostración de los mecanismos (ciclo de 8 s): despliega la intake y llena el hopper,
+      // la guarda y "dispara" vaciándolo con la turret/hood buscando el HUB.
+      const sp = this.robot.spec;
+      const cyc = this.time % 8;
+      const deploy = cyc < 1 ? cyc : cyc < 4 ? 1 : cyc < 5 ? 5 - cyc : 0;
+      const fill = cyc < 4.5 ? Math.min(1, 0.15 + cyc / 4) : Math.max(0, 1 - (cyc - 4.5) / 3);
+      const shooting = cyc >= 4.5;
+      const hood = (sp.shooter.minAngle + (sp.shooter.maxAngle - sp.shooter.minAngle) * (0.5 + 0.5 * Math.sin(this.time * 0.9))) * (Math.PI / 180);
       this.robot.update(
-        { intakeDeploy: 0.6, turretYaw: 0.4 * Math.sin(this.time * 0.7), hoodAngle: 1.0, climbHeight: 0, hopper: Math.min(this.robot.spec.hopperCapacity, 14), enabled: true, wheelYaw: 0, wheelSpin: this.time * 2, intakeSpin: this.time * 6, flywheelSpin: this.time * 20 },
+        {
+          intakeDeploy: deploy,
+          turretYaw: 0.6 * Math.sin(this.time * 0.7),
+          hoodAngle: hood,
+          climbHeight: 0,
+          hopper: Math.round(Math.min(sp.hopperCapacity, 30) * fill),
+          enabled: true,
+          wheelYaw: 0,
+          wheelSpin: this.time * 2,
+          intakeSpin: this.time * 6,
+          flywheelSpin: this.time * (shooting ? 60 : 8),
+        },
         this.time,
       );
+    }
     // Encuadre: el robot + la tornamesa caben siempre (más lejos si el panel es angosto)
     const d = this.distance * Math.max(1, 1.25 / Math.max(0.6, this.camera.aspect));
     this.camera.position.set(d * 0.74, d * 0.46, d * 0.74);

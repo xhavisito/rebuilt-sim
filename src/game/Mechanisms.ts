@@ -36,6 +36,28 @@ export function exitHeight(r: Robot): number {
 }
 
 /**
+ * Hacia dónde tira un shooter FIJO respecto al frente del robot (rad, + = antihorario visto
+ * desde arriba). Muchos robots de 2026 recogen por delante y tiran hacia atrás o de lado.
+ */
+export function shooterYawOffset(r: Robot): number {
+  return r.spec.shooter.type === 'fixed' ? (r.spec.shooter.yawDeg ?? 0) * DEG : 0;
+}
+
+/** Rumbo que debe tener el chasis para que el shooter apunte hacia `yaw`. */
+export function chassisYawFor(r: Robot, yaw: number): number {
+  return wrap(yaw - shooterYawOffset(r));
+}
+
+/** Punto de salida del FUEL (posición del shooter en el robot, a la altura de salida). */
+export function shooterOrigin(r: Robot, h = r.phys.heading()): { x: number; y: number; z: number } {
+  const p = r.phys.curPos;
+  const [lx, ly] = r.spec.shooter.posIn ?? [0, 0];
+  // marco del robot: x adelante, y a la izquierda (WPILib) → mundo (z = −y)
+  const w = r.phys.localToWorld(F.inch(lx), -F.inch(ly), h);
+  return { x: w.x, y: p.y + exitHeight(r), z: w.z };
+}
+
+/**
  * FUEL que el robot empuja en la dirección en que quiere moverse: la primera fila pegada al
  * BUMPER cuenta 1 y las dos siguientes 0.5 (el montón detrás también se resiste).
  */
@@ -115,7 +137,12 @@ export function shoveFuel(r: Robot, fuel: FuelSystem): void {
     }
     for (const sz of [1, -1]) exits.push([ph.outerW + R - sz * lz, lx, sz * (ph.outerW + R + 0.003), sz * sn, sz * c]);
     exits.sort((a, b) => a[0] - b[0]);
-    const inField = (x: number, z: number) => Math.abs(x) < F.HALF_L - R && Math.abs(z) < F.HALF_W - R;
+    const inField = (x: number, z: number) => {
+      if (Math.abs(z) >= F.HALF_W - R) return false;
+      if (Math.abs(x) < F.HALF_L - R) return true;
+      // Por la abertura del CORRAL sí puede salir (los robots empujan FUEL al CORRAL)
+      return Math.abs(z - F.outpostInfo(x > 0 ? 'red' : 'blue').z) < F.CORRAL_OPEN_W / 2 - R;
+    };
     let pick = exits[0];
     for (const e of exits) {
       if (inField(p.x + e[1] * c + e[2] * sn, p.z - e[1] * sn + e[2] * c)) {
@@ -191,9 +218,9 @@ export function predictLaunch(
   const s = r.spec.shooter;
   const pass = r.cmd.pass;
   const h = r.phys.heading();
-  const p = r.phys.curPos;
   const v = r.phys.velocity();
-  const from = { x: p.x, y: p.y + exitHeight(r), z: p.z };
+  const from = shooterOrigin(r, h);
+  const hs = h + shooterYawOffset(r); // rumbo del shooter fijo
   if (pass && r.lastShotKind === 'corral') return null;
   let sol: ShotSolution | null;
   if (r.cmd.shoot || pass) sol = r.lastSolution;
@@ -203,9 +230,9 @@ export function predictLaunch(
     r.previewTimer = 0.1;
     const target = r.cmd.aim ? { x: r.cmd.aim.x, y: r.cmd.aim.y ?? 0.5, z: r.cmd.aim.z } : hubAimPoint(r);
     if (!autoAim && s.type === 'fixed' && !r.cmd.aim) {
-      const d = Math.hypot(target.x - p.x, target.z - p.z);
-      target.x = p.x + Math.cos(h) * d;
-      target.z = p.z - Math.sin(h) * d;
+      const d = Math.hypot(target.x - from.x, target.z - from.z);
+      target.x = from.x + Math.cos(hs) * d;
+      target.z = from.z - Math.sin(hs) * d;
     }
     sol = solveShot({
       from,
@@ -220,8 +247,8 @@ export function predictLaunch(
     r.previewSolution = sol;
   }
   if (!sol) return null;
-  let yaw = s.type === 'turret' ? sol.yaw : h;
-  if (s.type === 'fixed' && Math.abs(wrap(sol.yaw - h)) < 6 * DEG) yaw = sol.yaw;
+  let yaw = s.type === 'turret' ? sol.yaw : hs;
+  if (s.type === 'fixed' && Math.abs(wrap(sol.yaw - hs)) < 6 * DEG) yaw = sol.yaw;
   const lv = launchVector(yaw, sol.pitch, sol.speed);
   return {
     from: { x: from.x + Math.cos(yaw) * 0.05, y: from.y, z: from.z - Math.sin(yaw) * 0.05 },
@@ -242,7 +269,8 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   const h = r.phys.heading();
   const p = r.phys.curPos;
   const v = r.phys.velocity();
-  const from = { x: p.x, y: p.y + exitHeight(r), z: p.z };
+  const from = shooterOrigin(r, h);
+  const hs = h + shooterYawOffset(r); // rumbo del shooter fijo
 
   // ---- Objetivo y solución (recalculada a 10 Hz: el solver numérico es caro)
   r.solveTimer -= dt;
@@ -280,9 +308,9 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
     const target = r.cmd.aim ? { x: r.cmd.aim.x, y: r.cmd.aim.y ?? 0.5, z: r.cmd.aim.z } : hubAimPoint(r);
     if (!ctx.autoAim && s.type === 'fixed' && !r.cmd.aim) {
       // Manual: solo distancia (tabla de tiro); el piloto apunta con el rumbo.
-      const d = Math.hypot(target.x - p.x, target.z - p.z);
-      target.x = p.x + Math.cos(h) * d;
-      target.z = p.z - Math.sin(h) * d;
+      const d = Math.hypot(target.x - from.x, target.z - from.z);
+      target.x = from.x + Math.cos(hs) * d;
+      target.z = from.z - Math.sin(hs) * d;
     }
     solution = solveShot({
       from,
@@ -313,12 +341,12 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   if (!(wantShoot || wantPass) || r.spinUp < 1 || r.shootCooldown > 0) return;
   if (ctx.fuel.robotCount(r.index) === 0) return;
   if (ctx.requireAlign && solution && kind !== 'corral') {
-    const aimYaw = s.type === 'turret' ? h + r.turretYaw : h;
+    const aimYaw = s.type === 'turret' ? h + r.turretYaw : hs;
     if (Math.abs(wrap(solution.yaw - aimYaw)) > 0.09) return;
   }
 
   // ---- Lanzamiento
-  const yawShooter = s.type === 'turret' ? h + r.turretYaw : h;
+  const yawShooter = s.type === 'turret' ? h + r.turretYaw : hs;
   let yaw = yawShooter;
   let pitch = solution ? solution.pitch : (s.minAngle + s.maxAngle) * 0.5 * DEG;
   let speed = solution ? solution.speed : s.maxSpeed * 0.9;
@@ -327,7 +355,7 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
     speed = 2.6;
   } else if (solution && s.type === 'turret') yaw = solution.yaw;
   // Un shooter fijo solo puede tirar hacia su frente: si la solución cae fuera (±6°), dispara de frente.
-  if (s.type === 'fixed' && solution && Math.abs(wrap(solution.yaw - h)) < 6 * DEG) yaw = solution.yaw;
+  if (s.type === 'fixed' && solution && Math.abs(wrap(solution.yaw - hs)) < 6 * DEG) yaw = solution.yaw;
   // Dispersión según la precisión del diseño
   const sig = 1 - s.accuracy;
   yaw += ctx.rng.gauss() * sig * 0.07;

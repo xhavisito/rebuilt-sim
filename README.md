@@ -14,6 +14,8 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
   (CHUTE y CORRAL), DRIVER STATIONS y los 32 AprilTags 36h11 reales en las posiciones del
   layout oficial de WPILib.
 - **504 FUEL** (o 600) con física: arrastre, efecto Magnus, rodadura, salidas aleatorias del HUB.
+  El FUEL no atraviesa las paredes aunque un robot lo aprisione, y el que sale del campo lo
+  regresa FIELD STAFF por donde salió (G405).
 - **Match completo**: AUTO 0:20, 3 s de evaluación, TRANSITION, SHIFT 1–4 y END GAME con las
   luces del HUB (activo, aviso de 3 s, persecución blanca), gracia de 3 s, puntos y Ranking Points.
 - **Robots**: swerve o tank, intake, hopper, shooter fijo o turret con auto-aim balístico y
@@ -25,9 +27,13 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
   (pantalla dividida o cámara compartida), torneo rápido (Qualifications, rankings, alianzas y
   Playoffs), espectador IA vs IA, diseñador de AUTO y editor de robots.
 - **Robots reales de 2026 con su CAD**: 1678 Limestone, 5000 Icarus, 604 Toploader, 6328 Darwin,
-  971 Mixtape, 341 Miss Daisy, 190 Turnover y 4915 Artemis, con el modelo 3D que cada equipo
-  publicó en su repositorio de código (simplificado para la web), su tipo de shooter, capacidad
-  y velocidad. Galería para elegirlos desde el menú. En Difícil y Einstein la IA también los usa.
+  971 Mixtape, 341 Miss Daisy, 190 Doomspiral y 4915 Artemis, con el modelo 3D que cada equipo
+  publicó en su repositorio de código (simplificado para la web) **y sus mecanismos funcionando
+  como en el código del equipo**: la intake se despliega, el hopper se extiende, la turret y el
+  hood apuntan, el spindexer gira y el climber sube; se ve el FUEL dentro del hopper. Medidas,
+  extensión de la intake y dirección del shooter (1678 y 6328 tiran hacia atrás, 190 de lado)
+  tomadas del CAD y del código. Galería para elegirlos desde el menú (con una demostración de
+  sus mecanismos). En Difícil y Einstein la IA también los usa.
 - **6 cámaras**: tercera persona (como en MoSim: detrás del robot, siempre mirando al campo
   contrario, no gira con el robot), DRIVER STATION, desde el robot (POV), superior,
   transmisión y libre (práctica). La rueda del mouse acerca/aleja la tercera persona.
@@ -151,4 +157,4 @@ contador lógico y los 504 FUEL se dibujan en una sola malla instanciada.
   [Statbotics](https://www.statbotics.io) y el
   [FRC 2026 REBUILT Robot Study Dashboard](https://dmeglan.github.io/frc2026-rebuilt-dashboard/).
   Para regenerarlos: `node scripts/robots/fetch-sources.mjs <dir>` y
-  `RATIO=0.25 node scripts/robots/build-models.mjs <dir>`.
+  `node scripts/robots/build-models.mjs <dir>` (`BUDGET=` triángulos por robot, 140k por omisión).
