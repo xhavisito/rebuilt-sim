@@ -65,8 +65,6 @@ export class Robot {
   previewTimer = 0;
   solveTimer = 0;
   corralSide = 1;
-  /** Carril del siguiente tiro (shooters de varios FUEL de ancho). */
-  lane = 0;
   lastKind: 'shot' | 'pass' = 'shot';
   lastShotKind: 'shot' | 'pass' | 'corral' = 'shot';
   /** En la TOWER. */

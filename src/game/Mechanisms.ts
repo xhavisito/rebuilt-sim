@@ -356,45 +356,51 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   } else if (solution && s.type === 'turret') yaw = solution.yaw;
   // Un shooter fijo solo puede tirar hacia su frente: si la solución cae fuera (±6°), dispara de frente.
   if (s.type === 'fixed' && solution && Math.abs(wrap(solution.yaw - hs)) < 6 * DEG) yaw = solution.yaw;
-  // Dispersión según la precisión del diseño
+  // Un "dumper" (shooter de varios FUEL de ancho) suelta una ráfaga: un FUEL por carril al mismo
+  // tiempo, de lado a lado del shooter; una turret doble, uno por turret. La cadencia media
+  // sigue siendo `rate` (la siguiente ráfaga espera carriles / rate).
+  const lanes = kind === 'corral' ? 1 : Math.max(1, s.lanes ?? 1);
+  const spacing = s.laneSpacingIn ? F.inch(s.laneSpacingIn) : F.FUEL_DIAMETER * 1.05;
   const sig = 1 - s.accuracy;
-  yaw += ctx.rng.gauss() * sig * 0.07;
-  pitch += ctx.rng.gauss() * sig * 0.05;
-  speed *= 1 + ctx.rng.gauss() * sig * 0.04;
-  const i = ctx.fuel.popRobot(r.index);
-  if (i === undefined) return;
-  const lv = launchVector(yaw, pitch, speed);
-  let start = { x: from.x + Math.cos(yaw) * 0.05, y: from.y, z: from.z - Math.sin(yaw) * 0.05 };
-  // Shooter "dumper" de varios carriles: los FUEL salen alternando a lo ancho
-  const lanes = s.lanes ?? 1;
-  if (lanes > 1 && kind !== 'corral') {
-    r.lane = (r.lane + 1) % lanes;
-    const lat = (r.lane - (lanes - 1) / 2) * F.FUEL_DIAMETER * 1.05;
-    start = { x: start.x + Math.sin(yaw) * lat, y: start.y, z: start.z + Math.cos(yaw) * lat };
+  let fired = 0;
+  for (let k = 0; k < lanes; k++) {
+    // Dispersión según la precisión del diseño (cada FUEL de la ráfaga sale un poco distinto)
+    const yk = yaw + ctx.rng.gauss() * sig * 0.07;
+    const pk = pitch + ctx.rng.gauss() * sig * 0.05;
+    const sk = speed * (1 + ctx.rng.gauss() * sig * 0.04);
+    const i = ctx.fuel.popRobot(r.index);
+    if (i === undefined) break;
+    const lv = launchVector(yk, pk, sk);
+    let start = { x: from.x + Math.cos(yk) * 0.05, y: from.y, z: from.z - Math.sin(yk) * 0.05 };
+    if (lanes > 1) {
+      const lat = (k - (lanes - 1) / 2) * spacing;
+      start = { x: start.x + Math.sin(yaw) * lat, y: start.y, z: start.z + Math.cos(yaw) * lat };
+    }
+    if (kind === 'corral') {
+      // La abertura del CORRAL está dividida por un tubo al centro: alterna entre las dos mitades.
+      r.corralSide = -r.corralSide;
+      const lat = r.corralSide * Math.min(0.19, F.inch(r.spec.intake.widthIn) / 2 - 0.05);
+      const fwd = r.phys.outerL + F.FUEL_RADIUS + 0.03;
+      start = { x: p.x + Math.cos(h) * fwd + Math.sin(h) * lat, y: F.FUEL_RADIUS + 0.01, z: p.z - Math.sin(h) * fwd + Math.cos(h) * lat };
+    }
+    ctx.fuel.launch(
+      i,
+      start,
+      { x: lv.x + v.x, y: kind === 'corral' ? 0.6 : lv.y, z: lv.z + v.z },
+      kind === 'corral' ? null : backspinAxis(yk, s.backspin),
+      kind === 'corral' ? 0 : FLAG_SHOT,
+    );
+    ctx.fuel.shotBy[i] = r.index;
+    ctx.fuel.shotTime[i] = ctx.time;
+    ctx.fuel.shotOrigin[i * 2] = p.x;
+    ctx.fuel.shotOrigin[i * 2 + 1] = p.z;
+    ctx.fuel.lastTouch[i] = r.index;
+    ctx.fuel.lastTouchTime[i] = ctx.time;
+    r.stats.fuelShot++;
+    ctx.onLaunch?.(r, i, kind);
+    fired++;
   }
-  if (kind === 'corral') {
-    // La abertura del CORRAL está dividida por un tubo al centro: alterna entre las dos mitades.
-    r.corralSide = -r.corralSide;
-    const lat = r.corralSide * Math.min(0.19, F.inch(r.spec.intake.widthIn) / 2 - 0.05);
-    const fwd = r.phys.outerL + F.FUEL_RADIUS + 0.03;
-    start = { x: p.x + Math.cos(h) * fwd + Math.sin(h) * lat, y: F.FUEL_RADIUS + 0.01, z: p.z - Math.sin(h) * fwd + Math.cos(h) * lat };
-  }
-  ctx.fuel.launch(
-    i,
-    start,
-    { x: lv.x + v.x, y: kind === 'corral' ? 0.6 : lv.y, z: lv.z + v.z },
-    kind === 'corral' ? null : backspinAxis(yaw, s.backspin),
-    kind === 'corral' ? 0 : FLAG_SHOT,
-  );
-  ctx.fuel.shotBy[i] = r.index;
-  ctx.fuel.shotTime[i] = ctx.time;
-  ctx.fuel.shotOrigin[i * 2] = p.x;
-  ctx.fuel.shotOrigin[i * 2 + 1] = p.z;
-  ctx.fuel.lastTouch[i] = r.index;
-  ctx.fuel.lastTouchTime[i] = ctx.time;
-  r.shootCooldown = 1 / Math.max(0.5, s.rate);
-  r.stats.fuelShot++;
-  ctx.onLaunch?.(r, i, kind);
+  if (fired) r.shootCooldown = lanes / Math.max(0.5, s.rate);
 }
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));

@@ -38,12 +38,8 @@ export interface CadRig {
   yawDeg?: number;
   /** Pose de cada componente c0, c1… (marco WPILib del robot); null = oculto. */
   poses(m: MechState): Array<Pose | null>;
-  /**
-   * Volumen interior del hopper (WPILib, m) donde se dibuja el FUEL guardado. `maxDeployed`:
-   * esquina máxima con la intake desplegada (el hopper crece hacia el frente, o la intake
-   * guardada ocupa parte del hopper).
-   */
-  hopper?: { min: Vec3; max: Vec3; maxDeployed?: Vec3 };
+  /** Volumen interior del hopper, donde se dibuja el FUEL guardado (ver `HopperBox`). */
+  hopper?: HopperBox[];
   /**
    * Piezas que faltan en el CAD publicado (p. ej. el rodillo de la intake de 604): cilindros
    * entre `a` y `b` en el marco de la POSE del componente `comp`.
@@ -51,6 +47,103 @@ export interface CadRig {
   extras?: Array<{ comp: number; a: Vec3; b: Vec3; r: number; color: number }>;
   /** Componentes que se dibujan opacos aunque el CAD los marque translúcidos. */
   opaque?: number[];
+}
+
+/**
+ * Caja del hopper (marco WPILib del robot, m, con los mecanismos guardados). `maxDeployed`:
+ * esquina máxima con la intake desplegada (el hopper crece hacia el frente, o la intake guardada
+ * ocupa esa parte); entonces el FUEL guardado mantiene la intake abierta lo necesario para caber.
+ * `comp`: la caja va montada en ese componente y se mueve con él (bandejas de 5000).
+ */
+export interface HopperBox {
+  min: Vec3;
+  max: Vec3;
+  maxDeployed?: Vec3;
+  comp?: number;
+  /**
+   * Anillo alrededor de un spindexer/rotor (centro x, y y radio del círculo de centros): los
+   * FUEL van en fila alrededor del eje, en capas entre min[2] y max[2] (x, y de min/max se ignoran).
+   */
+  ring?: [number, number, number];
+}
+
+/** Lugar de un FUEL en el hopper: caja y centro (marco WPILib, mecanismos guardados). */
+export interface HopperSlot {
+  box: number;
+  p: Vec3;
+}
+
+const FUEL_D = 0.150114; // 5.91 in
+
+/**
+ * Lugares del FUEL en las cajas del hopper: capas de abajo hacia arriba (cada capa corrida medio
+ * FUEL, como se acomodan las pelotas) y, en cada capa, de atrás hacia adelante. El orden es el
+ * orden de llenado.
+ */
+export function hopperSlots(boxes: HopperBox[], max = 80): HopperSlot[] {
+  const out: HopperSlot[] = [];
+  const d = FUEL_D;
+  const r = d / 2;
+  boxes.forEach((b, box) => {
+    if (b.ring) {
+      const [cx, cy, rr] = b.ring;
+      const n = Math.max(1, Math.floor((2 * Math.PI * rr) / (d * 1.02)));
+      const nz = Math.floor(Math.max(0, b.max[2] - b.min[2] - d) / (d * 0.82)) + 1;
+      for (let z = 0; z < nz; z++)
+        for (let k = 0; k < n; k++) {
+          const a = ((k + (z % 2) * 0.5) / n) * 2 * Math.PI;
+          out.push({ box, p: [cx + rr * Math.cos(a), cy + rr * Math.sin(a), b.min[2] + r + 0.003 + z * d * 0.82] });
+        }
+      return;
+    }
+    const hi = b.maxDeployed ?? b.max;
+    const sx = hi[0] - b.min[0] - d;
+    const sy = hi[1] - b.min[1] - d;
+    const sz = hi[2] - b.min[2] - d;
+    if (sx < -0.02 || sy < -0.02 || sz < -0.02) return;
+    const nz = Math.floor(Math.max(0, sz) / (d * 0.82)) + 1;
+    for (let z = 0; z < nz; z++) {
+      const off = z % 2 ? r * 0.5 : 0; // capa corrida: la pelota cae en el hueco
+      const nx = Math.floor(Math.max(0, sx - off) / d) + 1;
+      const ny = Math.floor(Math.max(0, sy - off) / d) + 1;
+      // En las cajas que crecen hacia el frente, el FUEL se acomoda desde el fondo (atrás)
+      const x0 = b.min[0] + r + off + (b.maxDeployed ? 0 : (Math.max(0, sx - off) - (nx - 1) * d) / 2);
+      const y0 = b.min[1] + r + off + (Math.max(0, sy - off) - (ny - 1) * d) / 2;
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) out.push({ box, p: [x0 + i * d, y0 + j * d, b.min[2] + r + 0.003 + z * d * 0.82] });
+    }
+  });
+  out.sort((a, b) => a.p[2] - b.p[2] || a.p[0] - b.p[0] || a.box - b.box);
+  return out.slice(0, max);
+}
+
+/**
+ * FUEL que se dibujan en un hopper con `slots` lugares visibles: todos si caben; si el hopper real
+ * guarda más de los que caben a la vista, la cantidad dibujada es proporcional al llenado (lleno
+ * se ve lleno), y nunca cero si hay FUEL.
+ */
+export function shownFuel(n: number, slots: number, capacity: number): number {
+  if (n <= 0 || slots <= 0) return 0;
+  if (capacity <= slots) return Math.min(n, slots);
+  return Math.min(slots, Math.max(1, Math.round((n * slots) / capacity)));
+}
+
+/** ¿El lugar cabe con la intake desplegada `e` (0–1)? (cajas que crecen hacia el frente) */
+export function slotFits(b: HopperBox, s: HopperSlot, e: number): boolean {
+  if (!b.maxDeployed) return true;
+  const maxX = b.max[0] + (b.maxDeployed[0] - b.max[0]) * e;
+  return s.p[0] + FUEL_D / 2 <= maxX + 0.012;
+}
+
+/** Despliegue mínimo de la intake para que quepan `n` FUEL (el FUEL la mantiene abierta). */
+export function openingFor(boxes: HopperBox[], slots: HopperSlot[], n: number): number {
+  if (!boxes.some((b) => b.maxDeployed)) return 0;
+  const want = Math.min(n, slots.length);
+  for (let e = 0; e <= 1.0001; e += 0.05) {
+    let k = 0;
+    for (const s of slots) if (slotFits(boxes[s.box], s, e)) k++;
+    if (k >= want) return e;
+  }
+  return 1;
 }
 
 // ------------------------------------------------------------------ álgebra mínima (WPILib)
@@ -159,7 +252,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([0.01, 0, 0.554692]),
       ];
     },
-    hopper: { min: [-0.13, -0.29, 0.2], max: [0.07, 0.29, 0.5], maxDeployed: [0.5, 0.29, 0.5] },
+    hopper: [{ min: [-0.13, -0.29, 0.2], max: [0.07, 0.29, 0.5], maxDeployed: [0.5, 0.29, 0.5] }],
   },
 
   /**
@@ -184,7 +277,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pivot([-0.063648, 0, 0.131363], rot(0, -floor * DEG, 0)),
       ];
     },
-    hopper: { min: [-0.12, -0.31, 0.17], max: [0.05, 0.31, 0.5], maxDeployed: [0.48, 0.31, 0.5] },
+    hopper: [{ min: [-0.12, -0.32, 0.18], max: [0.05, 0.32, 0.52], maxDeployed: [0.49, 0.32, 0.52] }],
   },
 
   /**
@@ -209,7 +302,11 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([-0.009856, 0, 0.304569]),
       ];
     },
-    hopper: { min: [-0.2, -0.36, 0.13], max: [-0.06, 0.36, 0.5], maxDeployed: [0.25, 0.36, 0.5] },
+    // Sobre el spindexer y bajo la cubierta; arriba, sin invadir el shooter (lado izquierdo)
+    hopper: [
+      { min: [-0.22, -0.25, 0.125], max: [-0.06, 0.25, 0.27], maxDeployed: [0.22, 0.25, 0.27] },
+      { min: [-0.22, -0.37, 0.25], max: [-0.06, 0.09, 0.53], maxDeployed: [0.22, 0.09, 0.53] },
+    ],
   },
 
   /**
@@ -230,6 +327,14 @@ export const CAD_RIGS: Record<string, CadRig> = {
         compose(compose(base, pose([inch(2.931), 0, inch(-3.5)])), pose([0, 0, 0], rot(0, lerp(15, 35, m.hood) * DEG, 0))),
       ];
     },
+    // Sin paredes de hopper en el CAD: el FUEL se dibuja sobre el chasis, alrededor de la torre
+    // del serializer (al frente, a los lados y atrás de ella)
+    hopper: [
+      { min: [0.11, -0.33, 0.17], max: [0.335, 0.33, 0.47] },
+      { min: [-0.11, 0.12, 0.17], max: [0.11, 0.335, 0.47] },
+      { min: [-0.11, -0.335, 0.17], max: [0.11, -0.12, 0.47] },
+      { min: [-0.335, -0.33, 0.21], max: [-0.11, 0.33, 0.47] },
+    ],
     extras: [{ comp: 0, a: [0.27, 0.0, -0.04], b: [0.27, -0.66, -0.04], r: inch(1.1), color: 0x2a6b3a }],
     opaque: [0, 1], // las placas de los brazos vienen casi transparentes en el CAD
 
@@ -256,7 +361,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([-0.156033, 0, 0.132797], rot(0, lerp(120, 0, m.intake) * DEG, 0)),
       ];
     },
-    hopper: { min: [-0.6, -0.36, 0.14], max: [-0.21, 0.36, 0.46] },
+    hopper: [{ min: [-0.6, -0.36, 0.1], max: [-0.14, 0.36, 0.48] }],
   },
 
   /**
@@ -276,6 +381,8 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([-0.1, 0.08, 0.38], rot(0, (hood - 90) * DEG, turretDeg * DEG)),
       ];
     },
+    // Sin hopper: el FUEL en tránsito (4 de ancho tras la intake) sobre el piso del embudo
+    hopper: [{ min: [0.13, -0.31, 0.17], max: [0.3, 0.31, 0.47] }],
   },
 
   /**
@@ -300,6 +407,8 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([0, right * Math.cos(201 * DEG), right * Math.sin(201 * DEG)]),
       ];
     },
+    // El FUEL da vueltas en fila alrededor del "dye rotor" (indexer central), en la tina circular
+    hopper: [{ min: [0, 0, 0.12], max: [0, 0, 0.41], ring: [0.005, -0.005, 0.185] }],
   },
 
   /**
@@ -323,6 +432,10 @@ export const CAD_RIGS: Record<string, CadRig> = {
       const hood = rotateAround(rotateAround(pose([0, 0, 0], flip), hp, rot(0, lerp(10, -15, m.hood) * DEG, 0)), turretC, rot(0, 0, m.turret));
       return [hood, turret, rotateAround(pose([0, 0, 0], flip), spinC, rot(0, 0, m.spin)), pose([0, 0, 0], flip), intake];
     },
-    hopper: { min: [-0.04, -0.28, 0.12], max: [0.2, 0.24, 0.38], maxDeployed: [0.3, 0.24, 0.38] },
+    // Sobre el spindexer; la segunda capa solo al frente (atrás queda la base de la turret)
+    hopper: [
+      { min: [-0.2, -0.32, 0.12], max: [0.2, 0.3, 0.27], maxDeployed: [0.31, 0.3, 0.27] },
+      { min: [0.03, -0.32, 0.25], max: [0.03, 0.3, 0.42], maxDeployed: [0.31, 0.3, 0.42] },
+    ],
   },
 };
