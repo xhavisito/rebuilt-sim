@@ -295,6 +295,32 @@ export class RobotPhysics {
     if (dw > wl) dw = wl;
     else if (dw < -wl) dw = -wl;
     if (Math.abs(dw) > 1e-5) b.setAngvel({ x: w.x, y: w.y + dw, z: w.z }, true);
+    this.keepUpright(dt);
+  }
+
+  /**
+   * El robot real tiene el centro de masa muy bajo (batería, motores y BUMPERS) y aterriza plano
+   * al pasar el BUMP a toda velocidad; la caja simulada, en cambio, podía voltearse al caer
+   * girando. Más allá de 20° de inclinación (la rampa del BUMP es de 15°: no se toca), se frena
+   * el giro de cabeceo/alabeo y un par lo regresa hacia la vertical.
+   */
+  private keepUpright(dt: number): void {
+    const LIMIT = (20 * Math.PI) / 180;
+    const r = this.body.rotation();
+    // eje Y local en mundo
+    const ux = 2 * (r.x * r.y - r.w * r.z);
+    const uy = 1 - 2 * (r.x * r.x + r.z * r.z);
+    const uz = 2 * (r.y * r.z + r.w * r.x);
+    const tilt = Math.acos(Math.max(-1, Math.min(1, uy)));
+    if (tilt <= LIMIT) return;
+    // eje de giro que endereza: up_local × up_mundo = (−uz, 0, ux)
+    const am = Math.hypot(uz, ux) || 1;
+    const ax = -uz / am;
+    const az = ux / am;
+    const w = this.body.angvel();
+    const damp = Math.max(0, 1 - 10 * dt);
+    const k = 40 * (tilt - LIMIT) * dt;
+    this.body.setAngvel({ x: w.x * damp + ax * k, y: w.y, z: w.z * damp + az * k }, true);
   }
 
   /** Raycast bajo cada rueda: ¿toca piso? (solo campo: las ruedas no tocan el FUEL) */
@@ -348,6 +374,34 @@ export class RobotPhysics {
   }
 
   extended = false;
+
+  /**
+   * Dirección horizontal (unitaria) para alejarse de lo sólido que toca: paredes, estructuras u
+   * otros robots (no FUEL, alfombra ni BUMPS). null si no toca nada. La usa la IA para
+   * desatorarse.
+   */
+  awayFromContacts(): { x: number; z: number } | null {
+    const w = this.pw.world;
+    let x = 0;
+    let z = 0;
+    for (const col of this.solids()) {
+      w.contactPairsWith(col, (other) => {
+        const tag = this.pw.tagOf(other.handle);
+        if (!tag || tag.kind === 'fuel' || tag.kind === 'floor' || (tag.kind === 'field' && tag.part === 'bump')) return;
+        if (tag.kind === 'robot' && tag.robot === this.index) return;
+        w.contactPair(col, other, (man, flipped) => {
+          if (man.numContacts() === 0) return;
+          // la normal sale de la primera forma del par: si es la nuestra, alejarse es −normal
+          const n = man.normal();
+          const s = flipped ? 1 : -1;
+          x += s * n.x;
+          z += s * n.z;
+        });
+      });
+    }
+    const m = Math.hypot(x, z);
+    return m > 1e-3 ? { x: x / m, z: z / m } : null;
+  }
 
   /** Colisionadores que chocan con el campo y los robots (para el árbitro). */
   solids(): RAPIER.Collider[] {

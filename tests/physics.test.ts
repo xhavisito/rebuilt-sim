@@ -53,6 +53,34 @@ describe('física de robots', () => {
     pw.free();
   });
 
+  it('a toda velocidad y girando sobre el BUMP no se voltea', () => {
+    for (const omega of [0, 4]) {
+      const pw = world();
+      const r = new RobotPhysics(pw, presetById('cad-190'), 0, -5.6, F.BUMP_CENTER_Z, 0.3);
+      let maxTilt = 0;
+      run(pw, [r], 2.2, (rb) => {
+        maxTilt = Math.max(maxTilt, rb.tilt());
+        return { vx: 6, vz: 0, omega };
+      });
+      run(pw, [r], 1.0, () => ({ vx: 0, vz: 0, omega: 0 }));
+      expect(maxTilt, `omega ${omega}`).toBeLessThan((40 * Math.PI) / 180);
+      expect(r.tilt(), `omega ${omega}`).toBeLessThan((5 * Math.PI) / 180);
+      pw.free();
+    }
+  });
+
+  it('inclinado más allá del punto de vuelco, se endereza (aterriza plano)', () => {
+    const pw = world();
+    const r = new RobotPhysics(pw, presetById('cad-6328'), 0, 0, -3.2, 0);
+    // 85° de alabeo (pasado el punto de vuelco: sin ayuda cae de lado), un poco arriba del piso
+    const a = (85 * Math.PI) / 180;
+    r.body.setRotation({ x: Math.sin(a / 2), y: 0, z: 0, w: Math.cos(a / 2) }, true);
+    r.body.setTranslation({ x: 0, y: 0.45, z: -3.2 }, true);
+    run(pw, [r], 2.5, () => ({ vx: 0, vz: 0, omega: 0 }));
+    expect(r.tilt()).toBeLessThan((8 * Math.PI) / 180);
+    pw.free();
+  });
+
   it('un robot de 21.8 in pasa bajo el TRENCH; uno de 28.8 in no', () => {
     const zTrench = F.HALF_W - F.TRENCH_CLEAR_WIDTH / 2;
     for (const [id, passes] of [
@@ -99,6 +127,19 @@ describe('física de robots', () => {
     expect(stowed).toBeLessThan(face);
     // con la intake abajo se detiene antes: lo que sobresale (≈ 9 in) toca el poste
     expect(stowed - deployed).toBeGreaterThan(F.inch(6));
+  });
+
+  it('sabe hacia dónde alejarse de lo que toca (para desatorarse)', () => {
+    const pw = world();
+    const spec = presetById('cad-6328');
+    const outerW = F.inch(spec.widthIn / 2 + spec.bumperIn);
+    // pegado al barandal de −Z, empujando hacia él
+    const r = new RobotPhysics(pw, spec, 0, 0, -F.HALF_W + outerW + 0.01, 0);
+    run(pw, [r], 0.5, () => ({ vx: 0, vz: -1.5, omega: 0 }));
+    const away = r.awayFromContacts();
+    expect(away).not.toBeNull();
+    expect(away!.z).toBeGreaterThan(0.9);
+    pw.free();
   });
 
   it('en un empujón de frente gana más tracción y masa', () => {

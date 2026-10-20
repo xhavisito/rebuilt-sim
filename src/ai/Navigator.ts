@@ -43,6 +43,8 @@ export class Navigator {
   private stuckT = 0;
   private escapeT = 0;
   private escapeDir = { x: 0, z: 0 };
+  /** Veces que tuvo que desatorarse (la IA cambia de objetivo si se repite). */
+  escapes = 0;
   /** Mando anterior (suavizado: un piloto no cambia de dirección de golpe en cada cuadro). */
   private sv = { x: 0, z: 0 };
   private sw = 0;
@@ -134,8 +136,8 @@ export class Navigator {
       return { cmd, arrived: Math.abs(cmd.omega) < 0.4 };
     }
     let vmax = r.spec.maxSpeed * opts.speed;
-    // Más lento sobre el BUMP y al llegar
-    if (BARRIERS.some((bx) => Math.abs(p.x - bx) < 1.0) && BUMP_LANES.some((l) => Math.abs(p.z - l) < 1.0)) vmax *= 0.7;
+    // Más lento sobre el BUMP (y desde antes de llegar: a toda velocidad sale volando) y al llegar
+    if (BARRIERS.some((bx) => Math.abs(p.x - bx) < 1.7) && BUMP_LANES.some((l) => Math.abs(p.z - l) < 1.1)) vmax = Math.min(vmax, 2.6);
     const v = final ? Math.min(vmax, 0.4 + 2.2 * d) : vmax;
     let vx = (dx / d) * v;
     let vz = (dz / d) * v;
@@ -162,20 +164,29 @@ export class Navigator {
       vx *= vmax / vm;
       vz *= vmax / vm;
     }
-    // Atorado: retrocede y se desliza de lado un momento
+    // Atorado (contra una pared, un poste o con la intake desplegada metida en una esquina):
+    // se aleja en sentido contrario a donde empujaba, con un poco de lado y SIN girar (al girar,
+    // la intake barre contra la pared y lo vuelve a trabar)
     const real = r.phys.velocity();
-    if (Math.hypot(vx, vz) > 1 && Math.hypot(real.x, real.z) < 0.15) this.stuckT += dt;
+    const vm2 = Math.hypot(vx, vz);
+    if (this.escapeT <= 0 && vm2 > 0.6 && Math.hypot(real.x, real.z) < 0.15) this.stuckT += dt;
     else this.stuckT = Math.max(0, this.stuckT - dt);
-    if (this.stuckT > 1.3) {
+    if (this.stuckT > 1.0) {
       this.stuckT = 0;
-      this.escapeT = 0.8;
+      this.escapeT = 0.9;
+      this.escapes++;
       const s = Math.random() < 0.5 ? -1 : 1;
-      this.escapeDir = { x: (-dx / d) * 0.6 + s * (-dz / d), z: (-dz / d) * 0.6 + s * (dx / d) };
+      // lejos de lo que toca (normal de los contactos); si no toca nada, al revés de donde iba
+      const b = r.phys.awayFromContacts() ?? { x: -vx / vm2, z: -vz / vm2 };
+      const ex = b.x * 0.85 - s * b.z * 0.5;
+      const ez = b.z * 0.85 + s * b.x * 0.5;
+      const em = Math.hypot(ex, ez);
+      this.escapeDir = { x: ex / em, z: ez / em };
     }
     if (this.escapeT > 0) {
       this.escapeT -= dt;
-      vx = this.escapeDir.x * vmax * 0.6;
-      vz = this.escapeDir.z * vmax * 0.6;
+      const ev = Math.max(1.2, vmax * 0.6);
+      return { cmd: { vx: this.escapeDir.x * ev, vz: this.escapeDir.z * ev, omega: 0 }, arrived: false };
     }
     // Rumbo: el pedido, el actual ('keep') o hacia donde avanza (tank siempre hacia donde avanza)
     let want = opts.heading === 'keep' ? r.phys.heading() : opts.heading;
@@ -184,6 +195,17 @@ export class Navigator {
     for (const o of others) if (o !== r && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < o.phys.outerW + r.phys.outerW + 0.25) crowded = true;
     if (want === null || r.spec.drivetrain === 'tank') want = Math.hypot(vx, vz) > 0.9 && !crowded ? Math.atan2(-vz, vx) : r.phys.heading();
     else if (crowded && opts.heading === null) want = r.phys.heading();
+    // Por el TRENCH (50.34 in de ancho) pasa derecho: en diagonal, la intake desplegada choca
+    // con el poste o el barandal. Mientras no esté alineado, avanza despacio.
+    if (r.spec.drivetrain !== 'tank' && Math.abs(p.z) > F.TRENCH_INNER_Z - 0.25 && BARRIERS.some((bx) => Math.abs(p.x - bx) < CROSS_MARGIN + 0.3)) {
+      const h = r.phys.heading();
+      want = Math.abs(Math.atan2(Math.sin(h), Math.cos(h))) < Math.PI / 2 ? 0 : Math.PI;
+      const err = Math.abs(Math.atan2(Math.sin(want - h), Math.cos(want - h)));
+      if (err > 0.3) {
+        vx *= 0.3;
+        vz *= 0.3;
+      }
+    }
     if (r.spec.drivetrain === 'tank') {
       const h = r.phys.heading();
       const err = Math.abs(Math.atan2(Math.sin(want - h), Math.cos(want - h)));
