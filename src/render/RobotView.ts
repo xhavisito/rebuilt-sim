@@ -18,7 +18,7 @@ import { ALLIANCE_COLOR } from './FieldView';
 import { mergeStaticChildren } from './merge';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { CAD_RIGS, type CadRig, type MechState } from './cadRigs';
+import { CAD_RIGS, hopperSlots, openingFor, shownFuel, slotFits, type CadRig, type HopperSlot, type MechState } from './cadRigs';
 
 export interface RobotVisualState {
   intakeDeploy: number; // 0–1
@@ -652,7 +652,7 @@ export class RobotView {
             cyl.castShadow = true;
             holder.add(cyl);
           }
-          if (rig.hopper) this.buildCadHopper(wpi, rig.hopper.min, rig.hopper.maxDeployed ?? rig.hopper.max);
+          if (rig.hopper) this.buildCadHopper(wpi, rig);
         }
         this.group.add(root);
         this.cadLoaded = true;
@@ -661,54 +661,75 @@ export class RobotView {
       .catch((e) => console.warn('robot model', file, e));
   }
 
-  /** FUEL visible dentro del hopper del CAD (caja en el marco WPILib: Z arriba). */
-  private buildCadHopper(parent: THREE.Object3D, min: number[], max: number[]): void {
-    const d = FUEL_RADIUS * 2;
-    const nx = Math.max(1, Math.floor((max[0] - min[0]) / d));
-    const ny = Math.max(1, Math.floor((max[1] - min[1]) / d));
-    const nz = Math.max(1, Math.floor((max[2] - min[2] - d) / (d * 0.86)) + 1);
-    const cx = (min[0] + max[0]) / 2;
-    const cy = (min[1] + max[1]) / 2;
-    const slots: THREE.Vector3[] = [];
-    for (let z = 0; z < nz; z++)
-      for (let x = 0; x < nx; x++)
-        for (let y = 0; y < ny; y++) {
-          if (slots.length >= MAX_SHOWN) break;
-          const odd = z % 2 ? d * 0.25 : 0;
-          slots.push(new THREE.Vector3(cx + (x - (nx - 1) / 2) * d + odd, cy + (y - (ny - 1) / 2) * d + odd, min[2] + FUEL_RADIUS + 0.004 + z * d * 0.86));
-        }
-    this.hopperSlots = slots;
-    this.hopperBalls = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(FUEL_RADIUS * 0.97, 1), SHARED.fuel, Math.max(1, slots.length));
-    this.hopperBalls.count = 0;
-    const m4 = new THREE.Matrix4();
-    slots.forEach((p, i) => this.hopperBalls.setMatrixAt(i, m4.makeTranslation(p.x, p.y, p.z)));
-    this.hopperBalls.frustumCulled = false;
-    this.hopperBalls.castShadow = true;
-    parent.add(this.hopperBalls);
-  }
-
+  /** Lugares del FUEL en el hopper del CAD y una malla instanciada por caja. */
+  private cadSlots: HopperSlot[] = [];
+  private cadBoxMeshes: THREE.InstancedMesh[] = [];
+  /** Posición de cada lugar en el marco de su malla (la del robot o la del componente). */
+  private cadSlotLocal: THREE.Vector3[] = [];
   private cadFill = -1;
-  private cadFillX = NaN;
+  private cadFillE = NaN;
+  /** Despliegue que el FUEL guardado obliga a mantener (suavizado) y para cuántos FUEL. */
+  private heldOpen = 0;
+  private heldTarget = 0;
+  private heldFor = -1;
+  private lastTime = NaN;
 
   /**
-   * FUEL del hopper del CAD: los primeros `n` lugares que caben en la caja actual (crece hacia
-   * el frente al desplegar la intake; guardada, la intake ocupa esa parte del hopper).
+   * FUEL visible dentro del hopper del CAD: cajas en el marco WPILib (mecanismos guardados);
+   * las montadas en un componente se convierten a su marco para moverse con él.
    */
-  private fillCadHopper(n: number, deploy: number): void {
-    const h = this.rig!.hopper!;
-    const maxX = h.max[0] + ((h.maxDeployed ?? h.max)[0] - h.max[0]) * deploy;
-    if (n === this.cadFill && Math.abs(maxX - this.cadFillX) < 0.01) return;
+  private buildCadHopper(wpi: THREE.Object3D, rig: CadRig): void {
+    const boxes = rig.hopper!;
+    this.cadSlots = hopperSlots(boxes, Math.max(8, Math.min(80, this.spec.hopperCapacity)));
+    const ref = rig.poses({ intake: 0, hood: 0, turret: 0, climb: 0, spin: 0 });
+    const geo = new THREE.IcosahedronGeometry(FUEL_RADIUS * 0.97, 1);
+    const inv = boxes.map((b) => {
+      const p = b.comp !== undefined ? ref[b.comp] : null;
+      if (!p) return null;
+      return new THREE.Matrix4().compose(new THREE.Vector3(...p.t), new THREE.Quaternion(...p.q), new THREE.Vector3(1, 1, 1)).invert();
+    });
+    this.cadSlotLocal = this.cadSlots.map((sl) => {
+      const v = new THREE.Vector3(...sl.p);
+      const m = inv[sl.box];
+      return m ? v.applyMatrix4(m) : v;
+    });
+    this.cadBoxMeshes = boxes.map((b, i) => {
+      const n = this.cadSlots.filter((sl) => sl.box === i).length;
+      const mesh = new THREE.InstancedMesh(geo, SHARED.fuel, Math.max(1, n));
+      mesh.count = 0;
+      mesh.frustumCulled = false;
+      mesh.castShadow = true;
+      const holder = b.comp !== undefined ? this.cadHolders[b.comp] : null;
+      (holder ?? wpi).add(mesh);
+      return mesh;
+    });
+    this.cadFill = -1;
+  }
+
+  /**
+   * FUEL del hopper del CAD: los primeros `n` lugares (de abajo hacia arriba) que caben con la
+   * intake desplegada `e` (cajas que crecen hacia el frente).
+   */
+  private fillCadHopper(n: number, e: number): void {
+    if (!this.cadBoxMeshes.length) return;
+    n = shownFuel(n, this.cadSlots.length, this.spec.hopperCapacity);
+    if (n === this.cadFill && Math.abs(e - this.cadFillE) < 0.01) return;
     this.cadFill = n;
-    this.cadFillX = maxX;
+    this.cadFillE = e;
+    const boxes = this.rig!.hopper!;
+    const counts = this.cadBoxMeshes.map(() => 0);
     const m4 = new THREE.Matrix4();
     let k = 0;
-    for (const p of this.hopperSlots) {
-      if (k >= n) break;
-      if (p.x + FUEL_RADIUS > maxX + 0.01) continue;
-      this.hopperBalls.setMatrixAt(k++, m4.makeTranslation(p.x, p.y, p.z));
-    }
-    this.hopperBalls.count = k;
-    this.hopperBalls.instanceMatrix.needsUpdate = true;
+    this.cadSlots.forEach((sl, i) => {
+      if (k >= n || !slotFits(boxes[sl.box], sl, e)) return;
+      const p = this.cadSlotLocal[i];
+      this.cadBoxMeshes[sl.box].setMatrixAt(counts[sl.box]++, m4.makeTranslation(p.x, p.y, p.z));
+      k++;
+    });
+    this.cadBoxMeshes.forEach((mesh, b) => {
+      mesh.count = counts[b];
+      mesh.instanceMatrix.needsUpdate = true;
+    });
   }
 
   /** Aplica las poses del rig al estado actual de los mecanismos. */
@@ -739,10 +760,21 @@ export class RobotView {
   update(s: RobotVisualState, time: number): void {
     // Intake: pivota de guardada (pasada la vertical) a desplegada (adelante y abajo)
     const e = s.intakeDeploy * s.intakeDeploy * (3 - 2 * s.intakeDeploy);
+    const dt = Number.isFinite(this.lastTime) ? THREE.MathUtils.clamp(time - this.lastTime, 0, 0.1) : 0;
+    this.lastTime = time;
     if (this.rig) {
       const sh = this.spec.shooter;
       const m = this.mech;
-      m.intake = e;
+      // Con FUEL adentro, la intake no se guarda del todo (el FUEL ocupa ese lugar del hopper)
+      if (this.rig.hopper && this.cadSlots.length) {
+        if (s.hopper !== this.heldFor) {
+          this.heldFor = s.hopper;
+          this.heldTarget = openingFor(this.rig.hopper, this.cadSlots, shownFuel(s.hopper, this.cadSlots.length, this.spec.hopperCapacity));
+        }
+        const d = this.heldTarget - this.heldOpen;
+        this.heldOpen += dt > 0 ? Math.sign(d) * Math.min(Math.abs(d), dt * 2.5) : d;
+      }
+      m.intake = Math.max(e, this.heldOpen);
       m.hood = THREE.MathUtils.clamp((s.hoodAngle * 180 / Math.PI - sh.minAngle) / Math.max(1, sh.maxAngle - sh.minAngle), 0, 1);
       m.turret = s.turretYaw;
       m.climb = s.climb ?? 0;
@@ -758,9 +790,9 @@ export class RobotView {
     for (const c of this.climberInners) c.position.y = BUMPER_TOP + s.climbHeight;
     for (const w of this.wheels) w.rotation.y = this.spec.drivetrain === 'swerve' ? s.wheelYaw : 0;
     for (const w of this.wheelSpinners) w.rotation.z = -s.wheelSpin;
-    if (this.rig?.hopper) this.fillCadHopper(s.hopper, e);
+    if (this.rig?.hopper) this.fillCadHopper(s.hopper, this.mech.intake);
     else {
-      const n = Math.min(s.hopper, this.hopperSlots.length);
+      const n = shownFuel(s.hopper, this.hopperSlots.length, this.spec.hopperCapacity);
       if (this.hopperBalls.count !== n) this.hopperBalls.count = n;
     }
     this.led.emissiveIntensity = s.enabled ? 2.4 : 0.7;

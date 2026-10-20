@@ -163,6 +163,16 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     salió": 2–4 s después rueda despacio desde 0.3 m dentro de la pared (se corre si hay un
     robot encima). G405 solo se cobra si el robot lo sacó a propósito: lo lanzó y salió todavía
     en vuelo.
+17. **Dumpers**: un shooter de varios FUEL de ancho (`shooter.lanes`) suelta una ráfaga, un FUEL
+    por carril a la vez, de lado a lado (`laneSpacingIn`: dos turrets de 971 a 16.5 in); la
+    cadencia media sigue siendo `rate`. Del CAD: 1678 y 6328 tienen hood/flywheel de lado a lado
+    (4 de ancho); 190, 604, 341, 4915 y 5000 tiran de un solo chorro.
+18. **FUEL visible en el hopper** (todos los robots con CAD): cajas (o un anillo alrededor del
+    rotor de 5000) en el hueco real del hopper de cada CAD, montadas en el componente si este se
+    mueve. Se llenan de abajo hacia arriba; si el hopper real guarda más FUEL del que cabe a la
+    vista, lo dibujado es proporcional al llenado. Donde la intake guardada ocupa parte del
+    hopper (1678, 6328, 190, 4915), el FUEL guardado la mantiene abierta lo necesario. En 604 (sin
+    paredes en el CAD) el FUEL va sobre el chasis alrededor de la torre del serializer.
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.

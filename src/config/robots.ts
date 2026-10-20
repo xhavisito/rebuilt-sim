@@ -54,8 +54,13 @@ export interface RobotSpec {
     exitHeightIn: number;
     /** Backspin (rad/s) para efecto Magnus. */
     backspin: number;
-    /** FUEL a lo ancho del shooter ("dumper" de 3–5 carriles); 1 = un solo chorro. */
+    /**
+     * FUEL que salen a la vez, a lo ancho del shooter ("dumper" de 3–5 carriles, o una turret
+     * doble); 1 = un solo chorro.
+     */
     lanes?: number;
+    /** Separación entre carriles (pulgadas); por omisión, un FUEL (p. ej. 16.5 = dos turrets). */
+    laneSpacingIn?: number;
     /** Shooter fijo: hacia dónde tira respecto al frente (grados, + = a la izquierda; 180 = atrás). */
     yawDeg?: number;
     /** Posición del shooter en el robot (pulgadas: x adelante, y a la izquierda). */
@@ -191,12 +196,13 @@ export const CAD_ROBOTS: RobotSpec[] = [
     traction: 1.25,
     intake: { widthIn: 27, extensionIn: 11.2, rate: 18 },
     hopperCapacity: 70,
-    // Tira hacia atrás desde 11.28 in detrás del centro (DriveConstants.SHOOTER_OFFSET)
+    // Dumper de 4 FUEL de ancho (hood de lado a lado en el CAD) que tira hacia atrás desde 11.28 in
+    // detrás del centro (DriveConstants.SHOOTER_OFFSET)
     shooter: { type: 'fixed', rate: 22, maxSpeed: 13, minAngle: 40, maxAngle: 78, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 4, yawDeg: 180, posIn: [-11.28, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#c9cdd3', accent: '#2fbf4a' },
     cad: { file: '1678.glb' },
-    real: cadReal('Citrus Circuits', 'Limestone', 'Ganador de la división Milstein, EPA #15. Flywheel con hood alimentado por un tambor de ancho completo; intake slapdown de ancho completo; hopper expandible.', 'Milstein division winner, #15 EPA. Hooded flywheel fed by a full-width drum; full-width slapdown intake; expanding hopper.'),
+    real: cadReal('Citrus Circuits', 'Limestone', 'Ganador de la división Milstein, EPA #15. Dumper de 4 FUEL de ancho hacia atrás, alimentado por un tambor de ancho completo; intake slapdown de ancho completo; hopper que se extiende.', 'Milstein division winner, #15 EPA. Rear-facing 4-wide dumper fed by a full-width drum; full-width slapdown intake; extending hopper.'),
   }),
   base({
     id: 'cad-5000',
@@ -244,12 +250,13 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.9,
     intake: { widthIn: 25.5, extensionIn: 11.6, rate: 12 },
     hopperCapacity: 40,
-    // Launcher fijo hacia atrás (LauncherConstants.robotToLauncher: x −0.151 m, yaw π): el chasis apunta
-    shooter: { type: 'fixed', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 21, backspin: 25, lanes: 1, yawDeg: 180, posIn: [-5.9, 0] },
+    // Launcher fijo hacia atrás (LauncherConstants.robotToLauncher: x −0.151 m, yaw π): el chasis
+    // apunta. Dumper: flywheel y hood de lado a lado (0.63 m en el CAD, 4 Kraken) → 4 FUEL de ancho.
+    shooter: { type: 'fixed', rate: 16, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 21, backspin: 25, lanes: 4, yawDeg: 180, posIn: [-5.9, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#1a5cff' },
     cad: { file: '6328.glb' },
-    real: cadReal('Mechanical Advantage', 'Darwin', 'Launcher fijo hacia atrás con hood ajustable impreso en 3D; la "slamtake" empuja el frente del hopper al desplegarse. Los creadores de AdvantageKit y AdvantageScope.', 'Rear-facing fixed launcher with a 3D-printed adjustable hood; the "slamtake" pushes the hopper front out as it deploys. The makers of AdvantageKit and AdvantageScope.'),
+    real: cadReal('Mechanical Advantage', 'Darwin', 'Dumper fijo de 4 FUEL de ancho hacia atrás, con hood ajustable impreso en 3D; la "slamtake" empuja el frente del hopper al desplegarse. Los creadores de AdvantageKit y AdvantageScope.', 'Rear-facing 4-wide fixed dumper with a 3D-printed adjustable hood; the "slamtake" pushes the hopper front out as it deploys. The makers of AdvantageKit and AdvantageScope.'),
   }),
   base({
     id: 'cad-971',
@@ -264,7 +271,8 @@ export const CAD_ROBOTS: RobotSpec[] = [
     intake: { widthIn: 28, extensionIn: 10.8, rate: 16 },
     overhangIn: 11, // el hopper sobresale del chasis sobre la intake
     hopperCapacity: 45,
-    shooter: { type: 'turret', rate: 18, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 2, posIn: [-5.8, 0] },
+    // Dos turrets separadas 16.5 in (Visualization.robotToLeft/RightTurret): un FUEL por turret
+    shooter: { type: 'turret', rate: 18, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 2, laneSpacingIn: 16.5, posIn: [-5.8, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#b088b8' },
     cad: { file: '971.glb' },
@@ -298,7 +306,8 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.9,
     intake: { widthIn: 30, extensionIn: 11.6, rate: 14 }, // cuatro barras
     hopperCapacity: 40,
-    // Doomspiral: shooter fijo hacia la derecha (V1_DoomSpiralShooterConstants.SHOOTER_POSE: yaw −90°)
+    // Doomspiral: shooter fijo de un solo chorro (flywheel y hood de ~1 FUEL de ancho en el CAD)
+    // hacia la derecha (V1_DoomSpiralShooterConstants.SHOOTER_POSE: yaw −90°)
     shooter: { type: 'fixed', rate: 12, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 1, yawDeg: -90, posIn: [-0.6, 10] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#c62828' },

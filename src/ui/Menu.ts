@@ -358,7 +358,7 @@ export class Screens {
     };
     const chips = (r: RobotSpec) => {
       const lanes = r.shooter.lanes ?? 1;
-      const kind = r.shooter.type === 'turret' ? 'TURRET' : lanes > 1 ? `DUMPER ×${lanes}` : t('fixed').toUpperCase();
+      const kind = r.shooter.type === 'turret' ? (lanes > 1 ? `TURRET ×${lanes}` : 'TURRET') : lanes > 1 ? `DUMPER ×${lanes}` : t('fixed').toUpperCase();
       const out = [kind, `${r.shooter.rate} FUEL/s`, `${t('hopper')} ${r.hopperCapacity}`];
       if (fitsUnderTrench(r)) out.push('TRENCH ✓');
       if (r.climb.maxLevel) out.push(`CLIMB L${r.climb.maxLevel}`);
@@ -813,7 +813,9 @@ type PickerTab = 'top' | 'generic' | 'custom';
 
 /** "Swerve · Turret · Climb L2" */
 export function robotSubtitle(s: RobotSpec): string {
-  const parts = [s.drivetrain === 'swerve' ? 'Swerve' : 'Tank', s.shooter.type === 'turret' ? 'Turret' : t('fixed'), s.climb.maxLevel ? `Climb L${s.climb.maxLevel}` : t('noClimb')];
+  const lanes = s.shooter.lanes ?? 1;
+  const shooter = s.shooter.type === 'turret' ? (lanes > 1 ? `Turret ×${lanes}` : 'Turret') : lanes > 1 ? `Dumper ×${lanes}` : t('fixed');
+  const parts = [s.drivetrain === 'swerve' ? 'Swerve' : 'Tank', shooter, s.climb.maxLevel ? `Climb L${s.climb.maxLevel}` : t('noClimb')];
   return parts.join(' · ');
 }
 
