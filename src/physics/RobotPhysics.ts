@@ -46,6 +46,11 @@ export class RobotPhysics {
   grounded = 1;
   /** FUEL que el robot va empujando con los BUMPERS (ver `plowLoad`); lo frena. */
   plow = 0;
+  /** Cara frontal de la intake desplegada (x local, m): donde el rodillo toca el FUEL. */
+  readonly intakeFront: number;
+  readonly intakeHalfW: number;
+  /** Rodillo de la intake (solo FUEL), activo solo con la intake desplegada. */
+  private intakeCol: RAPIER.Collider;
   /** Último mando aplicado (para detectar PIN: quiere moverse pero no puede). */
   lastCmd: DriveCommand = { vx: 0, vz: 0, omega: 0 };
   /** Interpolación: pose anterior y actual. */
@@ -80,6 +85,10 @@ export class RobotPhysics {
         .setLinearDamping(0.2)
         .setAngularDamping(1.5)
         .setDominanceGroup(1)
+        // Soft-CCD: a 4.8 m/s el robot avanza 8 cm por paso (60 Hz), más que el radio de un FUEL.
+        // Sin predicción de contactos se metería dentro de las pelotas y las sacaría despacio
+        // (se veía como si las atravesara); así las empuja desde antes de tocarlas.
+        .setSoftCcdPrediction(0.15)
         .setCanSleep(false),
     );
     this.body.userData = { robot: index };
@@ -114,6 +123,22 @@ export class RobotPhysics {
       this.body,
     );
     pw.tag(skirt, { kind: 'robot', robot: index, part: 'bumper' });
+    // Intake "over the bumper": el rodillo (frente a 0.25 in de la extensión R105) empuja el
+    // FUEL ahí mismo, donde se ve; lo que toca se captura (Mechanisms.runIntake).
+    this.intakeFront = this.halfL + inch(spec.intake.extensionIn) - inch(0.25);
+    this.intakeHalfW = Math.min(inch(spec.intake.widthIn), 2 * this.halfW) / 2;
+    const iLen = Math.max(0.02, this.intakeFront - this.outerL + 0.02);
+    this.intakeCol = w.createCollider(
+      RAPIER.ColliderDesc.cuboid(iLen / 2, (inch(5) - skirtY0) / 2, this.intakeHalfW)
+        .setTranslation(this.intakeFront - iLen / 2, (inch(5) + skirtY0) / 2, 0)
+        .setMass(0)
+        .setFriction(0.2)
+        .setRestitution(0.05)
+        .setCollisionGroups(GROUPS.skirt)
+        .setEnabled(false),
+      this.body,
+    );
+    pw.tag(this.intakeCol, { kind: 'robot', robot: index, part: 'bumper' });
     // Superestructura dentro del perímetro (hasta la altura del robot)
     const fy0 = BUMPER_TOP;
     const fhy = Math.max(0.02, (this.height - fy0) / 2);
@@ -282,6 +307,11 @@ export class RobotPhysics {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.snapshot(true);
+  }
+
+  /** Activa/desactiva el rodillo físico de la intake (desplegada o guardada). */
+  setIntakeDeployed(on: boolean): void {
+    if (this.intakeCol.isEnabled() !== on) this.intakeCol.setEnabled(on);
   }
 
   /** Cambia a cinemático (climb) o de vuelta a dinámico. */

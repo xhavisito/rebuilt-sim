@@ -65,9 +65,15 @@ export class TournamentScreen {
       const seed = (Math.random() * 2 ** 32) >>> 0;
       const rng = new Rng(seed);
       const spec = robotById(this.settings.match.robotId);
+      // Los mejores robots de la temporada conservan su número de equipo real (la primera vez)
+      const used = new Set<number>([spec.teamNumber]);
       const pool = Array.from({ length: this.cfg.teams }, (_, i) => {
         const p = ROBOT_PRESETS[i % ROBOT_PRESETS.length];
-        return { team: 100 + Math.floor(rng.next() * 9800), specId: p.id, name: p.name, strength: Math.round(rng.range(0.25, 0.95) * 100) / 100 };
+        let team = p.real && !used.has(p.teamNumber) ? p.teamNumber : 100 + Math.floor(rng.next() * 9800);
+        while (used.has(team)) team = 100 + Math.floor(rng.next() * 9800);
+        used.add(team);
+        const strength = p.real ? rng.range(0.7, 0.97) : rng.range(0.25, 0.8);
+        return { team, specId: p.id, name: p.name, strength: Math.round(strength * 100) / 100 };
       });
       const tt = createTournament({ team: spec.teamNumber, specId: spec.id, name: spec.name, strength: 0.6, isPlayer: true }, pool, this.cfg.teams, this.cfg.perTeam, this.cfg.ev, rng, seed);
       saveTournament(tt);

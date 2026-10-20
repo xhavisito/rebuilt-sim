@@ -12,7 +12,7 @@ const FRICTION: Partial<Record<FieldPart['mat'], number>> = {
 export function buildFieldColliders(pw: PhysicsWorld): void {
   // Alfombra: caja enorme con la cara superior en y = 0.
   pw.fixed(
-    RAPIER.ColliderDesc.cuboid(40, 0.5, 40).setTranslation(0, -0.5, 0).setFriction(0.8).setRestitution(0.3),
+    RAPIER.ColliderDesc.cuboid(40, 0.5, 40).setTranslation(0, -0.5, 0).setFriction(0.8).setRestitution(0.45),
     { kind: 'floor' },
   );
   for (const p of fieldParts()) {
@@ -32,6 +32,9 @@ export function buildFieldColliders(pw: PhysicsWorld): void {
     if (!desc) continue;
     desc.setTranslation(p.pos[0], p.pos[1], p.pos[2]);
     desc.setFriction(FRICTION[p.mat] ?? 0.5).setRestitution(p.mat === 'net' ? 0.05 : 0.25);
+    // Embudo, tapa y red del HUB: la espuma casi no rebota en el policarbonato (si rebotara
+    // como en la alfombra, la mitad del FUEL que entra saldría disparado del embudo)
+    if (p.name.startsWith('hub-')) desc.setRestitution(0.02).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min);
     pw.fixed(desc, { kind: 'field', part: p.name, alliance: p.alliance }, p.collide === 'fuel');
   }
 }

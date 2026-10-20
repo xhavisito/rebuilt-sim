@@ -30,6 +30,8 @@ async function boot(): Promise<void> {
     app.applyQuality();
   }
   if (params.get('fps') === '1') app.settings.showFps = true;
+  const diff = params.get('difficulty');
+  if (diff === 'easy' || diff === 'normal' || diff === 'hard' || diff === 'einstein') app.settings.match.difficulty = diff;
   const mode = params.get('mode');
   if (mode === 'match') app.startMatch(params.get('spectate') === '1');
   else if (mode === 'practice') app.startPractice();

@@ -11,6 +11,8 @@ export interface NavOptions {
   onLeftRight?: (dir: -1 | 1) => void;
   /** Al cambiar el foco (p. ej. actualizar la descripción). */
   onFocus?: (el: HTMLElement) => void;
+  /** Cuadrícula: ↑↓ saltan una fila de `cols()` elementos (←→ mueven de uno en uno). */
+  cols?: () => number;
 }
 
 export class MenuNav {
@@ -48,11 +50,14 @@ export class MenuNav {
   handle(a: NavAction): void {
     switch (a) {
       case 'up':
-        this.focus(this.index - 1);
+      case 'down': {
+        const step = Math.max(1, this.opts.cols?.() ?? 1);
+        const d = a === 'up' ? -step : step;
+        // en cuadrícula no da la vuelta: se queda en el borde
+        if (step > 1) this.focus(Math.max(0, Math.min(this.items.length - 1, this.index + d)));
+        else this.focus(this.index + d);
         break;
-      case 'down':
-        this.focus(this.index + 1);
-        break;
+      }
       case 'left':
       case 'right':
         if (this.opts.onLeftRight) this.opts.onLeftRight(a === 'left' ? -1 : 1);

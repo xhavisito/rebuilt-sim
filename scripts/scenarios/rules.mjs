@@ -5,7 +5,8 @@ const browser = await chromium.launch({ args: ['--use-angle=vulkan', '--enable-g
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 page.on('pageerror', (e) => console.log('PAGEERR', e.message));
 page.on('console', (m) => m.type() === 'error' && console.log('ERR', m.text()));
-await page.goto('http://localhost:4191/?mode=match&cam=broadcast');
+// Fácil = robots genéricos en orden fijo (rojo 3 = Escalador L3, azul 1 = Defensor L1)
+await page.goto('http://localhost:4191/?mode=match&cam=broadcast&difficulty=easy');
 await page.waitForFunction(() => !document.getElementById('loading'));
 await page.waitForTimeout(3600);
 const E = (f) => page.evaluate(f);

@@ -5,7 +5,7 @@ import { AudioEngine } from '../audio/Audio';
 import { DIFFICULTY } from '../ai/RobotAI';
 import * as THREE from 'three';
 import * as F from '../config/field';
-import { robotById, ROBOT_PRESETS } from '../config/robots';
+import { robotById, ROBOT_PRESETS, TOP_ROBOTS, type RobotSpec } from '../config/robots';
 import type { Tournament, TMatch } from '../core/tournament';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
@@ -321,13 +321,14 @@ export class App {
   startMatch(spectate = false): void {
     const m = this.settings.match;
     const robots: RobotSlotConfig[] = [];
+    const pool = aiRobotPool(m.difficulty, spectate ? '' : m.robotId);
     let k = 0;
     for (const a of ALLIANCES)
       for (const ds of [1, 2, 3] as StationNumber[]) {
         const isPlayer = !spectate && a === m.alliance && ds === m.station;
-        const spec = isPlayer ? robotById(m.robotId) : structuredClone(ROBOT_PRESETS[k++ % ROBOT_PRESETS.length]);
+        const spec = isPlayer ? robotById(m.robotId) : structuredClone(pool[k++ % pool.length]);
         if (!isPlayer) {
-          spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
+          if (!spec.real) spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
           spec.shooter.accuracy = Math.min(0.97, spec.shooter.accuracy * DIFFICULTY[m.difficulty].accuracy);
         }
         robots.push({
@@ -370,7 +371,7 @@ export class App {
         for (const d of [1, 2, 3] as StationNumber[])
           if (!used.has(`${a}${d}`)) {
             const spec = structuredClone(ROBOT_PRESETS[k++ % ROBOT_PRESETS.length]);
-            spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
+            if (!spec.real) spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
             robots.push({ spec, alliance: a, station: d, control: { type: 'ai' } });
           }
     this.startSession({
@@ -771,4 +772,21 @@ export class App {
   get container(): HTMLElement {
     return this.appEl;
   }
+}
+
+/**
+ * Robots de la IA según la dificultad: Fácil = diseños genéricos; Normal = mezcla; Difícil y
+ * Einstein = los mejores robots de la temporada. Sin repetir el robot del jugador.
+ */
+function aiRobotPool(difficulty: string, playerId: string): RobotSpec[] {
+  const top = TOP_ROBOTS.filter((r) => r.id !== playerId);
+  const generic = ROBOT_PRESETS.filter((r) => !r.real && r.id !== playerId);
+  const shuffle = <T,>(a: T[]) => a.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+  if (difficulty === 'easy') return generic; // orden fijo (lo usan los escenarios e2e)
+  if (difficulty === 'normal') {
+    const t = shuffle(top);
+    const g = shuffle(generic);
+    return [t[0], g[0], t[1], g[1], t[2], g[2]].filter(Boolean);
+  }
+  return shuffle(top);
 }

@@ -85,9 +85,11 @@ export function runIntake(r: Robot, ctx: MechContext, dt: number): void {
   const f = ctx.fuel;
   if (f.robotCount(r.index) >= s.hopperCapacity) return;
   const h = r.phys.heading();
-  const x0 = r.phys.outerL - 0.04;
-  const x1 = r.phys.halfL + F.inch(s.intake.extensionIn) * r.intakeDeploy + 0.06;
-  const hw = F.inch(s.intake.widthIn) / 2;
+  // Zona de captura: pegada al frente del rodillo (donde el FUEL lo toca)
+  const face = r.phys.intakeFront;
+  const x0 = face - 0.05;
+  const x1 = face + F.FUEL_RADIUS * 2 + 0.03;
+  const hw = r.phys.intakeHalfW;
   const p = r.phys.curPos;
   const c = Math.cos(h);
   const sn = Math.sin(h);
@@ -271,6 +273,13 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   if (i === undefined) return;
   const lv = launchVector(yaw, pitch, speed);
   let start = { x: from.x + Math.cos(yaw) * 0.05, y: from.y, z: from.z - Math.sin(yaw) * 0.05 };
+  // Shooter "dumper" de varios carriles: los FUEL salen alternando a lo ancho
+  const lanes = s.lanes ?? 1;
+  if (lanes > 1 && kind !== 'corral') {
+    r.lane = (r.lane + 1) % lanes;
+    const lat = (r.lane - (lanes - 1) / 2) * F.FUEL_DIAMETER * 1.05;
+    start = { x: start.x + Math.sin(yaw) * lat, y: start.y, z: start.z + Math.cos(yaw) * lat };
+  }
   if (kind === 'corral') {
     // La abertura del CORRAL está dividida por un tubo al centro: alterna entre las dos mitades.
     r.corralSide = -r.corralSide;

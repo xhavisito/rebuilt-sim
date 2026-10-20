@@ -626,3 +626,58 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
   .final { font-size: 50px; }
   .results h2 { font-size: 34px; }
 }
+
+/* ===================================================================== galería de robots */
+.picker { display: grid; grid-template-columns: 1fr 380px; gap: 20px; min-height: 0; }
+.picker-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.tabs .chipbtn span { opacity: 0.6; margin-left: 4px; }
+.rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 12px; align-content: start; }
+.rcard {
+  display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 0 0 12px; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; color: var(--text); cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s, background 0.12s;
+}
+.rcard:hover, .rcard.focused { border-color: var(--line-2); background: var(--surface-2); transform: translateY(-2px); }
+.rcard.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.rcard.mine .rc-num::after { content: ' ●'; color: var(--accent); font-size: 0.5em; vertical-align: middle; }
+.rcard .thumb { position: relative; aspect-ratio: 3 / 2; background: radial-gradient(ellipse at 50% 70%, #26282e 0%, #141519 72%); }
+.rcard .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rcard .thumb img:not([src]) { visibility: hidden; }
+.rc-badge { position: absolute; top: 8px; left: 8px; font: 700 10px var(--font); letter-spacing: 0.08em; padding: 3px 7px; border-radius: 6px; background: rgba(11, 12, 15, 0.8); border: 1px solid var(--line-2); }
+.rc-badge.gold { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.rc-head { display: flex; align-items: flex-end; gap: 10px; padding: 0 12px; }
+.rc-num { font: 400 30px/0.9 var(--display); white-space: nowrap; }
+.rc-name { display: flex; flex-direction: column; min-width: 0; }
+.rc-name b { font: 700 14px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-name small { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 12px; }
+.rc-chips span { font: 600 10.5px var(--font); letter-spacing: 0.03em; color: var(--muted); background: var(--surface-3); border-radius: 5px; padding: 2px 6px; }
+.picker-right { position: sticky; top: 0; align-self: start; display: flex; flex-direction: column; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+.picker-right .rc-chips { padding: 0; }
+.pk-preview { position: relative; height: 240px; border-radius: 12px; overflow: hidden; background: radial-gradient(ellipse at 50% 72%, #25272d 0%, #141519 70%); }
+.pk-preview canvas { width: 100% !important; height: 100% !important; display: block; }
+.pk-title { display: flex; align-items: flex-end; gap: 12px; }
+.pk-title .rc-num { font-size: 52px; }
+.pk-title .rc-name b { font-size: 18px; white-space: normal; }
+.pk-note { margin: 0; color: var(--text); font-size: 13.5px; line-height: 1.45; opacity: 0.9; }
+.pk-stats { display: flex; flex-direction: column; gap: 7px; }
+.sbar { display: grid; grid-template-columns: 82px 1fr 74px; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+.sbar > div { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.sbar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.sbar b { color: var(--text); font-weight: 700; text-align: right; }
+.pk-src { color: var(--faint); font-size: 11px; line-height: 1.4; }
+@media (max-width: 900px) {
+  .picker { grid-template-columns: 1fr; }
+  .picker-right { position: static; order: -1; }
+  .pk-preview { height: 180px; }
+}
+@media (max-height: 520px) {
+  .picker { grid-template-columns: 1fr 280px; gap: 12px; }
+  .picker-right { order: 0; position: sticky; padding: 10px; gap: 8px; }
+  .pk-preview { height: 120px; }
+  .pk-note, .pk-src { display: none; }
+  .pk-title .rc-num { font-size: 36px; }
+  .rgrid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+  .rc-chips span:nth-child(n + 4) { display: none; }
+}

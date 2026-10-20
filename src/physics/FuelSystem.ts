@@ -31,8 +31,8 @@ const CD = 0.47;
 const AREA = Math.PI * F.FUEL_RADIUS * F.FUEL_RADIUS;
 const K_DRAG = 0.5 * RHO * CD * AREA;
 const K_MAGNUS = 0.25 * RHO * AREA * F.FUEL_RADIUS;
-/** Desaceleración por rodadura de espuma sobre alfombra (m/s²). Supuesto 8. */
-const ROLL_DECEL = 1.6;
+/** Desaceleración por rodadura de espuma sobre alfombra (m/s²). Supuesto 8 (PLAN.md). */
+const ROLL_DECEL = 1.0;
 
 export interface FuelCallbacks {
   /** Un FUEL cruzó el sensor del HUB de `hub`. */
@@ -121,7 +121,7 @@ export class FuelSystem {
         RAPIER.ColliderDesc.ball(F.FUEL_RADIUS)
           .setMass(mass)
           .setFriction(0.7)
-          .setRestitution(0.35)
+          .setRestitution(0.55)
           .setCollisionGroups(GROUPS.fuel),
         body,
       );
@@ -444,7 +444,7 @@ export class FuelSystem {
     const exit = this.rng.pick(F.HUB_EXIT_OFFSETS);
     const x = c.x + sgn * (F.HUB_SIZE / 2 + 0.3);
     const z = c.z + sgn * exit + this.rng.range(-0.05, 0.05);
-    const speed = this.rng.range(1.5, 3.0);
+    const speed = this.rng.range(2.0, 3.4);
     const lat = this.rng.range(-0.5, 0.5);
     this.launch(i, { x, y: F.HUB_EXIT_HEIGHT, z }, { x: sgn * speed, y: 0.3, z: lat }, null, FLAG_FROM_HUB);
     this.airborne.delete(i); // ruedan, no vuelan

@@ -5,7 +5,7 @@
 import type { App } from '../app/App';
 import { loadRoutines } from '../auto/AutoRoutine';
 import * as F from '../config/field';
-import { allRobots, fitsUnderTrench, perimeterIn, robotById, type RobotSpec } from '../config/robots';
+import { allRobots, fitsUnderTrench, perimeterIn, ROBOT_PRESETS, robotById, type RobotSpec } from '../config/robots';
 import { DEFAULT_SETTINGS, type Settings } from '../config/settings';
 import { checkStart, defaultStart } from '../core/startRules';
 import type { Alliance, StationNumber } from '../core/types';
@@ -153,6 +153,15 @@ export class Screens {
     `);
     const r = this.root;
     this.showroom.mount(r.querySelector<HTMLElement>('[data-showcase]')!, 2.75);
+    // Clic (sin arrastrar) en la vitrina abre la galería
+    {
+      const sc = r.querySelector<HTMLElement>('[data-showcase]')!;
+      let downX = 0;
+      sc.addEventListener('pointerdown', (e) => (downX = e.clientX));
+      sc.addEventListener('pointerup', (e) => {
+        if (Math.abs(e.clientX - downX) < 4) this.robotPicker(() => this.main());
+      });
+    }
     const robots = allRobots();
     const showRobot = () => {
       let i = robots.findIndex((x) => x.id === this.s.match.robotId);
@@ -171,7 +180,9 @@ export class Screens {
           <div class="meta"><b>${esc(sp.name)}</b><span>${robotSubtitle(sp)}</span></div></div>
         <div class="nav"><button class="arrowbtn" data-prev aria-label="prev">‹</button>
           <div class="track"><i style="width:${100 / robots.length}%;margin-left:${(100 * i) / robots.length}%"></i></div>
-          <span class="count">${i + 1}/${robots.length}</span><button class="arrowbtn" data-next aria-label="next">›</button></div>`;
+          <span class="count">${i + 1}/${robots.length}</span><button class="arrowbtn" data-next aria-label="next">›</button>
+          <button class="btn" data-all style="min-height:40px;padding:8px 14px;font-size:14px">▦ ${t('viewAll')}</button></div>`;
+      info.querySelector('[data-all]')!.addEventListener('click', () => this.robotPicker(() => this.main()));
       info.querySelector('[data-prev]')!.addEventListener('click', () => step(-1));
       info.querySelector('[data-next]')!.addEventListener('click', () => step(1));
     };
@@ -218,12 +229,150 @@ export class Screens {
     this.enableNav({ onBack: () => {}, onLeftRight: step });
   }
 
+  // ------------------------------------------------------------------ galería de robots
+  /**
+   * Todos los robots en una cuadrícula (miniaturas 3D): los mejores de la temporada, los
+   * genéricos y los del editor. Clic (o Enter) en una tarjeta la muestra en el panel; ELEGIR
+   * (o doble clic) la escoge y vuelve.
+   */
+  robotPicker(back: () => void): void {
+    const m = this.s.match;
+    const all = allRobots();
+    const groupOf = (r: RobotSpec): PickerTab => (r.real ? 'top' : ROBOT_PRESETS.some((p) => p.id === r.id) ? 'generic' : 'custom');
+    let tab: PickerTab = groupOf(all.find((r) => r.id === m.robotId) ?? all[0]);
+    let current = m.robotId;
+    const render = () => {
+      const list = all.filter((r) => groupOf(r) === tab);
+      const tabs = (['top', 'generic', 'custom'] as PickerTab[])
+        .map((k) => `<button class="chipbtn ${k === tab ? 'on' : ''}" data-tab="${k}">${t(`tab_${k}` as TKey)} <span>${all.filter((r) => groupOf(r) === k).length}</span></button>`)
+        .join('');
+      this.show(`
+        ${this.brandbar('2026 REBUILT')}
+        <h1>${t('chooseRobot')}</h1>
+        <div class="picker">
+          <div class="picker-left">
+            <div class="tabs">${tabs}</div>
+            <div class="rgrid" data-grid>
+              ${
+                list.length
+                  ? list
+                      .map(
+                        (r) => `<button class="rcard ${r.id === current ? 'sel' : ''} ${r.id === m.robotId ? 'mine' : ''}" data-nav data-id="${r.id}" ${r.id === current ? 'data-nav-default' : ''}>
+                  <div class="thumb"><img alt="" data-thumb="${r.id}"/>${badge(r)}</div>
+                  <div class="rc-head"><span class="rc-num">${r.teamNumber}</span><span class="rc-name"><b>${esc(r.name)}</b><small>${esc(r.real?.team ?? (groupOf(r) === 'custom' ? t('customRobot') : t('genericRobot')))}</small></span></div>
+                  <div class="rc-chips">${chips(r)}</div>
+                </button>`,
+                      )
+                      .join('')
+                  : `<div class="msg warn">${t('noCustom')}</div>`
+              }
+            </div>
+          </div>
+          <div class="picker-right" data-detail></div>
+        </div>
+        <div class="actionbar">
+          <button class="btn" data-back data-nav>${t('back')}</button>
+          <div class="grow"></div>
+          <button class="btn primary" data-pick data-nav>${t('pick')}</button>
+        </div>
+      `);
+      const r = this.root;
+      const detail = r.querySelector<HTMLElement>('[data-detail]')!;
+      const showDetail = (id: string) => {
+        current = id;
+        r.querySelectorAll<HTMLElement>('[data-id]').forEach((c) => c.classList.toggle('sel', c.dataset.id === id));
+        const sp = all.find((x) => x.id === id);
+        if (!sp) return;
+        const bar = (label: string, v: number, txt: string) => `<div class="sbar"><span>${label}</span><div><i style="width:${Math.round(Math.min(1, Math.max(0.04, v)) * 100)}%"></i></div><b>${txt}</b></div>`;
+        detail.innerHTML = `
+          <div class="pk-preview" data-preview></div>
+          <div class="pk-title"><span class="rc-num">${sp.teamNumber}</span><span class="rc-name"><b>${esc(sp.name)}</b><small>${esc(sp.real ? `${sp.real.team} · ${sp.real.robot}` : robotSubtitle(sp))}</small></span></div>
+          ${sp.real ? `<p class="pk-note">${esc(sp.real.note[getLang()])}</p>` : ''}
+          <div class="pk-stats">
+            ${bar(t('statSpeed'), sp.maxSpeed / 5.5, `${sp.maxSpeed.toFixed(1)} m/s`)}
+            ${bar(t('statShot'), sp.shooter.rate / 30, `${sp.shooter.rate} FUEL/s`)}
+            ${bar(t('statHopper'), sp.hopperCapacity / 115, `${sp.hopperCapacity}`)}
+            ${bar(t('statIntake'), sp.intake.rate / 24, `${sp.intake.rate}/s`)}
+            ${bar(t('statAccuracy'), (sp.shooter.accuracy - 0.7) / 0.27, `${Math.round(sp.shooter.accuracy * 100)}%`)}
+          </div>
+          <div class="rc-chips">${chips(sp)}</div>
+          ${sp.real ? `<small class="pk-src">${t('sourcesNote')}</small>` : ''}`;
+        this.showroom.mount(detail.querySelector<HTMLElement>('[data-preview]')!, 2.7);
+        this.showroom.setRobot(sp, m.alliance);
+      };
+      const pick = () => {
+        m.robotId = current;
+        this.app.save();
+        back();
+      };
+      r.querySelectorAll<HTMLElement>('[data-id]').forEach((c) => {
+        c.addEventListener('click', () => {
+          if (current === c.dataset.id && c.classList.contains('sel') && c.dataset.armed) pick();
+          else {
+            showDetail(c.dataset.id!);
+            r.querySelectorAll<HTMLElement>('[data-id]').forEach((x) => delete x.dataset.armed);
+            c.dataset.armed = '1';
+          }
+        });
+        c.addEventListener('dblclick', pick);
+      });
+      r.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) =>
+        b.addEventListener('click', () => {
+          tab = b.dataset.tab as PickerTab;
+          render();
+        }),
+      );
+      r.querySelector('[data-back]')!.addEventListener('click', back);
+      r.querySelector('[data-pick]')!.addEventListener('click', pick);
+      const grid = r.querySelector<HTMLElement>('[data-grid]')!;
+      const cols = () => {
+        const cards = Array.from(grid.querySelectorAll<HTMLElement>('.rcard'));
+        if (cards.length < 2) return 1;
+        const top0 = cards[0].offsetTop;
+        const n = cards.findIndex((c) => c.offsetTop !== top0);
+        return n < 0 ? cards.length : n;
+      };
+      this.nav = new MenuNav(r, {
+        onBack: back,
+        cols,
+        onFocus: (el) => {
+          if (el.dataset.id && el.dataset.id !== current) showDetail(el.dataset.id);
+        },
+      });
+      const first = list.find((x) => x.id === current) ?? list[0];
+      if (first) showDetail(first.id);
+      // Miniaturas una por una (no congela la pantalla)
+      const imgs = Array.from(r.querySelectorAll<HTMLImageElement>('[data-thumb]'));
+      const next = () => {
+        const img = imgs.shift();
+        if (!img || !img.isConnected) return;
+        const sp = all.find((x) => x.id === img.dataset.thumb);
+        if (sp) img.src = this.showroom.snapshot(sp, m.alliance);
+        setTimeout(next, 0);
+      };
+      setTimeout(next, 30);
+    };
+    const badge = (r: RobotSpec) => {
+      if (!r.real) return '';
+      const champ = r.teamNumber === 4414 || r.teamNumber === 1323 || r.teamNumber === 4065 || r.teamNumber === 1538;
+      return `<span class="rc-badge ${champ ? 'gold' : ''}">${champ ? `🏆 ${t('champion2026')}` : 'TOP 2026'}</span>`;
+    };
+    const chips = (r: RobotSpec) => {
+      const lanes = r.shooter.lanes ?? 1;
+      const kind = r.shooter.type === 'turret' ? 'TURRET' : lanes > 1 ? `DUMPER ×${lanes}` : t('fixed').toUpperCase();
+      const out = [kind, `${r.shooter.rate} FUEL/s`, `${t('hopper')} ${r.hopperCapacity}`];
+      if (fitsUnderTrench(r)) out.push('TRENCH ✓');
+      if (r.climb.maxLevel) out.push(`CLIMB L${r.climb.maxLevel}`);
+      return out.map((c) => `<span>${c}</span>`).join('');
+    };
+    render();
+  }
+
   // ------------------------------------------------------------------ configuración del match
   setup(mode: SetupMode): void {
     const m = this.s.match;
     const routines: Opt[] = loadRoutines().map((r) => ({ value: r.id, label: r.name }));
     const isMatch = mode === 'match';
-    const robots = allRobots();
     this.show(`
       ${this.brandbar('2026 REBUILT')}
       <h1 class="center">${isMatch ? t('match') : t('practice')}</h1>
@@ -311,12 +460,7 @@ export class Screens {
       this.app.save();
       refresh();
     });
-    r.querySelector('[data-change]')!.addEventListener('click', () => {
-      const i = robots.findIndex((x) => x.id === m.robotId);
-      m.robotId = robots[(Math.max(0, i) + 1) % robots.length].id;
-      this.app.save();
-      refresh();
-    });
+    r.querySelector('[data-change]')!.addEventListener('click', () => this.robotPicker(() => this.setup(mode)));
     r.querySelectorAll<HTMLElement>('[data-al]').forEach((b) =>
       b.addEventListener('click', () => {
         m.alliance = b.dataset.al as Alliance;
@@ -663,6 +807,8 @@ export class Screens {
     });
   }
 }
+
+type PickerTab = 'top' | 'generic' | 'custom';
 
 // ------------------------------------------------------------------ helpers de las pantallas
 

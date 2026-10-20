@@ -26,6 +26,9 @@ export class Showroom {
   private dragging = false;
   private lastX = 0;
   private spin = 0.35;
+  /** Renderer chico para miniaturas de la galería (se crea al primer uso). */
+  private thumbRenderer: THREE.WebGLRenderer | null = null;
+  private thumbs = new Map<string, string>();
 
   constructor() {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -117,6 +120,54 @@ export class Showroom {
     this.turntable.add(this.robot.group);
     // Pequeño "salto" de entrada al cambiar de robot
     this.turntable.scale.setScalar(0.85);
+  }
+
+  /**
+   * Miniatura (data URL) del robot en la tornamesa, con ángulo fijo de 3/4. Se cachea.
+   */
+  snapshot(spec: RobotSpec, alliance: Alliance, w = 360, h = 240): string {
+    const k = JSON.stringify(spec) + alliance + w + 'x' + h;
+    const hit = this.thumbs.get(k);
+    if (hit) return hit;
+    if (!this.thumbRenderer) {
+      const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      r.setClearColor(0x000000, 0);
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      r.toneMappingExposure = 0.9;
+      r.outputColorSpace = THREE.SRGBColorSpace;
+      r.shadowMap.enabled = true;
+      r.shadowMap.type = THREE.PCFShadowMap;
+      this.thumbRenderer = r;
+    }
+    const r = this.thumbRenderer;
+    r.setPixelRatio(1);
+    r.setSize(w, h, false);
+    const view = new RobotView(spec, alliance);
+    view.marker.visible = false;
+    view.update(
+      { intakeDeploy: 1, turretYaw: 0.5, hoodAngle: 1.0, climbHeight: 0, hopper: Math.min(spec.hopperCapacity, 30), enabled: true, wheelYaw: 0, wheelSpin: 0, intakeSpin: 0, flywheelSpin: 0 },
+      0,
+    );
+    const saved = this.turntable.children.slice();
+    for (const c of saved) this.turntable.remove(c);
+    this.turntable.add(view.group);
+    const rot = this.turntable.rotation.y;
+    const sc = this.turntable.scale.x;
+    this.turntable.rotation.y = -0.65;
+    this.turntable.scale.setScalar(1);
+    const cam = new THREE.PerspectiveCamera(30, w / h, 0.1, 50);
+    const d = 1.85;
+    cam.position.set(d * 0.74, d * 0.52, d * 0.74);
+    cam.lookAt(0, 0.2, 0);
+    r.render(this.scene, cam);
+    const url = r.domElement.toDataURL('image/webp', 0.86);
+    this.turntable.remove(view.group);
+    view.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose?.());
+    for (const c of saved) this.turntable.add(c);
+    this.turntable.rotation.y = rot;
+    this.turntable.scale.setScalar(sc);
+    this.thumbs.set(k, url);
+    return url;
   }
 
   private resize(): void {

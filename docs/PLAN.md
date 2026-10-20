@@ -106,7 +106,7 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
    superior de la fig. 5-7; los vértices llegan al borde de la caja), borde a 72 in; el FUEL
    se cuenta al cruzar ~0.3 m bajo el borde, al fondo del embudo ("sensor array" §6.5.1).
 3. **Salidas del HUB**: 4 aberturas a ~0.15 m de altura en la cara hacia la NEUTRAL ZONE,
-   retardo de procesamiento 0.6–1.4 s, velocidad de salida 1.5–3 m/s.
+   retardo de procesamiento 0.6–1.4 s, velocidad de salida 2.0–3.4 m/s.
 4. **Gracia de 3 s** (§6.5): un FUEL que entra al HUB dentro de los 3 s posteriores a su
    desactivación cuenta como si estuviera activo. El FUEL de AUTO cuenta hasta 3 s tras 0:00;
    durante esos 3 s los robots están deshabilitados (pausa entre AUTO y TELEOP).
@@ -115,8 +115,10 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 6. **CORRAL**: capacidad lógica 36 FUEL; CHUTE 25. G427 se evalúa cuando ambos están llenos y el
    HUMAN PLAYER tiene > 2 FUEL en la mano.
 7. **Masa del robot**: ≤ 52.16 kg (R103) + BUMPERS ≈ 6.8 kg + batería ≈ 5.9 kg ≈ 65 kg máximo.
-8. **Coeficientes**: FUEL restitución 0.35 en alfombra, Cd = 0.47, ρ = 1.2 kg/m³; Magnus suave
-   (coef. 0.5·S). Tracción μ ≈ 1.0–1.3 según diseño.
+8. **Coeficientes**: FUEL (espuma) restitución 0.55 y alfombra 0.45 (promedio ≈ 0.5: rebota
+   ~25 % de la altura), rodado sobre alfombra −1.0 m/s², Cd = 0.47, ρ = 1.2 kg/m³; Magnus
+   suave (coef. 0.5·S). Salida del HUB a 2.0–3.4 m/s (llega hasta ~5 m, fig. 5-8). Tracción
+   μ ≈ 1.0–1.3 según diseño.
 9. **Árbitro heurístico** (las reglas son "como las percibe un REFEREE"): se documenta cada
    umbral en `src/referee/Referee.ts` (p. ej. embestida = velocidad de cierre > 3 m/s con
    extensión dentro del perímetro rival).
@@ -129,7 +131,15 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
 13. **Robot contra FUEL**: las ruedas no colisionan con el FUEL; lo empuja la cara vertical de los
     BUMPERS, que un "faldón" (solo FUEL) baja hasta 0.5 in del piso, y el robot domina al FUEL
     (grupo de dominancia de Rapier: 0.2 kg de espuma no levantan a un robot de 55 kg). Así el
-    robot no se trepa al FUEL ni lo hunde en la alfombra. Empujar FUEL frena: −3.5 % de velocidad máxima por
+    robot no se trepa al FUEL ni lo hunde en la alfombra. Los robots usan soft-CCD de Rapier
+    (predicción de contactos de 15 cm, solo en los robots; en el FUEL creaba contactos "fantasma" con el embudo del HUB): a 60 Hz un robot avanza 8 cm por paso y sin eso
+    se metía dentro de las pelotas en vez de empujarlas. La intake desplegada tiene su propio
+    colisionador (solo FUEL) donde se ve el rodillo, y captura lo que toca.
+14. **Robots de la temporada** (`TOP_ROBOTS` en `src/config/robots.ts`): 4414, 254, 7769, 1323,
+    2056, 1690, 2481, 2910 y 1678, recreados con el ranking EPA de Statbotics y las fichas del
+    "FRC 2026 REBUILT Robot Study Dashboard" (tech binders, CAD, videos Behind the Bumpers) y
+    fotos de The Blue Alliance / Chief Delphi. Aspecto aproximado; altura exacta, nivel de climb
+    y algunas tasas son estimados. El perímetro se ajusta a R104 (≤ 110 in). Empujar FUEL frena: −3.5 % de velocidad máxima por
     pelota pegada al BUMPER (0.5 por cada una de las dos filas siguientes; 0.3 si la intake
     desplegada la está tragando), hasta 40 % de la velocidad máxima. Calibrado a ojo.
 

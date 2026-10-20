@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: Settings = {
     alliance: 'blue',
     station: 2,
     difficulty: 'normal',
-    robotId: 'balanced',
+    robotId: 'top-4414',
     autoRoutine: 'default-score',
     humanPlayer: 'ai',
     startOffset: 0,

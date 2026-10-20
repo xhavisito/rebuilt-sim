@@ -492,6 +492,7 @@ export class GameSession {
         const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
         r.cmd = inputs[slot] ? this.playerCommand(r, inputs[slot], rig) : idleCommand();
       } else r.cmd = idleCommand();
+      r.phys.setIntakeDeployed(r.intakeOn && r.intakeDeploy > 0.6 && !r.climbing);
       r.phys.plow = plowLoad(r, this.fuel);
       r.phys.drive(r.cmd.drive, dt);
       if (r.enabled) {
