@@ -141,8 +141,10 @@ export class GameSession {
         this.referee?.onHubEnter(i, hub);
         this.onHubEnter(i, hub);
       },
-      onOut: (i) => this.referee?.onOut(i),
+      onOut: (i, shot) => this.referee?.onOut(i, shot),
     };
+    // FIELD STAFF no deja un FUEL debajo de un robot
+    this.fuel.canPlace = (x, z) => this.robots.every((r) => Math.hypot(r.phys.curPos.x - x, r.phys.curPos.z - z) > Math.hypot(r.phys.outerL, r.phys.outerW) + 0.25);
     this.fuelView = new FuelView(this.fuel, renderer.preset.fuelDetail);
     this.fuelView.setShadows(renderer.preset.fuelShadows);
     this.fuelView.hopperPos = (i) => {
@@ -506,6 +508,7 @@ export class GameSession {
       } else r.spinUp = Math.max(0, r.spinUp - dt);
     }
     if (this.hpCanAct()) for (const a of ALLIANCES) this.humanPlayers[a].update(dt, this.hpContext(this.humanPlayers[a]));
+    this.fuel.returnsEnabled = !m || (m.phase !== 'POST' && m.phase !== 'DONE');
     this.fuel.prePhysics(dt);
     this.pw.step();
     for (const r of this.robots) shoveFuel(r, this.fuel);
