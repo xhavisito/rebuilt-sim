@@ -105,18 +105,25 @@ export function shoveFuel(r: Robot, fuel: FuelSystem): void {
     const px = fx + R - Math.abs(lx); // penetración en x (por el lado de lx)
     const pz = ph.outerW + R - Math.abs(lz);
     if (px <= 0.002 || pz <= 0.002) return;
-    // Sale por el eje de menor penetración (con un poco de holgura)
-    let nlx = lx;
-    let nlz = lz;
-    let nx: number;
-    let nz: number;
-    if (px < pz) {
-      nlx = Math.sign(lx || 1) * (fx + R + 0.003);
-      [nx, nz] = [Math.sign(lx || 1) * c, Math.sign(lx || 1) * sn];
-    } else {
-      nlz = Math.sign(lz || 1) * (ph.outerW + R + 0.003);
-      [nx, nz] = [Math.sign(lz || 1) * -sn, Math.sign(lz || 1) * c];
+    // Sale por el lado de menor penetración que quede dentro del campo: contra la pared, el
+    // FUEL se escurre a lo largo de ella en vez de atravesarla (salía del campo y contaba G405).
+    // [penetración, x local, z local, normal de salida en mundo (x, z)]
+    const exits: Array<[number, number, number, number, number]> = [];
+    for (const sx of [1, -1]) {
+      const f = sx > 0 ? front : ph.outerL;
+      exits.push([f + R - sx * lx, sx * (f + R + 0.003), lz, sx * c, -sx * sn]);
     }
+    for (const sz of [1, -1]) exits.push([ph.outerW + R - sz * lz, lx, sz * (ph.outerW + R + 0.003), sz * sn, sz * c]);
+    exits.sort((a, b) => a[0] - b[0]);
+    const inField = (x: number, z: number) => Math.abs(x) < F.HALF_L - R && Math.abs(z) < F.HALF_W - R;
+    let pick = exits[0];
+    for (const e of exits) {
+      if (inField(p.x + e[1] * c + e[2] * sn, p.z - e[1] * sn + e[2] * c)) {
+        pick = e;
+        break;
+      }
+    }
+    const [, nlx, nlz, nx, nz] = pick;
     // local → mundo (inversa de la rotación de arriba)
     const wx = p.x + nlx * c + nlz * sn;
     const wz = p.z - nlx * sn + nlz * c;

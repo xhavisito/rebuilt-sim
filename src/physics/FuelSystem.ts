@@ -40,8 +40,17 @@ export interface FuelCallbacks {
   /** Un FUEL salió del HUB por una salida. */
   onHubExit?(index: number, hub: Alliance): void;
   onCorral?(index: number, alliance: Alliance): void;
-  onOut?(index: number): void;
+  /** Salió del campo; `shot` = seguía en vuelo desde que un robot lo lanzó (G405). */
+  onOut?(index: number, shot: boolean): void;
+  /** FIELD STAFF lo regresó al campo. */
+  onReturn?(index: number): void;
 }
+
+/** Retardo antes de que FIELD STAFF regrese un FUEL que salió ("en cuanto sea seguro"). */
+const RETURN_DELAY_MIN = 2.0;
+const RETURN_DELAY_MAX = 4.0;
+/** Distancia desde la pared a la que se deja el FUEL regresado. */
+const RETURN_INSET = 0.3;
 
 interface HubItem {
   index: number;
@@ -76,6 +85,12 @@ export class FuelSystem {
   /** FUEL en vuelo (con arrastre). */
   private airborne = new Set<number>();
   private hubQueue: HubItem[] = [];
+  /** FUEL fuera del campo esperando a FIELD STAFF: punto de salida (dentro) y cuándo regresa. */
+  private returnQueue: Array<{ index: number; x: number; z: number; at: number }> = [];
+  /** FIELD STAFF regresa FUEL (se apaga al terminar el match). */
+  returnsEnabled = true;
+  /** ¿Se puede dejar un FUEL en (x, z)? (sin robots encima). */
+  canPlace: (x: number, z: number) => boolean = () => true;
   /** Colas lógicas por alianza. */
   readonly chute: Record<Alliance, number[]> = { red: [], blue: [] };
   readonly corral: Record<Alliance, number[]> = { red: [], blue: [] };
@@ -141,6 +156,7 @@ export class FuelSystem {
    */
   stage(preloads: number[]): void {
     this.hubQueue.length = 0;
+    this.returnQueue.length = 0;
     this.airborne.clear();
     for (const a of ['red', 'blue'] as Alliance[]) {
       this.chute[a].length = 0;
@@ -375,15 +391,20 @@ export class FuelSystem {
           return;
         }
       }
+      const v = b.linvel();
+      // ---- Nunca a través de las paredes: un robot que aprisiona FUEL contra el perímetro lo
+      //      empuja sin ceder (domina al FUEL). Si quedó metido en la pared por debajo de su
+      //      borde superior, venía de adentro y no está en una abertura, regresa a la cara interior.
+      if (this.containInField(i, b, t, v)) return;
       // ---- Fuera del campo (G405). Un tiro del HUMAN PLAYER empieza detrás de la pared:
       //      solo cuenta como fuera si cae allá (no mientras va en el aire).
       const hpInFlight = (this.flags[i] & FLAG_HP_THROW) !== 0 && t.y > 0.6;
       if (!hpInFlight && (Math.abs(t.z) > F.HALF_W + 0.08 || ax > wallX + 0.05 || t.y < -0.5)) {
-        this.store(i, FuelState.Out, -1);
-        this.cb.onOut?.(i);
+        const shot = (this.flags[i] & FLAG_SHOT) !== 0;
+        this.goOut(i);
+        this.cb.onOut?.(i, shot);
         return;
       }
-      const v = b.linvel();
       // ---- Nunca bajo la alfombra: si algo lo hundió (choque fuerte), lo regresa arriba.
       //      El piso es plano en y = 0 en todo el campo (las rampas y el HUB están encima).
       if (t.y < F.FUEL_RADIUS - 0.006) {
@@ -427,6 +448,9 @@ export class FuelSystem {
       }
     });
 
+    // ---- FIELD STAFF regresa al campo el FUEL que salió (G405)
+    if (this.returnQueue.length && this.returnsEnabled) this.processReturns();
+
     // ---- Salidas del HUB hacia la NEUTRAL ZONE (aleatorias, §5.4)
     if (this.hubQueue.length) {
       for (let k = this.hubQueue.length - 1; k >= 0; k--) {
@@ -436,6 +460,99 @@ export class FuelSystem {
         this.ejectFromHub(it.index, it.hub);
       }
     }
+  }
+
+  /**
+   * Corrige un FUEL metido en una pared del perímetro (barandal o ALLIANCE WALL). Devuelve true
+   * si lo movió. Las aberturas del CORRAL y de la CHUTE y lo que pasa por encima de la pared
+   * (un tiro alto) no se tocan.
+   */
+  private containInField(i: number, b: RAPIER.RigidBody, t: { x: number; y: number; z: number }, v: { x: number; y: number; z: number }): boolean {
+    const R = F.FUEL_RADIUS;
+    const o = i * 3;
+    const px = this.prev[o];
+    const pz = this.prev[o + 2];
+    // Solo si en el paso anterior estaba dentro (los tiros del HUMAN PLAYER vienen de afuera)
+    if (Math.abs(px) > F.HALF_L || Math.abs(pz) > F.HALF_W) return false;
+    let x = t.x;
+    let z = t.z;
+    let vx = v.x;
+    let vz = v.z;
+    const deep = R * 0.6; // el colisionador normal lo deja a R de la cara; más allá, está atorado
+    if (Math.abs(t.z) > F.HALF_W - deep && t.y < F.GUARDRAIL_HEIGHT) {
+      const s = Math.sign(t.z);
+      z = s * (F.HALF_W - R - 0.002);
+      if (vz * s > 0) vz = -0.2 * vz;
+    }
+    if (Math.abs(t.x) > F.HALF_L - deep && t.y < allianceWallTop(t.x, t.z) && !inWallOpening(t.x, t.y, t.z)) {
+      const s = Math.sign(t.x);
+      x = s * (F.HALF_L - R - 0.002);
+      if (vx * s > 0) vx = -0.2 * vx;
+    }
+    if (x === t.x && z === t.z) return false;
+    b.setTranslation({ x, y: t.y, z }, true);
+    b.setLinvel({ x: vx, y: v.y, z: vz }, true);
+    this.setPos(i, x, t.y, z, false);
+    this.slowT[i] = 0;
+    return true;
+  }
+
+  /** Guarda un FUEL que salió del campo y agenda su regreso por donde salió. */
+  private goOut(i: number): void {
+    const o = i * 3;
+    // Punto de salida: la última posición conocida, llevada adentro del perímetro
+    const lim = (v: number, h: number) => Math.max(-h + RETURN_INSET, Math.min(h - RETURN_INSET, v));
+    const x = lim(this.prev[o], F.HALF_L);
+    const z = lim(this.prev[o + 2], F.HALF_W);
+    this.store(i, FuelState.Out, -1);
+    this.returnQueue.push({ index: i, x, z, at: this.time + this.rng.range(RETURN_DELAY_MIN, RETURN_DELAY_MAX) });
+  }
+
+  /**
+   * G405 (nota): el FUEL que sale del campo (salvo por la abertura del CORRAL) lo regresa
+   * FIELD STAFF aproximadamente por donde salió. Se deja junto a la pared, rodando despacio
+   * hacia el campo; si hay un robot encima se corre a lo largo de la pared o se espera.
+   */
+  private processReturns(): void {
+    for (let k = this.returnQueue.length - 1; k >= 0; k--) {
+      const it = this.returnQueue[k];
+      if (it.at > this.time) continue;
+      if (this.state[it.index] !== FuelState.Out) {
+        this.returnQueue.splice(k, 1);
+        continue;
+      }
+      // A lo largo de la pared más cercana: 0, ±0.45, ±0.9 m…
+      const alongX = F.HALF_W - Math.abs(it.z) < F.HALF_L - Math.abs(it.x);
+      let spot: { x: number; z: number } | null = null;
+      for (const d of [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35]) {
+        const x = alongX ? Math.max(-F.HALF_L + RETURN_INSET, Math.min(F.HALF_L - RETURN_INSET, it.x + d)) : it.x;
+        const z = alongX ? it.z : Math.max(-F.HALF_W + RETURN_INSET, Math.min(F.HALF_W - RETURN_INSET, it.z + d));
+        if (this.canPlace(x, z)) {
+          spot = { x, z };
+          break;
+        }
+      }
+      if (!spot) {
+        it.at = this.time + 1;
+        continue;
+      }
+      this.returnQueue.splice(k, 1);
+      const i = it.index;
+      // Rueda despacio alejándose de la pared, como si lo empujara la mano de FIELD STAFF
+      const nx = alongX ? 0 : -Math.sign(spot.x);
+      const nz = alongX ? -Math.sign(spot.z) : 0;
+      this.place(i, spot.x, F.FUEL_RADIUS + 0.04, spot.z, false);
+      this.bodies[i].setLinvel({ x: nx * 0.5, y: 0, z: nz * 0.5 }, true);
+      this.flags[i] = 0;
+      this.shotBy[i] = -1;
+      this.lastTouch[i] = -1;
+      this.cb.onReturn?.(i);
+    }
+  }
+
+  /** FUEL que espera regresar al campo. */
+  get pendingReturns(): number {
+    return this.returnQueue.length;
   }
 
   private ejectFromHub(i: number, hub: Alliance): void {
@@ -487,4 +604,21 @@ export class FuelSystem {
     const hit = this.pw.world.castRay(this.tmpRay, F.FUEL_RADIUS + 0.01, true, undefined, undefined, this.colliders[i]);
     return !!hit;
   }
+}
+
+/** Altura del borde superior de la ALLIANCE WALL en (x, z): OUTPOST 50 in, el resto ≥ 78 in. */
+function allianceWallTop(x: number, z: number): number {
+  const a: Alliance = x > 0 ? 'red' : 'blue';
+  const zz = a === 'blue' ? z : -z; // a coordenadas del lado azul
+  const yIn = F.FIELD_WIDTH_IN / 2 - zz / F.IN; // y_WPILib (in)
+  return yIn >= F.OUTPOST_WALL_Y_IN[0] && yIn <= F.OUTPOST_WALL_Y_IN[1] ? F.OUTPOST_WALL_HEIGHT : F.TOWER_HEIGHT;
+}
+
+/** ¿(x, y, z) está en la abertura del CORRAL o de la CHUTE de la OUTPOST? */
+function inWallOpening(x: number, y: number, z: number): boolean {
+  const o = F.outpostInfo(x > 0 ? 'red' : 'blue');
+  const dz = Math.abs(z - o.z);
+  const R = F.FUEL_RADIUS;
+  if (dz < F.CORRAL_OPEN_W / 2 && y < F.CORRAL_OPEN_BOTTOM + F.CORRAL_OPEN_H + R) return true;
+  return dz < F.CHUTE_OPEN_W / 2 && y > F.CHUTE_OPEN_BOTTOM - R && y < F.CHUTE_OPEN_BOTTOM + F.CHUTE_OPEN_H + R;
 }

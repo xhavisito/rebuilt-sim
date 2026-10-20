@@ -56,7 +56,7 @@ const es: RulesSection[] = [
       'G408 · No atrapes FUEL que sale del HUB antes de que toque otra cosa.',
       'G418 · PIN máximo de 3 s (MINOR, y MAJOR cada 3 s más).',
       'G420 · En los últimos 30 s no toques a un rival en su TOWER (MAJOR y el rival recibe LEVEL 3).',
-      'G405 · No saques FUEL del campo (salvo por la abertura del CORRAL).',
+      'G405 · No saques FUEL del campo a propósito (salvo por la abertura del CORRAL). El que sale lo regresa FIELD STAFF por donde salió.',
     ],
   },
   {
@@ -117,7 +117,7 @@ const en: RulesSection[] = [
       'G408 · Do not catch FUEL leaving the HUB before it touches something else.',
       'G418 · 3-second PIN limit (MINOR, then MAJOR every 3 s).',
       'G420 · In the last 30 s do not touch an opponent at its TOWER (MAJOR and they get LEVEL 3).',
-      'G405 · Do not eject FUEL from the field (except through the CORRAL opening).',
+      'G405 · Do not intentionally eject FUEL from the field (except through the CORRAL opening). FIELD STAFF put FUEL that leaves back in near where it exited.',
     ],
   },
   {

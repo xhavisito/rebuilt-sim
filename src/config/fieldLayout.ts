@@ -68,6 +68,8 @@ const box = (
 const zOf = (yIn: number): number => -inch(yIn - F.FIELD_WIDTH_IN / 2);
 
 export const WALL_T = 0.06;
+/** Grosor del respaldo invisible detrás de las paredes (ver `guardrail-back`). */
+const BACKING_T = 0.6;
 const WALL_X = -F.HALF_L; // cara interior de la pared azul
 
 function buildBlueSide(): FieldPart[] {
@@ -83,12 +85,14 @@ function buildBlueSide(): FieldPart[] {
     out.push(box(`ds${ds}-base`, wx0, wx1, 0, F.DS_BASE_HEIGHT, z0, z1, 'diamond'));
     out.push(box(`ds${ds}-glass`, wx0 + 0.02, wx1 - 0.02, F.DS_BASE_HEIGHT, F.DS_TOTAL_HEIGHT, z0, z1, 'poly', 'all', false));
     out.push(box(`ds${ds}-rail`, wx0, wx1, F.DS_TOTAL_HEIGHT, F.DS_TOTAL_HEIGHT + 0.05, z0, z1, 'rail', 'none'));
+    out.push(box(`ds${ds}-back`, wx0 - BACKING_T, wx0, 0, F.DS_TOTAL_HEIGHT, z0, z1, 'invisible', 'all', false));
   }
 
   // ---------- TOWER WALL
   {
     const [y0, y1] = F.TOWER_WALL_Y_IN;
     out.push(box('tower-wall', wx0, wx1, 0, F.TOWER_HEIGHT, zOf(y1), zOf(y0), 'panelA'));
+    out.push(box('tower-back', wx0 - BACKING_T, wx0, 0, F.TOWER_HEIGHT, zOf(y1), zOf(y0), 'invisible', 'all', false));
   }
 
   // ---------- OUTPOST (pared con abertura del CORRAL abajo y de la CHUTE arriba)
@@ -101,6 +105,13 @@ function buildBlueSide(): FieldPart[] {
     const h = F.OUTPOST_WALL_HEIGHT;
     out.push(box('outpost-l', wx0, wx1, 0, h, zOf(oy0), zOf(ay0) + 0.0, 'panelA'));
     out.push(box('outpost-r', wx0, wx1, 0, h, zOf(ay1), zOf(oy1), 'panelA'));
+    // Respaldo de los paneles a los lados de la abertura, sin invadir el CORRAL (detrás)
+    {
+      const cy0 = c - F.CORRAL_W / F.IN / 2 - 1;
+      const cy1 = c + F.CORRAL_W / F.IN / 2 + 1;
+      out.push(box('outpost-back-l', wx0 - 0.3, wx0, 0, h, zOf(cy0), zOf(ay0) + BACKING_T, 'invisible', 'all', false));
+      out.push(box('outpost-back-r', wx0 - 0.3, wx0, 0, h, zOf(ay1), zOf(cy1), 'invisible', 'all', false));
+    }
     out.push(box('outpost-sill', wx0, wx1, 0, F.CORRAL_OPEN_BOTTOM, zOf(oy1), zOf(oy0), 'dark'));
     out.push(
       box('outpost-mid', wx0, wx1, F.CORRAL_OPEN_BOTTOM + F.CORRAL_OPEN_H, F.CHUTE_OPEN_BOTTOM, zOf(oy1), zOf(oy0), 'panelA'),
@@ -314,6 +325,9 @@ function buildShared(): FieldPart[] {
     out.push(box('guardrail', -L / 2, L / 2, 0, F.GUARDRAIL_HEIGHT, Math.min(z0, z1), Math.max(z0, z1), 'poly', 'all', false));
     out.push(box('guardrail-top', -L / 2, L / 2, F.GUARDRAIL_HEIGHT - 0.04, F.GUARDRAIL_HEIGHT, Math.min(z0, z1) - 0.01, Math.max(z0, z1) + 0.01, 'rail', 'none'));
     out.push(box('guardrail-bot', -L / 2, L / 2, 0, 0.05, Math.min(z0, z1) - 0.01, Math.max(z0, z1) + 0.01, 'rail', 'none'));
+    // Respaldo invisible: el policarbonato de 3 cm es más delgado que medio FUEL y un robot que
+    // aprisiona una pelota contra él la hacía atravesarlo (salía del campo y contaba G405).
+    out.push(box('guardrail-back', -L / 2 - BACKING_T, L / 2 + BACKING_T, 0, F.GUARDRAIL_HEIGHT, s * (F.HALF_W + 0.03), s * (F.HALF_W + 0.03 + BACKING_T), 'invisible', 'all', false));
   }
   return out;
 }
