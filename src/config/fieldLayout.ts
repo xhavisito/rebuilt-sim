@@ -252,9 +252,7 @@ function buildBlueSide(): FieldPart[] {
     const ad = F.TRENCH_ARM_DEPTH / 2;
     out.push(box('trench-arm', hx - ad, hx + ad, F.TRENCH_CLEAR_HEIGHT, F.TRENCH_ARM_TOP, az0, az1, 'alu'));
     out.push(box('trench-arm-panel', hx - ad - 0.004, hx + ad + 0.004, F.TRENCH_CLEAR_HEIGHT + 0.02, F.TRENCH_ARM_TOP - 0.02, az0, az1, 'panelA', 'none'));
-    // Soporte en el barandal
-    const [gz0, gz1] = a(F.HALF_W - 0.06, F.HALF_W);
-    out.push(box('trench-guard-post', hx - 0.08, hx + 0.08, 0, F.TRENCH_ARM_TOP, gz0, gz1, 'alu'));
+    // El brazo se apoya en el barandal (§5.6): no hay poste que invada el paso de 50.34 in.
   }
 
   // ---------- DEPOT (barreras de acero de 3 × 1.125 in)

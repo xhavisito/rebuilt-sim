@@ -122,12 +122,13 @@ export function padStyle(id: string): PadStyle {
   return 'generic';
 }
 
-export function keyLabel(code: string): string {
+export function keyLabel(code: string, lang: 'es' | 'en' = 'es'): string {
+  const en = lang === 'en';
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
-  if (code === 'Mouse0') return '🖱 Izq';
-  if (code === 'Mouse2') return '🖱 Der';
-  if (code === 'Space') return 'Espacio';
+  if (code === 'Mouse0') return en ? '🖱 Left' : '🖱 Izq';
+  if (code === 'Mouse2') return en ? '🖱 Right' : '🖱 Der';
+  if (code === 'Space') return en ? 'Space' : 'Espacio';
   if (code.startsWith('Arrow')) return { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' }[code] ?? code;
   if (code.startsWith('Shift')) return 'Shift';
   if (code === 'Escape') return 'Esc';

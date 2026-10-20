@@ -20,6 +20,8 @@ export const G = {
   FUEL: 1 << 2,
   /** Piezas del campo que solo frenan FUEL (red del HUB, techo del CORRAL…). */
   FUEL_ONLY: 1 << 3,
+  /** Alfombra y BUMPS: lo que se pisa (la intake/hopper desplegados no lo tocan). */
+  GROUND: 1 << 4,
 } as const;
 
 /** Empaqueta membresía/filtro en el formato de 32 bits de Rapier. */
@@ -27,20 +29,27 @@ export const groups = (member: number, filter: number): number => ((member & 0xf
 
 export const GROUPS = {
   field: groups(G.FIELD, G.ROBOT | G.FUEL),
+  ground: groups(G.GROUND, G.ROBOT | G.FUEL),
   fuelOnly: groups(G.FUEL_ONLY, G.FUEL),
-  robot: groups(G.ROBOT, G.FIELD | G.ROBOT | G.FUEL),
+  robot: groups(G.ROBOT, G.FIELD | G.GROUND | G.ROBOT | G.FUEL),
   /** Faldón bajo los BUMPERS: solo toca FUEL (no las rampas del BUMP). */
   skirt: groups(G.ROBOT, G.FUEL),
+  /**
+   * Intake y hopper desplegados fuera del perímetro: chocan con el campo (TRENCH, paredes, HUB…)
+   * y con otros robots, pero no con la alfombra ni las rampas del BUMP (el robot real las libra)
+   * ni con el FUEL (eso lo hacen el rodillo y `shoveFuel`).
+   */
+  extension: groups(G.ROBOT, G.FIELD | G.ROBOT),
   /** Ruedas: solo tocan el campo. El FUEL lo empujan los BUMPERS (no hay forma de "rodar" encima). */
-  wheel: groups(G.ROBOT, G.FIELD),
-  fuel: groups(G.FUEL, G.FIELD | G.ROBOT | G.FUEL | G.FUEL_ONLY),
+  wheel: groups(G.ROBOT, G.FIELD | G.GROUND),
+  fuel: groups(G.FUEL, G.FIELD | G.GROUND | G.ROBOT | G.FUEL | G.FUEL_ONLY),
 };
 
 /** Etiqueta que guardamos en `collider` para saber qué tocamos. */
 export type ColliderTag =
   | { kind: 'floor' }
   | { kind: 'field'; part: string; alliance?: 'red' | 'blue' }
-  | { kind: 'robot'; robot: number; part: 'bumper' | 'frame' | 'wheel' }
+  | { kind: 'robot'; robot: number; part: 'bumper' | 'frame' | 'wheel' | 'extension' }
   | { kind: 'fuel'; index: number };
 
 export class PhysicsWorld {
@@ -84,9 +93,9 @@ export class PhysicsWorld {
     this.world.step(this.events);
   }
 
-  /** Crea un colisionador estático del campo. */
-  fixed(desc: RAPIER.ColliderDesc, tag: ColliderTag, fuelOnly = false): RAPIER.Collider {
-    desc.setCollisionGroups(fuelOnly ? GROUPS.fuelOnly : GROUPS.field);
+  /** Crea un colisionador estático del campo (`group`: GROUPS.field, ground o fuelOnly). */
+  fixed(desc: RAPIER.ColliderDesc, tag: ColliderTag, group: number = GROUPS.field): RAPIER.Collider {
+    desc.setCollisionGroups(group);
     const c = this.world.createCollider(desc);
     this.tag(c, tag);
     return c;

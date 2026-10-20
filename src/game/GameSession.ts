@@ -22,7 +22,7 @@ import type { PlayerInput } from '../input/actions';
 import { buildFieldColliders } from '../physics/FieldColliders';
 import { FuelSystem } from '../physics/FuelSystem';
 import { PhysicsWorld } from '../physics/PhysicsWorld';
-import { CameraRig, CAMERA_MODES, ROBOT_CAMERAS } from '../render/CameraRig';
+import { CameraRig, CAMERA_MODES, ROBOT_CAMERAS, type CameraMode } from '../render/CameraRig';
 import type { FieldView } from '../render/FieldView';
 import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
@@ -185,6 +185,15 @@ export class GameSession {
       claims: new Map(),
     };
     for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
+    // Una alianza de solo IA (fuera de Fácil) pone a defender, en sus SHIFTS inactivos, al robot
+    // con el hopper más chico: con el HUB propio apagado, estorbar al rival vale más que anotar.
+    if ((cfg.aiDifficulty ?? 'normal') !== 'easy')
+      for (const a of ALLIANCES) {
+        const mine = this.robots.filter((r) => r.alliance === a);
+        if (mine.length < 3 || mine.some((r) => !this.ais.has(r.index))) continue;
+        const d = mine.reduce((x, y) => (y.spec.hopperCapacity < x.spec.hopperCapacity ? y : x));
+        this.ais.get(d.index)!.defender = true;
+      }
   }
 
   /** Fase actual del match ('AUTO'… o null en práctica). */
@@ -430,6 +439,14 @@ export class GameSession {
     this.hooks.cameraChange?.(next);
   }
 
+  /** Elige la cámara del jugador `slot` (menú de pausa). */
+  setCamera(mode: CameraMode, slot = 0): void {
+    const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
+    if (!rig || rig.mode === mode || (mode === 'free' && this.cfg.mode !== 'practice')) return;
+    rig.setMode(mode);
+    this.hooks.cameraChange?.(mode);
+  }
+
   /** Acciones de flanco (una vez por frame, no por paso). */
   private handlePressed(inputs: PlayerInput[]): void {
     inputs.forEach((inp, slot) => {
@@ -498,6 +515,7 @@ export class GameSession {
         r.cmd = inputs[slot] ? this.playerCommand(r, inputs[slot], rig) : idleCommand();
       } else r.cmd = idleCommand();
       r.phys.setIntakeDeployed(r.intakeOn && r.intakeDeploy > 0.6 && !r.climbing);
+      r.phys.setExtended(r.intakeDeploy > 0.5);
       r.phys.plow = plowLoad(r, this.fuel);
       r.phys.drive(r.cmd.drive, dt);
       if (r.enabled) {
@@ -505,7 +523,10 @@ export class GameSession {
         const ctx = this.mechContext(r);
         runIntake(r, ctx, dt);
         runShooter(r, ctx, dt);
-      } else r.spinUp = Math.max(0, r.spinUp - dt);
+      } else {
+        r.spinUp = Math.max(0, r.spinUp - dt);
+        r.burst.length = 0; // los FUEL de la ráfaga siguen en el hopper
+      }
     }
     if (this.hpCanAct()) for (const a of ALLIANCES) this.humanPlayers[a].update(dt, this.hpContext(this.humanPlayers[a]));
     this.fuel.returnsEnabled = !m || (m.phase !== 'POST' && m.phase !== 'DONE');
@@ -584,10 +605,13 @@ export class GameSession {
           }
         : null;
       rig.update(frameDt, t);
+      // A bordo, el robot propio no se dibuja: la cámara quedaría dentro de su hopper y sus
+      // paredes de policarbonato taparían la vista (como en un juego en primera persona)
+      const hide = rig.mode === 'onboard' && r ? [r.view.group] : undefined;
       // Layout de pantalla dividida: 2 = lado a lado; 3–4 = cuadrícula 2×2
-      if (n === 1) views.push({ camera: rig.camera, x: 0, y: 0, w: 1, h: 1 });
-      else if (n === 2) views.push({ camera: rig.camera, x: k * 0.5, y: 0, w: 0.5, h: 1 });
-      else views.push({ camera: rig.camera, x: (k % 2) * 0.5, y: k < 2 ? 0.5 : 0, w: 0.5, h: 0.5 });
+      if (n === 1) views.push({ camera: rig.camera, x: 0, y: 0, w: 1, h: 1, hide });
+      else if (n === 2) views.push({ camera: rig.camera, x: k * 0.5, y: 0, w: 0.5, h: 1, hide });
+      else views.push({ camera: rig.camera, x: (k % 2) * 0.5, y: k < 2 ? 0.5 : 0, w: 0.5, h: 0.5, hide });
     });
     return views;
   }

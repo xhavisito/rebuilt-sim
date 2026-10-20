@@ -1,6 +1,6 @@
 /** Crea los colisionadores estáticos del campo a partir de `fieldParts()`. */
 import { fieldParts, type FieldPart } from '../config/fieldLayout';
-import { RAPIER, type PhysicsWorld } from './PhysicsWorld';
+import { GROUPS, RAPIER, type PhysicsWorld } from './PhysicsWorld';
 
 const FRICTION: Partial<Record<FieldPart['mat'], number>> = {
   hdpeA: 0.7, // HDPE "orange peel" texturizado
@@ -14,6 +14,7 @@ export function buildFieldColliders(pw: PhysicsWorld): void {
   pw.fixed(
     RAPIER.ColliderDesc.cuboid(40, 0.5, 40).setTranslation(0, -0.5, 0).setFriction(0.8).setRestitution(0.45),
     { kind: 'floor' },
+    GROUPS.ground,
   );
   for (const p of fieldParts()) {
     if (p.collide === 'none') continue;
@@ -35,6 +36,7 @@ export function buildFieldColliders(pw: PhysicsWorld): void {
     // Embudo, tapa y red del HUB: la espuma casi no rebota en el policarbonato (si rebotara
     // como en la alfombra, la mitad del FUEL que entra saldría disparado del embudo)
     if (p.name.startsWith('hub-')) desc.setRestitution(0.02).setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min);
-    pw.fixed(desc, { kind: 'field', part: p.name, alliance: p.alliance }, p.collide === 'fuel');
+    const group = p.collide === 'fuel' ? GROUPS.fuelOnly : p.name === 'bump' ? GROUPS.ground : GROUPS.field;
+    pw.fixed(desc, { kind: 'field', part: p.name, alliance: p.alliance }, group);
   }
 }

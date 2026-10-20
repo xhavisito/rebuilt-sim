@@ -117,9 +117,13 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
    HUMAN PLAYER tiene > 2 FUEL en la mano.
 7. **Masa del robot**: ≤ 52.16 kg (R103) + BUMPERS ≈ 6.8 kg + batería ≈ 5.9 kg ≈ 65 kg máximo.
 8. **Coeficientes**: FUEL (espuma) restitución 0.55 y alfombra 0.45 (promedio ≈ 0.5: rebota
-   ~25 % de la altura), rodado sobre alfombra −1.0 m/s², Cd = 0.47, ρ = 1.2 kg/m³; Magnus
-   suave (coef. 0.5·S). Salida del HUB a 2.0–3.4 m/s (llega hasta ~5 m, fig. 5-8). Tracción
-   μ ≈ 1.0–1.3 según diseño.
+   ~25 % de la altura), rodado sobre alfombra −0.6 m/s² (C_rr ≈ 0.06), Cd = 0.47,
+   ρ = 1.2 kg/m³; Magnus suave (coef. 0.5·S). Fricción del FUEL 0.15 (Rapier promedia):
+   FUEL–FUEL 0.15, FUEL–alfombra ≈ 0.48, FUEL–BUMPER ≈ 0.28. Con 0.7 entre pelotas, la que
+   llegaba girando "aplastaba" contra la alfombra a la que golpeaba y esta apenas salía (se
+   veían como piedras); ahora un choque de frente le pasa ~70 % de la velocidad, como entre dos
+   pelotas de espuma de la misma masa. Salida del HUB a 2.0–3.4 m/s: rueda 2.5–6 m (fig. 5-8:
+   hasta ~5 m). Tracción μ ≈ 1.0–1.3 según diseño.
 9. **Árbitro heurístico** (las reglas son "como las percibe un REFEREE"): se documenta cada
    umbral en `src/referee/Referee.ts` (p. ej. embestida = velocidad de cierre > 3 m/s con
    extensión dentro del perímetro rival).
@@ -137,6 +141,8 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     que después de cada paso `shoveFuel` saca por el lado más cercano cualquier FUEL que haya
     quedado dentro de la huella (o del rodillo de la intake desplegada) con la velocidad del
     robot. La intake desplegada tiene su propio colisionador (solo FUEL) y captura lo que toca.
+    Empujar FUEL frena poco: −1 % de velocidad por FUEL pegado al BUMPER, a lo más −15 % (antes
+    −40 %: 0.2 kg de espuma casi no frenan a un robot de 55 kg).
 14. **Robots reales** (`CAD_ROBOTS` en `src/config/robots.ts`): 1678, 5000, 604, 6328, 971,
     341, 190 y 4915, con el modelo 3D que cada equipo publicó en su repo de código (asset de
     AdvantageScope; licencias en `public/robots/LICENSES.md`), simplificado con
@@ -163,16 +169,32 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     salió": 2–4 s después rueda despacio desde 0.3 m dentro de la pared (se corre si hay un
     robot encima). G405 solo se cobra si el robot lo sacó a propósito: lo lanzó y salió todavía
     en vuelo.
-17. **Dumpers**: un shooter de varios FUEL de ancho (`shooter.lanes`) suelta una ráfaga, un FUEL
-    por carril a la vez, de lado a lado (`laneSpacingIn`: dos turrets de 971 a 16.5 in); la
-    cadencia media sigue siendo `rate`. Del CAD: 1678 y 6328 tienen hood/flywheel de lado a lado
-    (4 de ancho); 190, 604, 341, 4915 y 5000 tiran de un solo chorro.
+17. **Dumpers**: un shooter de varios FUEL de ancho (`shooter.lanes`) no suelta filas
+    perfectas: en cada ráfaga llegan al flywheel de 1 a `lanes` FUEL (al azar, los que alcance a
+    empujar el indexer), en lugares al azar a lo ancho del shooter sin encimarse y escalonados
+    hasta 70 ms; la siguiente ráfaga espera n / `rate` ± 25 % (la cadencia media sigue siendo
+    `rate`). Dos turrets (971, `laneSpacingIn` 16.5 in): una, la otra o ambas. Del CAD: 1678 y
+    6328 tienen hood/flywheel de lado a lado (4 de ancho); 190, 604, 341, 4915 y 5000 tiran de
+    un solo chorro.
 18. **FUEL visible en el hopper** (todos los robots con CAD): cajas (o un anillo alrededor del
     rotor de 5000) en el hueco real del hopper de cada CAD, montadas en el componente si este se
     mueve. Se llenan de abajo hacia arriba; si el hopper real guarda más FUEL del que cabe a la
     vista, lo dibujado es proporcional al llenado. Donde la intake guardada ocupa parte del
     hopper (1678, 6328, 190, 4915), el FUEL guardado la mantiene abierta lo necesario. En 604 (sin
     paredes en el CAD) el FUEL va sobre el chasis alrededor de la torre del serializer.
+19. **Intake y hopper desplegados son sólidos** (R105: hasta 12 in fuera del perímetro): con la
+    intake abajo, una caja de la altura de los BUMPERS a 10 in cubre la intake y otra el hopper
+    que se extiende (1678 y 6328, `deployedHopperIn` medido en el CAD). Chocan con el campo
+    (TRENCH, paredes, HUB, TOWER) y con los otros robots, pero no con la alfombra ni con las
+    rampas del BUMP (grupo de colisión aparte: el robot real las libra) ni con el FUEL (eso lo
+    hacen el rodillo y `shoveFuel`). El árbitro las cuenta como contacto del robot.
+20. **TRENCH**: el brazo de 22.25 in se apoya en el barandal (§5.6); no hay poste que invada el
+    paso de 50.34 in (antes había uno de 6 cm con el que se chocaba al pasar pegado al barandal).
+21. **Robots de la IA**: solo robots reales (Fácil en orden fijo, las demás al azar). Una alianza
+    de solo IA (fuera de Fácil) pone a defender, en sus SHIFTS inactivos, al robot con el hopper
+    más chico. Los diseños propios se hacen en el editor (con una plantilla sin CAD).
+22. **Cámara a bordo**: el robot propio no se dibuja en esa vista (la cámara quedaba dentro de su
+    hopper y sus paredes de policarbonato tapaban todo).
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.

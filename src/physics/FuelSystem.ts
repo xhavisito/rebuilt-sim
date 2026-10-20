@@ -31,8 +31,16 @@ const CD = 0.47;
 const AREA = Math.PI * F.FUEL_RADIUS * F.FUEL_RADIUS;
 const K_DRAG = 0.5 * RHO * CD * AREA;
 const K_MAGNUS = 0.25 * RHO * AREA * F.FUEL_RADIUS;
-/** Desaceleración por rodadura de espuma sobre alfombra (m/s²). Supuesto 8 (PLAN.md). */
-const ROLL_DECEL = 1.0;
+/** Desaceleración por rodadura de espuma sobre alfombra (m/s², C_rr ≈ 0.06). Supuesto 8 (PLAN.md). */
+const ROLL_DECEL = 0.6;
+/**
+ * Fricción del FUEL. La regla de combinación de Rapier es el promedio: FUEL–FUEL 0.15 (espuma
+ * lisa contra espuma lisa: resbalan y se reparten el golpe), FUEL–alfombra ≈ 0.48 (rueda en vez
+ * de patinar), FUEL–BUMPER ≈ 0.28. Con 0.7 entre pelotas, el FUEL que llegaba girando "aplastaba"
+ * contra la alfombra al que golpeaba (la fricción en el contacto lo empujaba hacia abajo) y este
+ * apenas salía: parecían piedras.
+ */
+const FUEL_FRICTION = 0.15;
 
 export interface FuelCallbacks {
   /** Un FUEL cruzó el sensor del HUB de `hub`. */
@@ -127,7 +135,7 @@ export class FuelSystem {
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(0, -5 - i * 0.01, 0)
           .setLinearDamping(0.05)
-          .setAngularDamping(0.5)
+          .setAngularDamping(0.1)
           .setEnabled(false),
       );
       body.userData = i;
@@ -135,7 +143,7 @@ export class FuelSystem {
       const col = w.createCollider(
         RAPIER.ColliderDesc.ball(F.FUEL_RADIUS)
           .setMass(mass)
-          .setFriction(0.7)
+          .setFriction(FUEL_FRICTION)
           .setRestitution(0.55)
           .setCollisionGroups(GROUPS.fuel),
         body,

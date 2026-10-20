@@ -95,7 +95,8 @@ export function loadSettings(): Settings {
       // Cámaras que ya no existen (la de "seguimiento" se fusionó con tercera persona)
       if (!CAMERAS.includes(s.camera)) s.camera = 'third';
       // Las recreaciones aproximadas ("top-…") se reemplazaron por robots con su CAD real
-      if (s.match.robotId.startsWith('top-')) s.match.robotId = 'cad-1678';
+      // …y los diseños genéricos de las primeras versiones se quitaron
+      if (s.match.robotId.startsWith('top-') || ['tank', 'balanced', 'climber', 'defender'].includes(s.match.robotId)) s.match.robotId = 'cad-1678';
       return s;
     }
   } catch {

@@ -231,19 +231,19 @@ export class Screens {
 
   // ------------------------------------------------------------------ galería de robots
   /**
-   * Todos los robots en una cuadrícula (miniaturas 3D): los mejores de la temporada, los
-   * genéricos y los del editor. Clic (o Enter) en una tarjeta la muestra en el panel; ELEGIR
+   * Todos los robots en una cuadrícula (miniaturas 3D): los robots reales de la temporada y los
+   * del editor. Clic (o Enter) en una tarjeta la muestra en el panel; ELEGIR
    * (o doble clic) la escoge y vuelve.
    */
   robotPicker(back: () => void): void {
     const m = this.s.match;
     const all = allRobots();
-    const groupOf = (r: RobotSpec): PickerTab => (r.real ? 'top' : ROBOT_PRESETS.some((p) => p.id === r.id) ? 'generic' : 'custom');
+    const groupOf = (r: RobotSpec): PickerTab => (r.real || ROBOT_PRESETS.some((p) => p.id === r.id) ? 'top' : 'custom');
     let tab: PickerTab = groupOf(all.find((r) => r.id === m.robotId) ?? all[0]);
     let current = m.robotId;
     const render = () => {
       const list = all.filter((r) => groupOf(r) === tab);
-      const tabs = (['top', 'generic', 'custom'] as PickerTab[])
+      const tabs = (['top', 'custom'] as PickerTab[])
         .map((k) => `<button class="chipbtn ${k === tab ? 'on' : ''}" data-tab="${k}">${t(`tab_${k}` as TKey)} <span>${all.filter((r) => groupOf(r) === k).length}</span></button>`)
         .join('');
       this.show(`
@@ -259,7 +259,7 @@ export class Screens {
                       .map(
                         (r) => `<button class="rcard ${r.id === current ? 'sel' : ''} ${r.id === m.robotId ? 'mine' : ''}" data-nav data-id="${r.id}" ${r.id === current ? 'data-nav-default' : ''}>
                   <div class="thumb"><img alt="" data-thumb="${r.id}"/>${badge(r)}</div>
-                  <div class="rc-head"><span class="rc-num">${r.teamNumber}</span><span class="rc-name"><b>${esc(r.name)}</b><small>${esc(r.real?.team ?? (groupOf(r) === 'custom' ? t('customRobot') : t('genericRobot')))}</small></span></div>
+                  <div class="rc-head"><span class="rc-num">${r.teamNumber}</span><span class="rc-name"><b>${esc(r.name)}</b><small>${esc(r.real?.team ?? t('customRobot'))}</small></span></div>
                   <div class="rc-chips">${chips(r)}</div>
                 </button>`,
                       )
@@ -535,7 +535,7 @@ export class Screens {
     const style = this.app.input.lastPadStyle;
     const keyRows = [...AXIS_ACTIONS, ...BUTTON_ACTIONS]
       .map((a) => {
-        const keys = s.keys[a].map((k) => `<span class="kbd">${esc(keyLabel(k))}</span>`).join('');
+        const keys = s.keys[a].map((k) => `<span class="kbd">${esc(keyLabel(k, getLang()))}</span>`).join('');
         const pad = (BUTTON_ACTIONS as string[]).includes(a)
           ? s.padBindings[a as ButtonAction].map((i) => `<span class="kbd">${PAD_LABELS[style][i] ?? i}</span>`).join('')
           : `<span class="kbd">${a.startsWith('move') ? 'L' : 'R'}</span>`;
@@ -807,7 +807,7 @@ export class Screens {
   }
 }
 
-type PickerTab = 'top' | 'generic' | 'custom';
+type PickerTab = 'top' | 'custom';
 
 // ------------------------------------------------------------------ helpers de las pantallas
 

@@ -28,7 +28,11 @@ import { formatTimer, timerSeconds } from '../core/clock';
 import { loadJSON, saveJSON } from '../config/settings';
 import { buildResults } from '../game/results';
 import { RULES } from '../core/fouls';
-import { Hud } from '../ui/Hud';
+import { Hud, PHASE_LABEL } from '../ui/Hud';
+import { esc } from '../ui/forms';
+import { keyToNav, MenuNav, PadNav } from '../ui/nav';
+import { keyLabel } from '../input/actions';
+import { CAMERA_MODES, type CameraMode } from '../render/CameraRig';
 import { attachChartHover, renderResults } from '../ui/Results';
 import { getLang, setLang, t, tx, type TKey } from '../ui/i18n';
 
@@ -51,6 +55,9 @@ export class App {
   private fpsAcc = { frames: 0, time: 0, fps: 60, sim: 0, gpu: 0 };
   private toastEl: HTMLElement;
   private overlay: HTMLElement;
+  /** Navegación del menú de pausa con control (A/B, D-pad) y flechas. */
+  private pauseNav: MenuNav | null = null;
+  private pausePad = new PadNav();
   private countdown = -1;
   private countdownShown = -1;
   readonly screens: Screens;
@@ -92,6 +99,15 @@ export class App {
     this.overlay = document.createElement('div');
     this.overlay.className = 'overlay hidden';
     uiEl.appendChild(this.overlay);
+    window.addEventListener('keydown', (e) => {
+      if (!this.session?.paused || !this.pauseNav) return;
+      const a = keyToNav(e);
+      // Esc ya reanuda por la entrada del juego
+      if (a && a !== 'back') {
+        e.preventDefault();
+        this.pauseNav.handle(a);
+      }
+    });
     this.input.onKey('F3', () => {
       this.settings.showFps = !this.settings.showFps;
       this.save();
@@ -371,7 +387,6 @@ export class App {
         for (const d of [1, 2, 3] as StationNumber[])
           if (!used.has(`${a}${d}`)) {
             const spec = structuredClone(ROBOT_PRESETS[k++ % ROBOT_PRESETS.length]);
-            if (!spec.real) spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
             robots.push({ spec, alliance: a, station: d, control: { type: 'ai' } });
           }
     this.startSession({
@@ -556,13 +571,75 @@ export class App {
     else this.closeOverlay();
   }
 
-  private showPause(): void {
+  /** Menú de pausa; `focusA` = acción que conserva el foco al redibujar (ajustes rápidos). */
+  private showPause(focusA?: string): void {
+    const s = this.session;
+    if (!s) return;
+    const m = s.match;
+    const practice = s.cfg.mode === 'practice';
+    const d = this.settings.drive;
+    const rig = s.rigs[0];
+    const icon = (path: string) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="${path}"/></svg>`;
+    const I = {
+      play: icon('M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z'),
+      reset: icon('M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7Z'),
+      restart: icon('M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z'),
+      quit: icon('M10 17v-3H3v-4h7V7l5 5-5 5Zm4-14h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5v-2h5V5h-5V3Z'),
+    };
+    const toggle = (k: string, on: boolean, label: string) =>
+      `<button class="ps-toggle ${on ? 'on' : ''}" data-nav data-a="t:${k}" role="switch" aria-checked="${on}"><span>${label}</span><i></i></button>`;
+    const cams = CAMERA_MODES.filter((c) => c !== 'free' || practice);
+    const kb = (codes: string[]) => codes.map((k) => `<kbd>${esc(keyLabel(k, getLang()))}</kbd>`).join('');
+    const K = this.settings.keys;
+    const keys: Array<[string, string]> = [
+      [t('ps_drive'), kb([K.moveUp[0], K.moveLeft[0], K.moveDown[0], K.moveRight[0]])],
+      [t('ps_rotate'), kb([K.rotLeft[0], K.rotRight[0]])],
+      [t('a_shoot'), kb(K.shoot.slice(0, 2))],
+      [t('a_intake'), kb(K.intake.slice(0, 2))],
+      [t('a_pass'), kb(K.pass.slice(0, 1))],
+      [t('ps_climb'), kb([K.climbUp[0], K.climbDown[0]])],
+      [t('a_cameraNext'), kb(K.cameraNext.slice(0, 1))],
+      [t('a_slow'), kb(K.slow.slice(0, 1))],
+    ];
+    const modeLabel = practice ? t('practice') : s.cfg.mode === 'tournament' ? t('tournament') : s.cfg.mode === 'local' ? t('local') : t('match');
+    const score = m
+      ? `<div class="ps-score">
+          <div class="red"><span>${t('red')}</span><b>${m.score('red')}</b></div>
+          <div class="mid"><b>${formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t))}</b><span>${PHASE_LABEL[m.phase]}</span></div>
+          <div class="blue"><b>${m.score('blue')}</b><span>${t('blue')}</span></div>
+        </div>`
+      : '';
     this.openOverlay(
-      `<div class="dialog"><h2>${t('paused')}</h2>
-        <button data-a="resume" class="primary">${t('resume')}</button>
-        ${this.session?.cfg.mode === 'practice' ? `<button data-a="reset">${t('resetField')}</button>` : ''}
-        ${this.tournamentCtx ? '' : `<button data-a="restart">${t('restart')}</button>`}
-        <button data-a="quit">${t('quit')}</button>
+      `<div class="pause">
+        <section class="ps-main">
+          <div class="ps-kicker"><span></span>${esc(modeLabel)}</div>
+          <h2>${t('paused')}</h2>
+          ${score}
+          <nav class="ps-menu">
+            <button data-a="resume" class="primary" data-nav data-nav-default>${I.play}<span>${t('resume')}</span><kbd>Esc</kbd></button>
+            ${practice ? `<button data-a="reset" data-nav>${I.reset}<span>${t('resetField')}</span></button>` : ''}
+            ${this.tournamentCtx ? '' : `<button data-a="restart" data-nav>${I.restart}<span>${t('restart')}</span></button>`}
+            <button data-a="quit" class="quit" data-nav>${I.quit}<span>${t('quit')}</span></button>
+          </nav>
+        </section>
+        <aside class="ps-side">
+          <h3>${t('ps_quick')}</h3>
+          <div class="ps-toggles">
+            ${toggle('autoAim', d.autoAim, t('autoAim'))}
+            ${toggle('shootOnMove', d.shootOnMove, t('shootOnMove'))}
+            ${toggle('aimGuide', d.aimGuide, t('aimGuide'))}
+            ${toggle('fieldRelative', d.fieldRelative, t('fieldRelative'))}
+            ${toggle('cameraShake', this.settings.cameraShake, t('cameraShake'))}
+          </div>
+          <label class="ps-vol"><span>${t('volMaster')}</span><input type="range" min="0" max="1" step="0.05" value="${this.settings.audio.master}" data-vol/><b data-volv>${Math.round(this.settings.audio.master * 100)}%</b></label>
+          ${
+            rig && s.rigs.length === 1
+              ? `<h3>${t('camera')}</h3><div class="ps-cams">${cams.map((c) => `<button class="chipbtn ${rig.mode === c ? 'on' : ''}" data-nav data-a="c:${c}">${t(`cam_${c}` as TKey)}</button>`).join('')}</div>`
+              : ''
+          }
+          <h3 class="ps-kh">${t('controls')}</h3>
+          <div class="ps-keys">${keys.map(([l, k]) => `<div><span>${l}</span><span class="k">${k}</span></div>`).join('')}</div>
+        </aside>
       </div>`,
       (a) => {
         if (a === 'resume') this.togglePause();
@@ -571,8 +648,34 @@ export class App {
           this.togglePause();
         } else if (a === 'restart') this.restart();
         else if (a === 'quit') this.quitToMenu();
+        else if (a.startsWith('t:')) {
+          const k = a.slice(2);
+          if (k === 'cameraShake') this.settings.cameraShake = !this.settings.cameraShake;
+          else {
+            const key = k as 'autoAim' | 'shootOnMove' | 'aimGuide' | 'fieldRelative';
+            d[key] = !d[key];
+            if (key === 'fieldRelative') for (const r of s.players()) r.fieldRelative = d.fieldRelative;
+          }
+          this.save();
+          this.showPause(a);
+        } else if (a.startsWith('c:')) {
+          s.setCamera(a.slice(2) as CameraMode);
+          this.showPause(a);
+        }
       },
     );
+    this.pauseNav = new MenuNav(this.overlay, { onBack: () => this.togglePause() });
+    if (focusA) {
+      const i = Array.from(this.overlay.querySelectorAll<HTMLElement>('[data-nav]')).findIndex((e) => e.dataset.a === focusA);
+      if (i >= 0) this.pauseNav.focus(i, false);
+    }
+    this.pausePad.poll(0); // el botón que abrió la pausa no cuenta como "aceptar"
+    const vol = this.overlay.querySelector<HTMLInputElement>('[data-vol]');
+    vol?.addEventListener('input', () => {
+      this.settings.audio.master = Number(vol.value);
+      this.overlay.querySelector('[data-volv]')!.textContent = `${Math.round(this.settings.audio.master * 100)}%`;
+      this.save();
+    });
   }
 
   openOverlay(html: string, onAction: (a: string) => void): void {
@@ -584,6 +687,7 @@ export class App {
   }
 
   closeOverlay(): void {
+    this.pauseNav = null;
     this.overlay.classList.add('hidden');
     this.overlay.innerHTML = '';
   }
@@ -620,6 +724,11 @@ export class App {
       this.updateArenaScreen(s);
       this.emitTrails(s);
       this.autoQuality(dt, s);
+    }
+    if (s?.paused && this.pauseNav) {
+      const acts = this.pausePad.poll(dt);
+      // Start/Esc ya pausan/reanudan por la entrada del juego: no se cuentan dos veces
+      if (!inputs[0]?.pressed.has('pause')) for (const a of acts) this.pauseNav.handle(a);
     }
     if (s && inputs[0]?.pressed.has('pause')) this.togglePause();
     if (s) {
@@ -775,18 +884,11 @@ export class App {
 }
 
 /**
- * Robots de la IA según la dificultad: Fácil = diseños genéricos; Normal = mezcla; Difícil y
- * Einstein = los mejores robots de la temporada. Sin repetir el robot del jugador.
+ * Robots de la IA: los robots reales de la temporada, sin repetir el del jugador. En Fácil van en
+ * orden fijo (lo usan los escenarios e2e); en las demás dificultades, al azar.
  */
 function aiRobotPool(difficulty: string, playerId: string): RobotSpec[] {
   const top = CAD_ROBOTS.filter((r) => r.id !== playerId);
-  const generic = ROBOT_PRESETS.filter((r) => !r.real && r.id !== playerId);
-  const shuffle = <T,>(a: T[]) => a.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
-  if (difficulty === 'easy') return generic; // orden fijo (lo usan los escenarios e2e)
-  if (difficulty === 'normal') {
-    const t = shuffle(top);
-    const g = shuffle(generic);
-    return [t[0], g[0], t[1], g[1], t[2], g[2]].filter(Boolean);
-  }
-  return shuffle(top);
+  if (difficulty === 'easy') return top;
+  return top.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
 }

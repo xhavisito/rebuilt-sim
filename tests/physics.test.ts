@@ -1,7 +1,8 @@
 /**
  * Pruebas de integración de física (Rapier en Node, sin render):
- * BUMP transitable, TRENCH solo para robots ≤ 22.25 in, empujones decididos por
- * tracción/masa y FUEL estable en reposo.
+ * BUMP transitable, TRENCH solo para robots ≤ 22.25 in (y sin postes en el paso), intake
+ * desplegada sólida, empujones decididos por tracción/masa, FUEL estable en reposo y choques
+ * entre FUEL que reparten el golpe.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as F from '../src/config/field';
@@ -34,7 +35,7 @@ function run(pw: PhysicsWorld, robots: RobotPhysics[], seconds: number, cmd: (r:
 describe('física de robots', () => {
   it('cruza el BUMP (rampas de 15°) y sigue derecho', () => {
     const pw = world();
-    const spec = presetById('balanced');
+    const spec = presetById('cad-6328');
     // Frente al BUMP azul (z = 1.52 m), mirando a +X
     const r = new RobotPhysics(pw, spec, 0, -5.2, F.BUMP_CENTER_Z, 0);
     let maxTilt = 0;
@@ -52,11 +53,11 @@ describe('física de robots', () => {
     pw.free();
   });
 
-  it('un robot de 21.5 in pasa bajo el TRENCH; uno de 27 in no', () => {
+  it('un robot de 21.8 in pasa bajo el TRENCH; uno de 28.8 in no', () => {
     const zTrench = F.HALF_W - F.TRENCH_CLEAR_WIDTH / 2;
     for (const [id, passes] of [
-      ['climber', true],
-      ['tank', false],
+      ['cad-6328', true],
+      ['cad-604', false],
     ] as const) {
       const pw = world();
       const spec = presetById(id);
@@ -69,19 +70,50 @@ describe('física de robots', () => {
     }
   });
 
+  it('pasa pegado al barandal por el TRENCH (sin postes en el paso)', () => {
+    const spec = presetById('cad-6328');
+    const pw = world();
+    const outerW = F.inch(spec.widthIn / 2 + spec.bumperIn);
+    const r = new RobotPhysics(pw, spec, 0, -5.2, F.HALF_W - outerW - 0.02, 0);
+    run(pw, [r], 3, () => ({ vx: 3, vz: 0, omega: 0 }));
+    expect(r.position().x).toBeGreaterThan(F.HUB_CENTER_X_BLUE + 0.8);
+    pw.free();
+  });
+
+  it('la intake desplegada choca con el TRENCH; guardada, el robot llega más lejos', () => {
+    const spec = presetById('cad-6328');
+    // De frente contra el poste del TRENCH (lado del BUMP), por fuera del paso
+    const zPost = F.TRENCH_INNER_Z + (F.TRENCH_WIDTH - F.TRENCH_CLEAR_WIDTH) / 2;
+    const reach = (deployed: boolean) => {
+      const pw = world();
+      const r = new RobotPhysics(pw, spec, 0, F.HUB_CENTER_X_BLUE - 2.2, zPost, 0);
+      r.setExtended(deployed);
+      run(pw, [r], 2, () => ({ vx: 2, vz: 0, omega: 0 }));
+      const x = r.position().x;
+      pw.free();
+      return x;
+    };
+    const stowed = reach(false);
+    const deployed = reach(true);
+    const face = F.HUB_CENTER_X_BLUE - F.TRENCH_DEPTH / 2;
+    expect(stowed).toBeLessThan(face);
+    // con la intake abajo se detiene antes: lo que sobresale (≈ 9 in) toca el poste
+    expect(stowed - deployed).toBeGreaterThan(F.inch(6));
+  });
+
   it('en un empujón de frente gana más tracción y masa', () => {
     const pw = world();
-    const strong = new RobotPhysics(pw, presetById('defender'), 0, -1.0, -1.5, 0);
-    const weak = new RobotPhysics(pw, presetById('climber'), 1, 0.0, -1.5, Math.PI);
+    const strong = new RobotPhysics(pw, presetById('cad-1678'), 0, -1.0, -1.5, 0);
+    const weak = new RobotPhysics(pw, presetById('cad-190'), 1, 0.0, -1.5, Math.PI);
     run(pw, [strong, weak], 3, (r) => (r === strong ? { vx: 4, vz: 0, omega: 0 } : { vx: -4, vz: 0, omega: 0 }));
-    // El defensor avanzó (+X) empujando al escalador hacia atrás
+    // El de más tracción y masa avanzó (+X) empujando al otro hacia atrás
     expect(strong.position().x).toBeGreaterThan(-0.6);
     pw.free();
   });
 
   it('respeta la velocidad máxima y limita la aceleración por tracción', () => {
     const pw = world();
-    const spec = presetById('balanced');
+    const spec = presetById('cad-6328');
     // Sobre la CENTER LINE, a lo ancho del campo (sin FUEL en esta prueba)
     const r = new RobotPhysics(pw, spec, 0, 0, -3.6, Math.PI / 2);
     run(pw, [r], 0.25, () => ({ vx: 0, vz: 10, omega: 0 }));
@@ -115,6 +147,28 @@ describe('FUEL', () => {
       maxSpeed = Math.max(maxSpeed, Math.hypot(v.x, v.y, v.z));
     }
     expect(maxSpeed).toBeLessThan(0.3);
+    pw.free();
+  });
+
+  it('un FUEL que rueda reparte el golpe con el que está quieto (no son piedras)', () => {
+    const pw = world();
+    const fuel = new FuelSystem(pw, 2, new Rng(3));
+    // En la NEUTRAL ZONE, lejos de todo: A rueda a 2 m/s (con su giro) hacia B en reposo
+    fuel.place(0, 1.0, F.FUEL_RADIUS, -3.2, false);
+    fuel.place(1, 1.6, F.FUEL_RADIUS, -3.2, true);
+    fuel.bodies[0].setLinvel({ x: 2, y: 0, z: 0 }, true);
+    fuel.bodies[0].setAngvel({ x: 0, y: 0, z: -2 / F.FUEL_RADIUS }, true);
+    let vBmax = 0;
+    for (let i = 0; i < 240; i++) {
+      fuel.prePhysics(pw.dt);
+      pw.step();
+      fuel.postPhysics(pw.dt);
+      vBmax = Math.max(vBmax, fuel.bodies[1].linvel().x);
+    }
+    // Choque casi elástico entre masas iguales: B sale con ~(1 + e)/2 de la velocidad de A
+    expect(vBmax).toBeGreaterThan(1.1);
+    // …y rueda lejos (antes apenas se movía ~0.3 m)
+    expect(fuel.pos[3] - 1.6).toBeGreaterThan(0.6);
     pw.free();
   });
 

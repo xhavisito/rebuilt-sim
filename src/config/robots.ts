@@ -1,5 +1,5 @@
 /**
- * Especificación de robots: robots reales de 2026 (con su CAD), presets genéricos y validación.
+ * Especificación de robots: robots reales de 2026 (con su CAD), robots propios y validación.
  * R103 peso ≤ 115 lb sin BUMPERS ni batería · R104 perímetro ≤ 110 in y altura ≤ 30 in
  * R105 extensión ≤ 12 in · R106 un solo lado · R107 altura ≤ 30 in siempre.
  */
@@ -79,6 +79,11 @@ export interface RobotSpec {
   cad?: { file: string };
   /** Superestructura que sobresale del chasis hacia el frente, arriba de los BUMPERS (pulgadas). */
   overhangIn?: number;
+  /**
+   * Hopper que se extiende con la intake: [frente, borde de arriba] en pulgadas desde el centro
+   * del robot y el piso (medido en el CAD desplegado). Choca con el campo y los robots.
+   */
+  deployedHopperIn?: [number, number];
   /** Robot real de la temporada: fuente de los datos (para la galería). */
   real?: { team: string; robot: string; note: { es: string; en: string } };
 }
@@ -196,6 +201,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     traction: 1.25,
     intake: { widthIn: 27, extensionIn: 11.2, rate: 18 },
     hopperCapacity: 70,
+    deployedHopperIn: [19.3, 20.5],
     // Dumper de 4 FUEL de ancho (hood de lado a lado en el CAD) que tira hacia atrás desde 11.28 in
     // detrás del centro (DriveConstants.SHOOTER_OFFSET)
     shooter: { type: 'fixed', rate: 22, maxSpeed: 13, minAngle: 40, maxAngle: 78, accuracy: 0.92, exitHeightIn: 21, backspin: 20, lanes: 4, yawDeg: 180, posIn: [-11.28, 0] },
@@ -250,6 +256,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.9,
     intake: { widthIn: 25.5, extensionIn: 11.6, rate: 12 },
     hopperCapacity: 40,
+    deployedHopperIn: [19.7, 19.7], // la slamtake empuja el frente del hopper
     // Launcher fijo hacia atrás (LauncherConstants.robotToLauncher: x −0.151 m, yaw π): el chasis
     // apunta. Dumper: flywheel y hood de lado a lado (0.63 m en el CAD, 4 Kraken) → 4 FUEL de ancho.
     shooter: { type: 'fixed', rate: 16, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.94, exitHeightIn: 21, backspin: 25, lanes: 4, yawDeg: 180, posIn: [-5.9, 0] },
@@ -333,111 +340,23 @@ export const CAD_ROBOTS: RobotSpec[] = [
   }),
 ];
 
-/** Presets genéricos (diseños inventados) + los mejores robots de la temporada. */
-const GENERIC_PRESETS: RobotSpec[] = [
-  base({
-    id: 'tank',
-    name: 'Tanque de FUEL',
-    teamNumber: 1001,
-    widthIn: 28,
-    lengthIn: 27,
-    heightIn: 27,
-    massKg: 63,
-    maxSpeed: 4.6,
-    intake: { widthIn: 26, extensionIn: 11, rate: 12 },
-    hopperCapacity: 70,
-    shooter: {
-      type: 'fixed',
-      rate: 12,
-      maxSpeed: 13,
-      minAngle: 50,
-      maxAngle: 72,
-      accuracy: 0.86,
-      exitHeightIn: 25,
-      backspin: 35,
-    },
-    climb: { maxLevel: 0, timeL1: 99, timeL2: 99, timeL3: 99 },
-    colors: { primary: '#465462', accent: '#ff8a00' },
-  }),
-  base({
-    id: 'balanced',
-    name: 'Equilibrado',
-    teamNumber: 2002,
-    heightIn: 24,
-    massKg: 61,
-    maxSpeed: 4.9,
-    hopperCapacity: 40,
-    intake: { widthIn: 24, extensionIn: 10, rate: 9 },
-    shooter: {
-      type: 'turret',
-      rate: 7,
-      maxSpeed: 12.5,
-      minAngle: 45,
-      maxAngle: 78,
-      accuracy: 0.9,
-      exitHeightIn: 23,
-      backspin: 30,
-    },
-    climb: { maxLevel: 2, timeL1: 2.5, timeL2: 5.5, timeL3: 99 },
-    colors: { primary: '#d5dae0', accent: '#19b5fe' },
-  }),
-  base({
-    id: 'climber',
-    name: 'Escalador',
-    teamNumber: 3003,
-    widthIn: 26,
-    lengthIn: 26,
-    heightIn: 21.5, // < 22.25 in → cabe bajo el TRENCH
-    massKg: 58,
-    maxSpeed: 5.2,
-    hopperCapacity: 20,
-    intake: { widthIn: 22, extensionIn: 9, rate: 7 },
-    shooter: {
-      type: 'fixed',
-      rate: 5,
-      maxSpeed: 12,
-      minAngle: 48,
-      maxAngle: 75,
-      accuracy: 0.84,
-      exitHeightIn: 19,
-      backspin: 25,
-    },
-    climb: { maxLevel: 3, timeL1: 2.2, timeL2: 4.8, timeL3: 7.5 },
-    colors: { primary: '#6b3fd4', accent: '#a5ff3c' },
-  }),
-  base({
-    id: 'defender',
-    name: 'Defensor',
-    teamNumber: 4004,
-    widthIn: 30,
-    lengthIn: 25, // perímetro 110 in
-    heightIn: 20,
-    massKg: 64.8,
-    traction: 1.35,
-    maxSpeed: 4.4,
-    maxAccel: 11,
-    hopperCapacity: 15,
-    intake: { widthIn: 26, extensionIn: 6, rate: 6 },
-    shooter: {
-      type: 'fixed',
-      rate: 4,
-      maxSpeed: 11,
-      minAngle: 50,
-      maxAngle: 70,
-      accuracy: 0.75,
-      exitHeightIn: 17,
-      backspin: 20,
-    },
-    climb: { maxLevel: 1, timeL1: 3.5, timeL2: 99, timeL3: 99 },
-    colors: { primary: '#1d1f24', accent: '#ff3b30' },
-    preload: 8,
-  }),
-];
-
-export const ROBOT_PRESETS: RobotSpec[] = [...CAD_ROBOTS, ...GENERIC_PRESETS];
+/** Robots incluidos (solo robots reales con su CAD; los diseños propios se hacen en el editor). */
+export const ROBOT_PRESETS: RobotSpec[] = CAD_ROBOTS;
+export const DEFAULT_ROBOT_ID = CAD_ROBOTS[0].id;
 
 export function presetById(id: string): RobotSpec {
-  return structuredClone(ROBOT_PRESETS.find((p) => p.id === id) ?? GENERIC_PRESETS[1]);
+  return structuredClone(ROBOT_PRESETS.find((p) => p.id === id) ?? CAD_ROBOTS[0]);
+}
+
+/** Punto de partida de un robot nuevo en el editor: diseño propio, sin modelo CAD. */
+export function newRobotTemplate(): RobotSpec {
+  return base({
+    id: `custom-${Date.now().toString(36)}`,
+    name: 'Mi robot',
+    teamNumber: 9999,
+    shooter: { type: 'turret', rate: 8, maxSpeed: 12.5, minAngle: 45, maxAngle: 78, accuracy: 0.9, exitHeightIn: 21, backspin: 30 },
+    heightIn: 21.5,
+  });
 }
 
 // ------------------------------------------------------------------ robots personalizados
@@ -459,5 +378,5 @@ export function allRobots(): RobotSpec[] {
 
 /** Busca por id en presets y personalizados (copia). */
 export function robotById(id: string): RobotSpec {
-  return structuredClone(allRobots().find((r) => r.id === id) ?? GENERIC_PRESETS[1]);
+  return structuredClone(allRobots().find((r) => r.id === id) ?? CAD_ROBOTS[0]);
 }

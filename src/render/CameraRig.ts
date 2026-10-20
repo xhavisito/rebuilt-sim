@@ -129,14 +129,14 @@ export class CameraRig {
         break;
       }
       case 'onboard': {
-        // A bordo: cámara al frente del robot, sobre los BUMPERS (como una GoPro), mirando
-        // al frente; sin suavizado de rumbo. La intake desplegada se ve abajo.
+        // A bordo: cámara en el borde frontal del robot (como una GoPro), mirando al frente;
+        // sin suavizado de rumbo. El robot propio no se dibuja en esta vista (GameSession.frame).
         const h = tgt.heading ?? 0;
         const fx = Math.cos(h);
         const fz = -Math.sin(h);
-        const fwd = (tgt.halfLength ?? 0.45) - 0.12;
-        desiredPos.set(tgt.x + fx * fwd, tgt.y + 0.5, tgt.z + fz * fwd);
-        desiredLook.set(tgt.x + fx * 6, tgt.y, tgt.z + fz * 6);
+        const fwd = tgt.halfLength ?? 0.45;
+        desiredPos.set(tgt.x + fx * fwd, tgt.y + 0.42, tgt.z + fz * fwd);
+        desiredLook.set(tgt.x + fx * 6, tgt.y + 0.05, tgt.z + fz * 6);
         fov = 70;
         break;
       }
