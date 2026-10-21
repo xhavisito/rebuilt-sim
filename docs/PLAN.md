@@ -210,6 +210,15 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     la caja simulada podía caer de lado al pasar el BUMP girando o al chocar. Más allá de 20° de
     inclinación (la rampa es de 15°: no se toca) se frena el cabeceo/alabeo y un par lo endereza.
 
+26. **Auditoría con matches IA vs IA** (los 9 robots CAD, telemetría de atascos, inclinación y
+    tiempo sin disparar): los shooters fijos apuntan con zona muerta de 0.03 rad, menor que su
+    tolerancia de tiro (±6°: lo que corrigen al tirar); con la de 0.1 rad contra 0.09 de
+    tolerancia se quedaban quietos sin girar ni disparar (1678 hasta 53 s). Bajo el TRENCH un
+    robot chueco ya no gira ni avanza hacia él (girar ahí lo acuñaba: 5000 a 127°), sale derecho
+    y vuelve a entrar alineado. Atrás de una TOWER (entre UPRIGHTS y pared; el hueco entre
+    UPRIGHTS es más angosto que un robot) sale de lado, y no va por FUEL ahí ni en la esquina
+    junto a la TOWER.
+
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
 - Celular emulado (CPU 4×, 844×390 @2×, Media): 30–50 FPS típicos; caídas breves a ~25 cuando

@@ -7,6 +7,7 @@
  */
 import * as F from '../config/field';
 import { fitsUnderTrench } from '../config/robots';
+import type { Alliance } from '../core/types';
 import type { Robot } from '../game/Robot';
 import type { DriveCommand } from '../physics/RobotPhysics';
 
@@ -36,6 +37,20 @@ const OBSTACLES: Array<{ x: number; z: number; r: number }> = (() => {
   }
   return out;
 })();
+
+/**
+ * TOWER detrás de cuya línea de UPRIGHTS está (x, z) (o hasta `front` delante), a lo ancho de la
+ * TOWER más `extra`; null si ninguna. Entre la TOWER, la pared y la base de la DRIVER STATION el
+ * robot se mete por una pelota y se acuña; adentro (entre UPRIGHTS y pared) el hueco entre
+ * UPRIGHTS es más angosto que un robot: se sale por un costado.
+ */
+export function behindTower(x: number, z: number, extra = 0, front = 0): Alliance | null {
+  for (const a of ['red', 'blue'] as const) {
+    const tw = F.towerInfo(a);
+    if ((x - tw.uprightX) * tw.facing < front && Math.abs(z - tw.cz) < F.TOWER_WIDTH / 2 + extra) return a;
+  }
+  return null;
+}
 
 export class Navigator {
   path: Pt[] = [];
@@ -156,7 +171,14 @@ export class Navigator {
       }
     };
     const crossing = BARRIERS.some((bx) => Math.abs(p.x - bx) < CROSS_MARGIN + 0.2);
-    if (!crossing) for (const o of OBSTACLES) avoid(o.x, o.z, o.r + r.phys.outerW, 2.2);
+    const trapped = behindTower(p.x, p.z, r.phys.outerW);
+    if (trapped) {
+      // Atrás de la TOWER: sale de lado (a lo largo de la pared), a medio camino entre la pared y
+      // los UPRIGHTS (la repulsión circular de la TOWER lo pegaría a la pared)
+      const tw = F.towerInfo(trapped);
+      vx = Math.max(-1, Math.min(1, ((tw.cx + tw.uprightX) / 2 - p.x) * 2));
+      vz = (Math.sign(p.z - tw.cz) || 1) * vmax * 0.6;
+    } else if (!crossing) for (const o of OBSTACLES) avoid(o.x, o.z, o.r + r.phys.outerW, 2.2);
     if (opts.avoidRobots !== false)
       for (const o of others) if (o !== r) avoid(o.phys.curPos.x, o.phys.curPos.z, o.phys.outerW + r.phys.outerW, 1.6);
     const vm = Math.hypot(vx, vz);
@@ -167,6 +189,11 @@ export class Navigator {
     // Atorado (contra una pared, un poste o con la intake desplegada metida en una esquina):
     // se aleja en sentido contrario a donde empujaba, con un poco de lado y SIN girar (al girar,
     // la intake barre contra la pared y lo vuelve a trabar)
+    // TRENCH (50.34 in de ancho): `trenchX` = línea del HUB cuyo TRENCH está cerca y `underTrench`
+    // = el robot ya está debajo. Ahí dentro, en diagonal, no hay espacio para girar.
+    const inLane = r.spec.drivetrain !== 'tank' && Math.abs(p.z) > F.TRENCH_INNER_Z - 0.25;
+    const trenchX = inLane ? BARRIERS.find((bx) => Math.abs(p.x - bx) < CROSS_MARGIN + 0.3) : undefined;
+    const underTrench = trenchX !== undefined && Math.abs(p.x - trenchX) < F.TRENCH_DEPTH / 2 + r.phys.outerL;
     const real = r.phys.velocity();
     const vm2 = Math.hypot(vx, vz);
     if (this.escapeT <= 0 && vm2 > 0.6 && Math.hypot(real.x, real.z) < 0.15) this.stuckT += dt;
@@ -176,8 +203,9 @@ export class Navigator {
       this.escapeT = 0.9;
       this.escapes++;
       const s = Math.random() < 0.5 ? -1 : 1;
-      // lejos de lo que toca (normal de los contactos); si no toca nada, al revés de donde iba
-      const b = r.phys.awayFromContacts() ?? { x: -vx / vm2, z: -vz / vm2 };
+      // lejos de lo que toca (normal de los contactos); si no toca nada, al revés de donde iba.
+      // Acuñado bajo el TRENCH: derecho hacia afuera, por donde entró (de lado choca otra vez).
+      const b = underTrench ? { x: Math.sign(p.x - trenchX) || 1, z: 0 } : (r.phys.awayFromContacts() ?? { x: -vx / vm2, z: -vz / vm2 });
       const ex = b.x * 0.85 - s * b.z * 0.5;
       const ez = b.z * 0.85 + s * b.x * 0.5;
       const em = Math.hypot(ex, ez);
@@ -195,15 +223,24 @@ export class Navigator {
     for (const o of others) if (o !== r && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < o.phys.outerW + r.phys.outerW + 0.25) crowded = true;
     if (want === null || r.spec.drivetrain === 'tank') want = Math.hypot(vx, vz) > 0.9 && !crowded ? Math.atan2(-vz, vx) : r.phys.heading();
     else if (crowded && opts.heading === null) want = r.phys.heading();
-    // Por el TRENCH (50.34 in de ancho) pasa derecho: en diagonal, la intake desplegada choca
-    // con el poste o el barandal. Mientras no esté alineado, avanza despacio.
-    if (r.spec.drivetrain !== 'tank' && Math.abs(p.z) > F.TRENCH_INNER_Z - 0.25 && BARRIERS.some((bx) => Math.abs(p.x - bx) < CROSS_MARGIN + 0.3)) {
+    // Por el TRENCH pasa derecho: en diagonal, la intake desplegada choca con el poste o el
+    // barandal. Se alinea ANTES de entrar (mientras, avanza despacio); si ya está debajo y chueco
+    // no gira (girar ahí es lo que lo acuña: 5000 quedaba trabado a 127°) ni avanza hacia el
+    // TRENCH: sale y vuelve a entrar alineado.
+    if (trenchX !== undefined) {
       const h = r.phys.heading();
-      want = Math.abs(Math.atan2(Math.sin(h), Math.cos(h))) < Math.PI / 2 ? 0 : Math.PI;
-      const err = Math.abs(Math.atan2(Math.sin(want - h), Math.cos(want - h)));
-      if (err > 0.3) {
-        vx *= 0.3;
+      const axis = Math.abs(Math.atan2(Math.sin(h), Math.cos(h))) < Math.PI / 2 ? 0 : Math.PI;
+      const err = Math.abs(Math.atan2(Math.sin(axis - h), Math.cos(axis - h)));
+      if (underTrench && err > 0.2) {
+        want = h;
+        if (vx * (trenchX - p.x) > 0) vx = 0;
         vz *= 0.3;
+      } else {
+        want = axis;
+        if (err > 0.3) {
+          vx *= 0.3;
+          vz *= 0.3;
+        }
       }
     }
     if (r.spec.drivetrain === 'tank') {
@@ -221,11 +258,14 @@ export class Navigator {
     return { vx: 0, vz: 0, omega: heading === null || heading === 'keep' ? 0 : this.omegaTo(heading) };
   }
 
-  /** Giro hacia `want`: proporcional suave, con zona muerta de ~6° y tope de 5 rad/s. */
-  omegaTo(want: number): number {
+  /**
+   * Giro hacia `want`: proporcional suave, con zona muerta (~6° por defecto) y tope de 5 rad/s.
+   * Para apuntar un shooter fijo la zona muerta debe ser menor que la tolerancia de disparo.
+   */
+  omegaTo(want: number, dead = 0.1): number {
     const h = this.r.phys.heading();
     const d = Math.atan2(Math.sin(want - h), Math.cos(want - h));
-    if (Math.abs(d) < 0.1) return 0;
+    if (Math.abs(d) < dead) return 0;
     const lim = Math.min(this.r.spec.maxOmega, 5);
     return Math.max(-lim, Math.min(lim, d * 3.5));
   }
