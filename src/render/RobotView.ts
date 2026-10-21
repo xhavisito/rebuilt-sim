@@ -654,6 +654,7 @@ export class RobotView {
             holder.add(cyl);
           }
           if (rig.hopper) this.buildCadHopper(wpi, rig);
+          if (rig.walls) this.buildCadWalls(wpi, rig.walls);
         }
         this.group.add(root);
         this.cadLoaded = true;
@@ -712,6 +713,35 @@ export class RobotView {
     this.cadFill = -1;
   }
 
+  /** Paredes de policarbonato del hopper que el CAD no trae (`CadRig.walls`). */
+  private wallFronts: Array<{ mesh: THREE.Object3D; x0: number; x1: number }> = [];
+  private buildCadWalls(wpi: THREE.Object3D, walls: NonNullable<CadRig['walls']>): void {
+    const mat = new THREE.MeshStandardMaterial({ color: 0xe6edf3, roughness: 0.25, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false });
+    const edge = new THREE.LineBasicMaterial({ color: 0xc9d2da });
+    const panel = (sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
+      const geo = new THREE.BoxGeometry(sx, sy, sz);
+      const m = new THREE.Mesh(geo, mat);
+      m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edge));
+      m.position.set(x, y, z);
+      m.renderOrder = 2;
+      wpi.add(m);
+      return m;
+    };
+    const t = 0.004;
+    for (const b of walls) {
+      const [x0, y0, z0] = b.min;
+      const [x1, y1, z1] = b.max;
+      const h = z1 - z0;
+      const zc = (z0 + z1) / 2;
+      const xMax = b.maxDeployed ? b.maxDeployed[0] : x1;
+      // laterales del largo desplegado (el frente se recorre por dentro de ellos), atrás y frente
+      for (const y of [y0, y1]) panel(xMax - x0, t, h, (x0 + xMax) / 2, y, zc);
+      panel(t, y1 - y0, h, x0, (y0 + y1) / 2, zc);
+      const front = panel(t, y1 - y0, h, x1, (y0 + y1) / 2, zc);
+      if (b.maxDeployed) this.wallFronts.push({ mesh: front, x0: x1, x1: b.maxDeployed[0] });
+    }
+  }
+
   /**
    * FUEL del hopper del CAD: `n` FUEL con física visual (`HopperFuelSim`): los nuevos caen desde
    * la entrada, al tirar sale el de abajo, y la aceleración del robot los recorre.
@@ -736,6 +766,7 @@ export class RobotView {
       ax = a.x;
       ay = a.y;
     }
+    for (const w of this.wallFronts) w.mesh.position.x = w.x0 + (w.x1 - w.x0) * e;
     if (sim.step(dt, ax, ay)) moved = true;
     if (!moved) return;
     const counts = this.cadBoxMeshes.map(() => 0);
