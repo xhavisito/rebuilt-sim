@@ -77,3 +77,13 @@ describe('hopper visible', () => {
     }
   });
 });
+
+describe('3478: la intake nunca atraviesa el frente del hopper', () => {
+  it('el frente del hopper va por delante de la intake en todo el giro', async () => {
+    const { hopperExt3478 } = await import('../src/render/cadRigs');
+    // x máximo de la intake (a la altura de la pared) medido en la malla, por ángulo
+    const swing: Array<[number, number]> = [[0, 0.335], [40, 0.487], [80, 0.588], [120, 0.665], [140, 0.677]];
+    for (const [deg, x] of swing) expect(0.314 + hopperExt3478(deg), `${deg}°`).toBeGreaterThan(x);
+    expect(hopperExt3478(0)).toBeCloseTo(0.031, 2);
+  });
+});

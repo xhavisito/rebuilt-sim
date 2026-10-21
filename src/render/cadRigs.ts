@@ -233,10 +233,37 @@ function fourBar(position: number, offset: number, zeroOffset: number, AB: numbe
 // ------------------------------------------------------------------ rigs por equipo
 
 /**
- * 3478: la intake se desliza derecho al frente (no gira) y empuja el frente del hopper lo mismo
- * (m). Medida estimada: solo asoma lo necesario para comer sobre el BUMPER.
+ * 3478: la intake gira hasta 140° sobre su pivote al frente del chasis y empuja el frente del
+ * hopper. `INTAKE_SWING_3478`: x máximo (m) de la intake, a la altura de la pared del frente del
+ * hopper (z 0.19–0.73), para cada ángulo (medido sobre la malla de c0): la pared va siempre
+ * 1 cm por delante, así la intake nunca la atraviesa.
  */
-const HOPPER_EXT_3478 = 0.15;
+const INTAKE_SWING_3478: Array<[number, number]> = [
+  [0, 0.335],
+  [20, 0.412],
+  [40, 0.487],
+  [60, 0.542],
+  [80, 0.588],
+  [100, 0.645],
+  [120, 0.665],
+  [140, 0.677],
+];
+const INTAKE_DEG_3478 = 140;
+/** Cara interior de la pared del frente del hopper (guardada, m). */
+const HOPPER_FRONT_3478 = 0.314;
+/** Cuánto se recorre el frente del hopper con la intake a `deg` grados (m). */
+export function hopperExt3478(deg: number): number {
+  const t = INTAKE_SWING_3478;
+  let x = t[t.length - 1][1];
+  for (let i = 0; i + 1 < t.length; i++)
+    if (deg <= t[i + 1][0]) {
+      const k = Math.max(0, (deg - t[i][0]) / (t[i + 1][0] - t[i][0]));
+      x = t[i][1] + (t[i + 1][1] - t[i][1]) * k;
+      break;
+    }
+  return Math.max(0, x + 0.01 - HOPPER_FRONT_3478);
+}
+const HOPPER_EXT_3478 = hopperExt3478(INTAKE_DEG_3478);
 
 export const CAD_RIGS: Record<string, CadRig> = {
   /**
@@ -457,20 +484,23 @@ export const CAD_RIGS: Record<string, CadRig> = {
    * 3478 Bocho (LamBot) — CAD de SolidWorks mandado por el equipo, sin código de poses: los
    * componentes son subensambles separados por nombre (sources.mjs `parts`, zeroed nulo) y los
    * movimientos se dedujeron del CAD y de lo que contó el equipo. c0 intake (guardada dentro del
-   * hopper; se desliza derecho al frente, sin girar), c1 shooter de la turret (atrás a la
-   * derecha), c2 spindexer y c3 frente del hopper: la intake lo empuja al salir y sus paredes
-   * laterales se deslizan en las placas fijas (`HOPPER_EXT_3478`).
+   * hopper; gira 140° sobre su pivote al frente del chasis hasta el piso), c1 shooter de la
+   * turret (atrás a la derecha), c2 spindexer y c3 frente del hopper: la intake lo empuja al
+   * salir, siempre por delante de ella (`hopperExt3478`), y sus paredes laterales se deslizan en
+   * las placas fijas.
    */
   '3478.glb': {
     poses(m) {
+      const ip: Vec3 = [0.31, 0, 0.2];
       const turretC: Vec3 = [-0.155, -0.168, 0];
       const spinC: Vec3 = [0.0985, -0.004, 0];
+      const deg = INTAKE_DEG_3478 * m.intake;
       return [
-        pose([HOPPER_EXT_3478 * m.intake, 0, 0]),
+        rotateAround(IDENTITY, ip, rot(0, deg * DEG, 0)),
         // En el CAD el shooter (flywheels y hood) queda atrás del eje: turret 0 = tirar hacia atrás
         rotateAround(IDENTITY, turretC, rot(0, 0, m.turret + Math.PI)),
         rotateAround(IDENTITY, spinC, rot(0, 0, m.spin)),
-        pose([HOPPER_EXT_3478 * m.intake, 0, 0]),
+        pose([hopperExt3478(deg), 0, 0]),
       ];
     },
     // El FUEL da vueltas alrededor del cono del spindexer (anillo de ~0.47 m de diámetro) y se
