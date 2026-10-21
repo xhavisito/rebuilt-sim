@@ -1,6 +1,6 @@
 # Modelos 3D de robots (public/robots/)
 
-Los archivos `*.glb` de esta carpeta son versiones simplificadas (sin tornillería, con menos triángulos y comprimidas con meshopt) de los modelos 3D que cada equipo publicó en su repositorio de código como asset de AdvantageScope, con sus componentes articulados (intake, hopper, turret, hood…) por separado. Se generan con `scripts/robots/fetch-sources.mjs` y `scripts/robots/build-models.mjs`; el simulador los mueve como el código de cada equipo (`src/render/cadRigs.ts`). Los BUMPERS que se ven en el simulador los dibuja el propio simulador (color de alianza), no vienen de estos archivos.
+Los archivos `*.glb` de esta carpeta (salvo 3478, cuyo CAD mandó el propio equipo) son versiones simplificadas (sin tornillería, con menos triángulos y comprimidas con meshopt) de los modelos 3D que cada equipo publicó en su repositorio de código como asset de AdvantageScope, con sus componentes articulados (intake, hopper, turret, hood…) por separado. Se generan con `scripts/robots/fetch-sources.mjs` y `scripts/robots/build-models.mjs`; el simulador los mueve como el código de cada equipo (`src/render/cadRigs.ts`). Los BUMPERS que se ven en el simulador los dibuja el propio simulador (color de alianza), no vienen de estos archivos.
 
 | Archivo | Equipo | Fuente | Licencia |
 |---|---|---|---|
@@ -12,6 +12,7 @@ Los archivos `*.glb` de esta carpeta son versiones simplificadas (sin torniller�
 | 190.glb | 190 | https://github.com/Team-190/2k26-Robot-Code/tree/HEAD/advantagescope_assets/Robot_Doomspiral | MIT |
 | 5000.glb | 5000 | https://github.com/hammerheads5000/2026Rebuilt/tree/HEAD/AdvantageScope/Robot_2026 | MIT |
 | 4915.glb | 4915 | https://github.com/Spartronics4915/2026-Rebuilt/tree/HEAD/assets/Robot_Artemis | MIT |
+| 3478.glb | 3478 LamBot | CAD de SolidWorks enviado por el equipo (no publicado en un repo) | Con permiso del equipo |
 
 Si eres de uno de estos equipos y prefieres que tu robot no aparezca, abre un issue y se quita.
 

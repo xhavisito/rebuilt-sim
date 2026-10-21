@@ -322,6 +322,26 @@ export const CAD_ROBOTS: RobotSpec[] = [
     cad: { file: '4915.glb' },
     real: cadReal('Spartronics', 'ARTEMIS', 'Ganador de división. Turret con hood ajustable sobre un spindexer; intake que pivota; tiene climber.', 'Division winner. Turret with an adjustable hood over a spindexer; pivoting intake; has a climber.'),
   }),
+  base({
+    id: 'cad-3478',
+    name: 'Bocho',
+    teamNumber: 3478,
+    // CAD de SolidWorks que mandó el equipo (no viene de un repo de AdvantageScope): medidas del
+    // ensamble; rendimiento estimado. Movimientos deducidos del CAD (cadRigs.ts).
+    widthIn: 28.2,
+    lengthIn: 26.7,
+    heightIn: 29.9,
+    massKg: 63,
+    maxSpeed: 4.6,
+    intake: { widthIn: 27.2, extensionIn: 10, rate: 12 },
+    hopperCapacity: 45,
+    // Turret atrás a la derecha (centro del shooter en el ensamble)
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 25, backspin: 20, lanes: 1, posIn: [-6, -6.6] },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#2e9e44' },
+    cad: { file: '3478.glb' },
+    real: cadReal('LamBot', 'Bocho', 'Turret con hood alimentada por un spindexer; swerve MK4i con Krakens. CAD enviado por el equipo; rendimiento estimado.', 'Turret with a hood fed by a spindexer; MK4i swerve with Krakens. CAD provided by the team; estimated performance.'),
+  }),
 ];
 
 /** Presets genéricos (diseños inventados) + los mejores robots de la temporada. */
