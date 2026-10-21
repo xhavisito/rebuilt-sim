@@ -257,16 +257,12 @@ export class HubModel {
 
   // ------------------------------------------------------------------ salidas (fig. 5-8)
   private buildExits(): void {
-    const d = 0.2;
-    const h = 0.3;
-    // Caja de salida con techo inclinado, en la cara hacia la NEUTRAL ZONE
-    this.add('steel', boxAt(d, 0.02, 1.26, hs + d / 2, h, 0));
-    for (const sz of [-1, 1]) this.add('steel', boxAt(d, h, 0.02, hs + d / 2, h / 2, sz * 0.63));
-    // 4 salidas: ranuras oscuras separadas por divisores
-    for (const z of F.HUB_EXIT_OFFSETS) {
-      this.add('slot', boxAt(0.01, 0.2, 0.26, hs + 0.02, 0.13, z));
-    }
-    for (const z of [-0.3, 0, 0.3]) this.add('steel', boxAt(d, h, 0.015, hs + d / 2, h / 2, z));
+    // 4 ranuras en la base de la cara hacia la NEUTRAL ZONE, dentro de la huella de 47 in
+    // (no sobresale ninguna caja): ranuras oscuras con divisores de acero al ras de la cara
+    const h = 0.26;
+    for (const z of F.HUB_EXIT_OFFSETS) this.add('slot', boxAt(0.01, 0.2, 0.26, hs + 0.002, 0.13, z));
+    for (const z of [-0.6, -0.3, 0, 0.3, 0.6]) this.add('steel', boxAt(0.02, h, 0.03, hs - 0.004, h / 2, z));
+    this.add('steel', boxAt(0.02, 0.03, 1.23, hs - 0.004, h, 0));
   }
 
   // ------------------------------------------------------------------ materiales y mallas
