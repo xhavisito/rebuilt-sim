@@ -64,6 +64,23 @@ const box = (
   shadow,
 });
 
+/** Viga de sección cuadrada (lado `t`) de `a` a `b` en el plano XY (como hull). */
+function beam(name: string, a: [number, number, number], b: [number, number, number], t: number, mat: MatKey): FieldPart {
+  const c: [number, number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const l = Math.hypot(dx, dy) || 1;
+  // normal en el plano XY y lado en Z
+  const nx = (-dy / l) * (t / 2);
+  const ny = (dx / l) * (t / 2);
+  const points: number[] = [];
+  for (const e of [a, b]) for (const sn of [-1, 1]) for (const sz of [-1, 1]) points.push(e[0] - c[0] + sn * nx, e[1] - c[1] + sn * ny, sz * (t / 2));
+  return { name, shape: { type: 'hull', points }, pos: c, mat, collide: 'all', shadow: true };
+}
+
+/** Perfil de los soportes de la TOWER (≈ 1.5 in). */
+const SUPPORT_T = inch(1.5);
+
 /** y_WPILib (in) → Z de mundo (m). */
 const zOf = (yIn: number): number => -inch(yIn - F.FIELD_WIDTH_IN / 2);
 
@@ -91,7 +108,8 @@ function buildBlueSide(): FieldPart[] {
   // ---------- TOWER WALL
   {
     const [y0, y1] = F.TOWER_WALL_Y_IN;
-    out.push(box('tower-wall', wx0, wx1, 0, F.TOWER_HEIGHT, zOf(y1), zOf(y0), 'panelA'));
+    // Panel negro (fig. 5-12, 5-13), no translúcido como las DRIVER STATIONS
+    out.push(box('tower-wall', wx0, wx1, 0, F.TOWER_HEIGHT, zOf(y1), zOf(y0), 'dark'));
     out.push(box('tower-back', wx0 - BACKING_T, wx0, 0, F.TOWER_HEIGHT, zOf(y1), zOf(y0), 'invisible', 'all', false));
   }
 
@@ -280,10 +298,14 @@ function buildBlueSide(): FieldPart[] {
       out.push(
         box('upright', ux - F.UPRIGHT_DEEP / 2, ux + F.UPRIGHT_DEEP / 2, 0, F.UPRIGHT_HEIGHT, uz - F.UPRIGHT_THICK / 2, uz + F.UPRIGHT_THICK / 2, 'towerA'),
       );
-      // Estructura de soporte entre UPRIGHT y TOWER WALL (≈28.4–43.38 in)
-      out.push(
-        box('tower-support', WALL_X, ux - F.UPRIGHT_DEEP / 2, F.TOWER_SUPPORT_LOW, F.TOWER_SUPPORT_HIGH, uz - F.UPRIGHT_THICK / 2, uz + F.UPRIGHT_THICK / 2, 'alu'),
-      );
+      // Soportes entre UPRIGHT y TOWER WALL (§5.8: ≈28.40–43.38 in; fig. 5-12): una viga arriba,
+      // otra abajo y un tirante en diagonal, de perfil de aluminio. Entre ellas está abierto.
+      const sx1 = ux - F.UPRIGHT_DEEP / 2;
+      const zz0 = uz - SUPPORT_T / 2;
+      const zz1 = uz + SUPPORT_T / 2;
+      out.push(box('tower-support', WALL_X, sx1, F.TOWER_SUPPORT_HIGH - SUPPORT_T, F.TOWER_SUPPORT_HIGH, zz0, zz1, 'alu'));
+      out.push(box('tower-support', WALL_X, sx1, F.TOWER_SUPPORT_LOW, F.TOWER_SUPPORT_LOW + SUPPORT_T, zz0, zz1, 'alu'));
+      out.push(beam('tower-support', [WALL_X, F.TOWER_SUPPORT_HIGH - SUPPORT_T, uz], [WALL_X + (sx1 - WALL_X) * 0.4, F.TOWER_SUPPORT_LOW + SUPPORT_T, uz], SUPPORT_T, 'alu'));
     }
     const rungLen = F.UPRIGHT_GAP + 2 * F.UPRIGHT_THICK + 2 * F.RUNG_OVERHANG;
     for (const [k, h] of Object.entries(F.RUNG_HEIGHTS)) {
