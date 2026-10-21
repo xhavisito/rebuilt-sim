@@ -47,6 +47,12 @@ export interface CadRig {
   extras?: Array<{ comp: number; a: Vec3; b: Vec3; r: number; color: number }>;
   /** Componentes que se dibujan opacos aunque el CAD los marque translúcidos. */
   opaque?: number[];
+  /**
+   * Paredes de policarbonato del hopper que el CAD publicado no trae (604, 4915: sin ellas el
+   * FUEL se veía flotando): los 4 lados de cada caja; con `maxDeployed`, el frente se recorre
+   * con la intake.
+   */
+  walls?: HopperBox[];
 }
 
 /**
@@ -226,8 +232,11 @@ function fourBar(position: number, offset: number, zeroOffset: number, AB: numbe
 
 // ------------------------------------------------------------------ rigs por equipo
 
-/** Cuánto sale el frente del hopper de 3478 con la intake desplegada (m). */
-const HOPPER_EXT_3478 = 0.25;
+/**
+ * 3478: la intake se desliza derecho al frente (no gira) y empuja el frente del hopper lo mismo
+ * (m). Medida estimada: solo asoma lo necesario para comer sobre el BUMPER.
+ */
+const HOPPER_EXT_3478 = 0.15;
 
 export const CAD_RIGS: Record<string, CadRig> = {
   /**
@@ -332,6 +341,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
     },
     // Sin paredes de hopper en el CAD: el FUEL se dibuja sobre el chasis, alrededor de la torre
     // del serializer (al frente, a los lados y atrás de ella)
+    walls: [{ min: [-0.335, -0.335, 0.17], max: [0.335, 0.335, 0.47] }],
     hopper: [
       { min: [0.11, -0.33, 0.17], max: [0.335, 0.33, 0.47] },
       { min: [-0.11, 0.12, 0.17], max: [0.11, 0.335, 0.47] },
@@ -436,6 +446,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
       return [hood, turret, rotateAround(pose([0, 0, 0], flip), spinC, rot(0, 0, m.spin)), pose([0, 0, 0], flip), intake];
     },
     // Sobre el spindexer; la segunda capa solo al frente (atrás queda la base de la turret)
+    walls: [{ min: [-0.21, -0.33, 0.12], max: [0.21, 0.31, 0.43], maxDeployed: [0.32, 0.31, 0.43] }],
     hopper: [
       { min: [-0.2, -0.32, 0.12], max: [0.2, 0.3, 0.27], maxDeployed: [0.31, 0.3, 0.27] },
       { min: [0.03, -0.32, 0.25], max: [0.03, 0.3, 0.42], maxDeployed: [0.31, 0.3, 0.42] },
@@ -445,20 +456,19 @@ export const CAD_RIGS: Record<string, CadRig> = {
   /**
    * 3478 Bocho (LamBot) — CAD de SolidWorks mandado por el equipo, sin código de poses: los
    * componentes son subensambles separados por nombre (sources.mjs `parts`, zeroed nulo) y los
-   * movimientos se dedujeron del CAD. c0 intake sobre el bumper (guardada inclinada hacia
-   * adentro del hopper, gira ~140° sobre su pivote al frente del chasis hasta el piso), c1
-   * shooter de la turret (atrás a la derecha), c2 spindexer y c3 frente del hopper: la intake lo
-   * empuja al salir y sus paredes laterales se deslizan en las placas fijas (`HOPPER_EXT`, ~10 in:
-   * las paredes miden 0.39 m y las placas 0.50 m).
+   * movimientos se dedujeron del CAD y de lo que contó el equipo. c0 intake (guardada dentro del
+   * hopper; se desliza derecho al frente, sin girar), c1 shooter de la turret (atrás a la
+   * derecha), c2 spindexer y c3 frente del hopper: la intake lo empuja al salir y sus paredes
+   * laterales se deslizan en las placas fijas (`HOPPER_EXT_3478`).
    */
   '3478.glb': {
     poses(m) {
-      const ip: Vec3 = [0.31, 0, 0.2];
       const turretC: Vec3 = [-0.155, -0.168, 0];
       const spinC: Vec3 = [0.0985, -0.004, 0];
       return [
-        rotateAround(IDENTITY, ip, rot(0, lerp(0, 140, m.intake) * DEG, 0)),
-        rotateAround(IDENTITY, turretC, rot(0, 0, m.turret)),
+        pose([HOPPER_EXT_3478 * m.intake, 0, 0]),
+        // En el CAD el shooter (flywheels y hood) queda atrás del eje: turret 0 = tirar hacia atrás
+        rotateAround(IDENTITY, turretC, rot(0, 0, m.turret + Math.PI)),
         rotateAround(IDENTITY, spinC, rot(0, 0, m.spin)),
         pose([HOPPER_EXT_3478 * m.intake, 0, 0]),
       ];
@@ -467,7 +477,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
     // apila encima, al frente; con la intake desplegada el hopper crece hasta su nuevo frente
     hopper: [
       { min: [0, 0, 0.11], max: [0, 0, 0.26], ring: [0.0985, -0.004, 0.16] },
-      { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.3 + HOPPER_EXT_3478, 0.3, 0.6] },
+      { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.12 + HOPPER_EXT_3478, 0.3, 0.6] },
     ],
   },
 };
