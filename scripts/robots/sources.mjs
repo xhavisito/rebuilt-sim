@@ -9,6 +9,10 @@
 //  - `local`: sin repo público; el equipo mandó el CAD (no se versiona). fetch-sources.mjs copia
 //    el config.json escrito a mano (scripts/robots/local/<equipo>/) y el model.glb va a mano.
 //  - `parts`: regex de los subensambles que se mueven → componentes c0, c1… (sin model_N.glb).
+// Frente del hopper de 3478 (lo empuja la intake al salir): pared del frente, paredes laterales
+// internas que se deslizan en las placas fijas, el separador de arriba y las guías ("monedas")
+const HOPPER_3478 = '^LB26-02-306-frente|^(Mirror)?LB26-02-308-pared lateral|^LB26-02-307-spacer sup hopper-1$|^(Mirror)?LB26-02-31[78]-Moneda|^3_8in Nut Strips 11inLargo';
+
 export const SOURCES = [
   { team: 1678, repo: 'frc1678/C2026-Public', path: 'assets/Robot_Beta', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true },
   { team: 6328, repo: 'Mechanical-Advantage/RobotCode2026Public', path: 'ascope_assets/Robot_Darwin', license: 'MIT', frameIn: [28, 27], bumperGeom: true },
@@ -19,5 +23,5 @@ export const SOURCES = [
   { team: 5000, repo: 'hammerheads5000/2026Rebuilt', path: 'AdvantageScope/Robot_2026', license: 'MIT', frameIn: [28.5, 26], drop: '^Bumpers:1$|^Body19|^Body1 \\(1\\):1$' },
   { team: 4915, repo: 'Spartronics4915/2026-Rebuilt', path: 'assets/Robot_Artemis', license: 'MIT', frameIn: [26.5, 28.5], drop: 'bumper', bumperGeom: true },
   // SolidWorks → Guardar como .glb (Extended Reality), mandado por el equipo; sin BUMPERS
-  { team: 3478, local: 'CAD de SolidWorks enviado por el equipo (LB26-00_Bocho_Houston)', license: 'Con permiso del equipo 3478', frameIn: [26.7, 28.2], parts: ['Intake VHouston', '^LB26-04-01_shooter$', 'SpindexerHouston'] },
+  { team: 3478, local: 'CAD de SolidWorks enviado por el equipo (LB26-00_Bocho_Houston)', license: 'Con permiso del equipo 3478', frameIn: [26.7, 28.2], parts: ['Intake VHouston', '^LB26-04-01_shooter$', 'SpindexerHouston', HOPPER_3478] },
 ];
