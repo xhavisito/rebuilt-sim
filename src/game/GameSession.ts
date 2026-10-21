@@ -28,7 +28,7 @@ import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
 import { climbSlots, type TowerOccupancy } from './Climber';
 import { HumanPlayer, type HpContext } from './HumanPlayer';
-import { chassisYawFor, plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
+import { chassisYawFor, passTarget, plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
 import { AimGuide } from '../render/AimGuide';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
@@ -393,9 +393,10 @@ export class GameSession {
       vz = (my * fz + lat * Math.cos(h)) * s.maxSpeed * slow;
     }
     cmd.drive = { vx, vz, omega: -rot * s.maxOmega * (inp.held.slow ? 0.4 : 1) };
-    // Auto-aim con shooter fijo: el robot gira solo hacia la solución mientras disparas
-    if (inp.held.shoot && this.settings.drive.autoAim && s.shooter.type === 'fixed' && Math.abs(rot) < 0.05 && !inp.mouseNdc) {
-      const want = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(F.hubCenter(r.alliance).z - r.phys.curPos.z), F.hubCenter(r.alliance).x - r.phys.curPos.x));
+    // Auto-aim con shooter fijo: el robot gira solo hacia la solución mientras disparas o pasas
+    if ((inp.held.shoot || inp.held.pass) && this.settings.drive.autoAim && s.shooter.type === 'fixed' && Math.abs(rot) < 0.05 && !inp.mouseNdc) {
+      const goal = inp.held.pass ? passTarget(r.alliance, r.phys.curPos.z) : F.hubCenter(r.alliance);
+      const want = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - r.phys.curPos.z), goal.x - r.phys.curPos.x));
       const d = Math.atan2(Math.sin(want - h), Math.cos(want - h));
       cmd.drive.omega = THREE.MathUtils.clamp(d * 7, -s.maxOmega, s.maxOmega);
     }

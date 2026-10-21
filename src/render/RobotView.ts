@@ -776,7 +776,9 @@ export class RobotView {
       }
       m.intake = Math.max(e, this.heldOpen);
       m.hood = THREE.MathUtils.clamp((s.hoodAngle * 180 / Math.PI - sh.minAngle) / Math.max(1, sh.maxAngle - sh.minAngle), 0, 1);
-      m.turret = s.turretYaw;
+      // La turret del rig va en el marco del CAD, girado `yawDeg` respecto al frente del simulador
+      // (971: 180°, 5000: −90°): sin restarlo, la turret apuntaba al revés de hacia donde tiraba
+      m.turret = s.turretYaw - ((this.rig.yawDeg ?? 0) * Math.PI) / 180;
       m.climb = s.climb ?? 0;
       m.spin = s.flywheelSpin * 0.08;
       this.applyMech();

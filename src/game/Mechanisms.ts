@@ -4,6 +4,7 @@
  */
 import * as F from '../config/field';
 import type { Rng } from '../core/rng';
+import type { Alliance } from '../core/types';
 import { backspinAxis, launchVector, solveShot, type ShotSolution, type Vec3 } from '../physics/ballistics';
 import { FLAG_SHOT, type FuelSystem } from '../physics/FuelSystem';
 import type { Robot } from './Robot';
@@ -289,11 +290,8 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
     const facing = ((out.x - p.x) * fx + (out.z - p.z) * fz) / Math.max(0.01, toOut);
     if (toOut < 2.3 && facing > 0.75) kind = 'corral';
     else {
-      // Pase al ALLIANCE ZONE propio (o al punto del mouse)
-      const sgn = F.allianceSign(r.alliance);
-      const target = r.cmd.aim
-        ? { x: r.cmd.aim.x, y: 0.4, z: r.cmd.aim.z }
-        : { x: sgn * (F.HALF_L - 2.4), y: 0.4, z: Math.max(-3, Math.min(3, p.z)) };
+      // Pase al ALLIANCE ZONE propio (o al punto del mouse), por un carril a un lado del HUB
+      const target = r.cmd.aim ? { x: r.cmd.aim.x, y: 0.4, z: r.cmd.aim.z } : passTarget(r.alliance, p.z);
       solution = solveShot({
         from,
         target,
@@ -454,6 +452,20 @@ function launchOne(r: Robot, ctx: MechContext, kind: 'shot' | 'pass' | 'corral',
 }
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Distancia mínima (m) del carril de pase al centro de los HUBS (mitad del HUB + ~1 m). */
+const PASS_LANE_MIN = F.HUB_SIZE / 2 + 1.0;
+
+/**
+ * Punto de caída de un pase: dentro de la ALLIANCE ZONE propia (2.4 m de la pared) y en un
+ * carril a un lado de los HUBS (ambos en z = 0): con el robot centrado, el pase salía derecho
+ * hacia el HUB (y su red) como si fuera a anotar.
+ */
+export function passTarget(a: Alliance, z: number): { x: number; y: number; z: number } {
+  const side = Math.sign(z) || 1;
+  const lane = side * Math.min(3, Math.max(PASS_LANE_MIN, Math.abs(z)));
+  return { x: F.allianceSign(a) * (F.HALF_L - 2.4), y: 0.4, z: lane };
+}
 
 /** Error de rumbo que corrige un shooter fijo al tirar (más allá tira de frente). */
 const FIXED_AIM_TOL = 6 * DEG;
