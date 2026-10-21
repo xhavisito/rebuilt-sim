@@ -226,6 +226,9 @@ function fourBar(position: number, offset: number, zeroOffset: number, AB: numbe
 
 // ------------------------------------------------------------------ rigs por equipo
 
+/** Cuánto sale el frente del hopper de 3478 con la intake desplegada (m). */
+const HOPPER_EXT_3478 = 0.25;
+
 export const CAD_RIGS: Record<string, CadRig> = {
   /**
    * 6328 Darwin — DarwinMechanism3d.java. Componentes: hood, slamtake (intake), frente del
@@ -444,7 +447,9 @@ export const CAD_RIGS: Record<string, CadRig> = {
    * componentes son subensambles separados por nombre (sources.mjs `parts`, zeroed nulo) y los
    * movimientos se dedujeron del CAD. c0 intake sobre el bumper (guardada inclinada hacia
    * adentro del hopper, gira ~140° sobre su pivote al frente del chasis hasta el piso), c1
-   * shooter de la turret (atrás a la derecha) y c2 spindexer.
+   * shooter de la turret (atrás a la derecha), c2 spindexer y c3 frente del hopper: la intake lo
+   * empuja al salir y sus paredes laterales se deslizan en las placas fijas (`HOPPER_EXT`, ~10 in:
+   * las paredes miden 0.39 m y las placas 0.50 m).
    */
   '3478.glb': {
     poses(m) {
@@ -455,13 +460,14 @@ export const CAD_RIGS: Record<string, CadRig> = {
         rotateAround(IDENTITY, ip, rot(0, lerp(0, 140, m.intake) * DEG, 0)),
         rotateAround(IDENTITY, turretC, rot(0, 0, m.turret)),
         rotateAround(IDENTITY, spinC, rot(0, 0, m.spin)),
+        pose([HOPPER_EXT_3478 * m.intake, 0, 0]),
       ];
     },
     // El FUEL da vueltas alrededor del cono del spindexer (anillo de ~0.47 m de diámetro) y se
-    // apila encima, al frente; con la intake desplegada el hopper crece hasta el frente
+    // apila encima, al frente; con la intake desplegada el hopper crece hasta su nuevo frente
     hopper: [
       { min: [0, 0, 0.11], max: [0, 0, 0.26], ring: [0.0985, -0.004, 0.16] },
-      { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.3, 0.3, 0.6] },
+      { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.3 + HOPPER_EXT_3478, 0.3, 0.6] },
     ],
   },
 };
