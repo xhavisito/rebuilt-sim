@@ -6,6 +6,9 @@
 //  - `bumperGeom`: además quita las piezas bajas (< 0.2 m) que quedan fuera del chasis
 //    `frameIn` (largo en X, ancho en Y del CAD, pulgadas): BUMPERS sin nombre útil.
 //  - `budget`: triángulos máximos del modelo completo (el simplificador busca el error).
+//  - `local`: sin repo público; el equipo mandó el CAD (no se versiona). fetch-sources.mjs copia
+//    el config.json escrito a mano (scripts/robots/local/<equipo>/) y el model.glb va a mano.
+//  - `parts`: regex de los subensambles que se mueven → componentes c0, c1… (sin model_N.glb).
 export const SOURCES = [
   { team: 1678, repo: 'frc1678/C2026-Public', path: 'assets/Robot_Beta', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true },
   { team: 6328, repo: 'Mechanical-Advantage/RobotCode2026Public', path: 'ascope_assets/Robot_Darwin', license: 'MIT', frameIn: [28, 27], bumperGeom: true },
@@ -15,4 +18,6 @@ export const SOURCES = [
   { team: 190, repo: 'Team-190/2k26-Robot-Code', path: 'advantagescope_assets/Robot_Doomspiral', license: 'MIT', frameIn: [22, 30.5] },
   { team: 5000, repo: 'hammerheads5000/2026Rebuilt', path: 'AdvantageScope/Robot_2026', license: 'MIT', frameIn: [28.5, 26], drop: '^Bumpers:1$|^Body19|^Body1 \\(1\\):1$' },
   { team: 4915, repo: 'Spartronics4915/2026-Rebuilt', path: 'assets/Robot_Artemis', license: 'MIT', frameIn: [26.5, 28.5], drop: 'bumper', bumperGeom: true },
+  // SolidWorks → Guardar como .glb (Extended Reality), mandado por el equipo; sin BUMPERS
+  { team: 3478, local: 'CAD de SolidWorks enviado por el equipo (LB26-00_Bocho_Houston)', license: 'Con permiso del equipo 3478', frameIn: [26.7, 28.2], parts: ['Intake VHouston', '^LB26-04-01_shooter$', 'SpindexerHouston'] },
 ];

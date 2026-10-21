@@ -10,6 +10,8 @@
 // asigna materiales PBR según el color del CAD; comprime con meshopt. Las mallas van soldadas y
 // SIN normales (pesan un tercio): el simulador las calcula al cargar con ángulo de pliegue
 // (superficies curvas suaves, aristas vivas), ver `creaseNormals` en src/render/RobotView.ts.
+// Un CAD que no viene de AdvantageScope (SolidWorks/Onshape exportado a .glb) puede separar sus
+// partes móviles por nombre de subensamble con `parts` (sources.mjs).
 // Uso: node scripts/robots/build-models.mjs <carpeta-con-descargas> [equipo...]
 // Las descargas: <carpeta>/<equipo>/{config.json, model.glb, model_N.glb} (fetch-sources.mjs).
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
@@ -90,6 +92,12 @@ function nameChain(n, stop) {
 
 const mat4 = (m) => new THREE.Matrix4().fromArray(m);
 
+/** ¿`n` cuelga de `a`? */
+function isDescendant(n, a) {
+  for (let p = n; p; p = p.listParents().find((x) => x.propertyType === PropertyType.NODE)) if (p === a) return true;
+  return false;
+}
+
 /** Simplifica una malla soldada con error absoluto `e` (m). Devuelve índices. */
 function simplifyChunk(ch, e) {
   if (e <= 0) return ch.index;
@@ -131,6 +139,28 @@ for (const src of SOURCES) {
     scene.addChild(g);
     groups.push(g);
   }
+  // ---- CAD sin assets de AdvantageScope (`parts`): los subensambles que se mueven, por nombre,
+  // pasan a ser los componentes c0, c1… con zeroed nulo (malla en el marco WPILib del robot).
+  const mainM = mat4(main.getWorldMatrix());
+  const mainInv = mainM.clone().invert();
+  for (const [i, re] of (src.parts ?? []).map((r) => new RegExp(r, 'i')).entries()) {
+    const g = doc.createNode(`c${i}`);
+    const frame = doc.createNode(`c${i}_frame`).setMatrix(mainM.toArray());
+    g.addChild(frame);
+    const hits = [];
+    main.traverse((n) => {
+      if (n !== main && re.test(n.getName()) && !hits.some((h) => isDescendant(n, h))) hits.push(n);
+    });
+    if (!hits.length) throw new Error(`${src.team}: ninguna pieza coincide con ${re}`);
+    for (const n of hits) {
+      const m = mainInv.clone().multiply(mat4(n.getWorldMatrix()));
+      for (const p of n.listParents()) if (p.propertyType === PropertyType.NODE) p.removeChild(n);
+      n.setMatrix(m.toArray());
+      frame.addChild(n);
+    }
+    scene.addChild(g);
+    groups.push(g);
+  }
   // ---- Quita tornillería, piezas diminutas y BUMPERS
   const drop = src.drop ? new RegExp(src.drop, 'i') : null;
   const hl = src.frameIn ? (src.frameIn[0] * 0.0254) / 2 : 1;
@@ -159,7 +189,16 @@ for (const src of SOURCES) {
         removed++;
       }
     });
-  // ---- Materiales
+  // ---- Materiales. La transmisión de SolidWorks (lexan, vidrio) pasa a transparencia simple:
+  // la de three.js es un render extra de la escena por cuadro.
+  for (const m of root.listMaterials()) {
+    const tr = m.getExtension('KHR_materials_transmission');
+    if (tr && tr.getTransmissionFactor() > 0) {
+      const c = m.getBaseColorFactor();
+      m.setBaseColorFactor([c[0], c[1], c[2], Math.min(c[3], 0.4)]);
+    }
+  }
+  for (const e of root.listExtensionsUsed()) if (/^KHR_materials_(transmission|volume|ior)$/.test(e.extensionName)) e.dispose();
   for (const m of root.listMaterials()) pbr(m);
   await doc.transform(dedup({ propertyTypes: [PropertyType.MATERIAL] }));
   // ---- Geometría de cada parte, en el marco de la parte, agrupada por material y soldada
@@ -191,7 +230,15 @@ for (const src of SOURCES) {
         else for (let k = 0; k < pa.getCount(); k++) ch.idx.push(base + k);
       }
     });
-    for (const c of g.listChildren()) g.removeChild(c);
+    for (const c of g.listChildren()) {
+      g.removeChild(c);
+      // Los subensambles movidos por `parts` no siempre los quita prune(): se desechan aquí
+      if (g !== main) {
+        const sub = [];
+        c.traverse((n) => sub.push(n));
+        for (const n of sub.reverse()) n.dispose();
+      }
+    }
     const chunks = [];
     for (const [mat, ch] of byMat) {
       if (!ch.idx.length) continue;

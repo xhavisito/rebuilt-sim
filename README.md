@@ -27,7 +27,7 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
   (pantalla dividida o cámara compartida), torneo rápido (Qualifications, rankings, alianzas y
   Playoffs), espectador IA vs IA, diseñador de AUTO y editor de robots.
 - **Robots reales de 2026 con su CAD**: 1678 Limestone, 5000 Icarus, 604 Toploader, 6328 Darwin,
-  971 Mixtape, 341 Miss Daisy, 190 Doomspiral y 4915 Artemis, con el modelo 3D que cada equipo
+  971 Mixtape, 341 Miss Daisy, 190 Doomspiral, 4915 Artemis y 3478 Bocho, con el modelo 3D que cada equipo
   publicó en su repositorio de código (simplificado para la web) **y sus mecanismos funcionando
   como en el código del equipo**: la intake se despliega, el hopper se extiende, la turret y el
   hood apuntan, el spindexer gira y el climber sube; se ve el FUEL dentro del hopper. Medidas,
@@ -160,7 +160,7 @@ contador lógico y los 504 FUEL se dibujan en una sola malla instanciada.
 - Posiciones de AprilTags: layout "2026-rebuilt-welded" de [WPILib](https://github.com/wpilibsuite/allwpilib) (BSD).
 - Todo el audio es sintetizado en el navegador; todas las texturas se generan con código.
 - Modelos 3D de robots: publicados por los equipos 1678, 5000, 604, 6328, 971, 341, 190 y 4915
-  en sus repositorios de código (licencias MIT / BSD; detalle y textos en
+  en sus repositorios de código (licencias MIT / BSD) y el CAD que mandó el equipo 3478 LamBot (detalle y textos en
   [public/robots/LICENSES.md](public/robots/LICENSES.md)). Datos de rendimiento:
   [Statbotics](https://www.statbotics.io) y el
   [FRC 2026 REBUILT Robot Study Dashboard](https://dmeglan.github.io/frc2026-rebuilt-dashboard/).

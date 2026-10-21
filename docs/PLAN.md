@@ -144,7 +144,7 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     Empujar FUEL frena poco: −1 % de velocidad por FUEL pegado al BUMPER, a lo más −15 % (antes
     −40 %: 0.2 kg de espuma casi no frenan a un robot de 55 kg).
 14. **Robots reales** (`CAD_ROBOTS` en `src/config/robots.ts`): 1678, 5000, 604, 6328, 971,
-    341, 190 y 4915, con el modelo 3D que cada equipo publicó en su repo de código (asset de
+    341, 190, 4915 y 3478, con el modelo 3D que cada equipo publicó en su repo de código (asset de
     AdvantageScope; licencias en `public/robots/LICENSES.md`), simplificado con
     `scripts/robots/` (fetch-sources → build-models): sin tornillería ni BUMPERS propios, error
     de simplificación ajustado a ~140k triángulos, materiales PBR según el color del CAD y
@@ -153,7 +153,9 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     su transformación "zeroed"; `src/render/cadRigs.ts` calcula la pose de cada componente con
     las fórmulas y constantes del código de cada equipo (intake, extensión del hopper, cuatro
     barras de 190, turret, hood, spindexer, climber). 4915 no publica poses: sus pivotes se
-    dedujeron del CAD. 971 se gira 180° y 5000 −90° para que la intake quede al frente del
+    dedujeron del CAD. 3478 (LamBot) mandó su CAD de SolidWorks exportado a .glb (fuente `local`
+    en sources.mjs; config.json a mano en scripts/robots/local/: Y arriba → Z arriba); sus partes
+    móviles se separan por nombre de subensamble (`parts`) y el rig se dedujo del CAD. 971 se gira 180° y 5000 −90° para que la intake quede al frente del
     simulador (5000 tiene dos intakes laterales: solo despliega la del frente). 604 no publicó
     el rodillo de su intake: se dibuja un cilindro entre los brazos. Chasis, altura, extensión
     y ancho de la intake medidos sobre el CAD armado; los shooters fijos tiran hacia donde dice

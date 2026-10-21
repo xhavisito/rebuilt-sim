@@ -438,4 +438,25 @@ export const CAD_RIGS: Record<string, CadRig> = {
       { min: [0.03, -0.32, 0.25], max: [0.03, 0.3, 0.42], maxDeployed: [0.31, 0.3, 0.42] },
     ],
   },
+
+  /**
+   * 3478 Bocho (LamBot) — CAD de SolidWorks mandado por el equipo, sin código de poses: los
+   * componentes son subensambles separados por nombre (sources.mjs `parts`, zeroed nulo) y los
+   * movimientos se dedujeron del CAD. c0 intake sobre el bumper (guardada inclinada hacia
+   * adentro del hopper, gira ~140° sobre su pivote al frente del chasis hasta el piso), c1
+   * shooter de la turret (atrás a la derecha) y c2 spindexer.
+   */
+  '3478.glb': {
+    poses(m) {
+      const ip: Vec3 = [0.31, 0, 0.2];
+      const turretC: Vec3 = [-0.155, -0.168, 0];
+      const spinC: Vec3 = [0.0985, -0.004, 0];
+      return [
+        rotateAround(IDENTITY, ip, rot(0, lerp(0, 140, m.intake) * DEG, 0)),
+        rotateAround(IDENTITY, turretC, rot(0, 0, m.turret)),
+        rotateAround(IDENTITY, spinC, rot(0, 0, m.spin)),
+      ];
+    },
+    hopper: { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.3, 0.3, 0.6] },
+  },
 };

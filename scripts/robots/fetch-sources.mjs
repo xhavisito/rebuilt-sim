@@ -3,13 +3,19 @@
 // Usa raw.githubusercontent.com (sin la API de GitHub ni su límite de peticiones).
 // Uso: node scripts/robots/fetch-sources.mjs <carpeta> [equipo...]
 // Después: node scripts/robots/build-models.mjs <carpeta>
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { SOURCES } from './sources.mjs';
 
 const [dir, ...only] = process.argv.slice(2);
 if (!dir) throw new Error('Uso: node scripts/robots/fetch-sources.mjs <carpeta> [equipo...]');
 for (const s of SOURCES) {
   if (only.length && !only.includes(String(s.team))) continue;
+  if (s.local) {
+    mkdirSync(`${dir}/${s.team}`, { recursive: true });
+    copyFileSync(`scripts/robots/local/${s.team}/config.json`, `${dir}/${s.team}/config.json`);
+    console.log(s.team, `local: falta copiar a mano el CAD (${s.local}) como ${dir}/${s.team}/model.glb`);
+    continue;
+  }
   const base = `https://raw.githubusercontent.com/${s.repo}/HEAD/${s.path}`;
   mkdirSync(`${dir}/${s.team}`, { recursive: true });
   let n = 0;
