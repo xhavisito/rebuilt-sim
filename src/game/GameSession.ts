@@ -12,6 +12,7 @@ import { Match, type MatchEvent } from '../core/match';
 import { scoreAutoTower, scoreTeleopTower, type ClimbSnapshot } from '../core/tower';
 import { Referee } from '../referee/Referee';
 import { RobotAI, type AiContext } from '../ai/RobotAI';
+import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
 import { routineById } from '../auto/AutoRoutine';
 import type { Difficulty } from '../config/settings';
@@ -43,6 +44,8 @@ export interface RobotSlotConfig {
   startOffsetZ?: number;
   /** Rutina de AUTO (id). */
   autoRoutine?: string;
+  /** Plan de la estrategia de su alianza (IA), ya en el marco real de la alianza. */
+  plan?: RobotPlan;
 }
 
 export interface SessionConfig {
@@ -194,6 +197,10 @@ export class GameSession {
         const d = mine.reduce((x, y) => (y.spec.hopperCapacity < x.spec.hopperCapacity ? y : x));
         this.ais.get(d.index)!.defender = true;
       }
+    // Estrategia de alianza: el plan de cada DRIVER STATION manda sobre lo automático
+    cfg.robots.forEach((rc, i) => {
+      if (rc.plan) this.ais.get(i)?.setPlan(rc.plan);
+    });
   }
 
   /** Fase actual del match ('AUTO'… o null en práctica). */

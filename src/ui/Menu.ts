@@ -2,6 +2,7 @@
  * Pantallas de menú: principal, configuración del match, ajustes (con reasignación de
  * controles) y multijugador local (asignación de dispositivos).
  */
+import { loadStrategies } from '../ai/Strategy';
 import type { App } from '../app/App';
 import { loadRoutines } from '../auto/AutoRoutine';
 import * as F from '../config/field';
@@ -111,6 +112,7 @@ export class Screens {
       ['practice', 'practice', 'practiceDesc'],
       ['local', 'local', 'localDesc'],
       ['tournament', 'tournament', 'tournamentDesc'],
+      ['strategy', 'strategyPlanner', 'strategyPlannerDesc'],
       ['auto', 'autoDesigner', 'autoDesignerDesc'],
       ['editor', 'robotEditor', 'robotEditorDesc'],
       ['spectate', 'spectate', 'spectateDesc'],
@@ -202,6 +204,7 @@ export class Screens {
         else if (go === 'settings') this.settings();
         else if (go === 'tournament') this.app.openTournament();
         else if (go === 'auto') this.app.openAutoDesigner();
+        else if (go === 'strategy') this.app.openStrategyPlanner();
         else if (go === 'editor') this.app.openRobotEditor();
         else if (go === 'spectate') {
           this.hide();
@@ -371,6 +374,7 @@ export class Screens {
   setup(mode: SetupMode): void {
     const m = this.s.match;
     const routines: Opt[] = loadRoutines().map((r) => ({ value: r.id, label: r.name }));
+    const strategies: Opt[] = loadStrategies().map((s) => ({ value: s.id, label: s.builtin ? t(s.name as TKey) : s.name }));
     const isMatch = mode === 'match';
     this.show(`
       ${this.brandbar('2026 REBUILT')}
@@ -399,6 +403,7 @@ export class Screens {
             <div class="opt wide"><span>${t('camera')}</span>${seg('camera', (['third', 'driver', 'onboard', 'top'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) })), this.app.settings.camera)}</div>
             <div class="opt"><span>${t('station')}</span>${seg('station', ['1', '2', '3'].map((v) => ({ value: v, label: `DS ${v}` })), String(m.station))}</div>
             ${isMatch ? `<div class="opt"><span>${t('autoRoutine')}</span>${select('routine', routines, m.autoRoutine)}</div>` : ''}
+            ${isMatch ? `<div class="opt wide"><span>${t('strategy')}</span><div class="row">${t('myStrategy')} ${select('strategy', strategies, m.strategy)} ${t('oppStrategy')} ${select('oppStrategy', strategies, m.oppStrategy)} <button class="chipbtn" data-plan>✎ ${t('strategyPlanner')}</button></div></div>` : ''}
             ${isMatch ? `<div class="opt"><span>${t('difficulty')}</span>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}</div>` : ''}
             <div class="opt"><span>${t('humanPlayer')}</span>${seg('hp', [{ value: 'ai', label: t('hp_ai') }, { value: 'player', label: t('hp_player') }], m.humanPlayer)}</div>
             <div class="opt"><span>${t('eventType')}</span>${seg('event', (['regional', 'districtChamp', 'champs'] as const).map((e) => ({ value: e, label: t(`evs_${e}` as TKey) })), m.eventType)}</div>
@@ -472,6 +477,8 @@ export class Screens {
       if (name === 'camera') this.app.settings.camera = v as Settings['camera'];
       if (name === 'station') m.station = Number(v) as StationNumber;
       if (name === 'routine') m.autoRoutine = String(v);
+      if (name === 'strategy') m.strategy = String(v);
+      if (name === 'oppStrategy') m.oppStrategy = String(v);
       if (name === 'hp') m.humanPlayer = v as 'ai' | 'player';
       if (name === 'difficulty') m.difficulty = v as Settings['match']['difficulty'];
       if (name === 'event') m.eventType = v as Settings['match']['eventType'];
@@ -480,6 +487,7 @@ export class Screens {
       this.app.save();
       refresh();
     });
+    r.querySelector('[data-plan]')?.addEventListener('click', () => this.app.openStrategyPlanner(m.strategy, () => this.setup(mode)));
     r.querySelector('[data-rules]')!.addEventListener('click', () => this.rules(() => this.setup(mode)));
     r.querySelector('[data-settings]')!.addEventListener('click', () => this.settings(() => this.setup(mode)));
     r.querySelector('[data-start]')!.addEventListener('click', () => {
