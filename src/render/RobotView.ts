@@ -18,7 +18,8 @@ import { ALLIANCE_COLOR } from './FieldView';
 import { mergeStaticChildren } from './merge';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { CAD_RIGS, hopperSlots, openingFor, shownFuel, slotFits, type CadRig, type HopperSlot, type MechState } from './cadRigs';
+import { CAD_RIGS, hopperSlots, openingFor, shownFuel, type CadRig, type HopperSlot, type MechState } from './cadRigs';
+import { HopperFuelSim } from './hopperFuel';
 
 export interface RobotVisualState {
   intakeDeploy: number; // 0–1
@@ -665,9 +666,16 @@ export class RobotView {
   private cadSlots: HopperSlot[] = [];
   private cadBoxMeshes: THREE.InstancedMesh[] = [];
   /** Posición de cada lugar en el marco de su malla (la del robot o la del componente). */
-  private cadSlotLocal: THREE.Vector3[] = [];
+  /** Cajas montadas en un componente: del marco WPILib (guardado) al del componente. */
+  private cadBoxInv: Array<THREE.Matrix4 | null> = [];
+  private hopperSim: HopperFuelSim | null = null;
+  private cadWpi: THREE.Object3D | null = null;
   private cadFill = -1;
   private cadFillE = NaN;
+  /** Velocidad y aceleración del robot (mundo, suavizadas) para la inercia del FUEL. */
+  private lastPos = new THREE.Vector3(NaN, 0, 0);
+  private lastVel = new THREE.Vector3();
+  private accel = new THREE.Vector3();
   /** Despliegue que el FUEL guardado obliga a mantener (suavizado) y para cuántos FUEL. */
   private heldOpen = 0;
   private heldTarget = 0;
@@ -688,11 +696,9 @@ export class RobotView {
       if (!p) return null;
       return new THREE.Matrix4().compose(new THREE.Vector3(...p.t), new THREE.Quaternion(...p.q), new THREE.Vector3(1, 1, 1)).invert();
     });
-    this.cadSlotLocal = this.cadSlots.map((sl) => {
-      const v = new THREE.Vector3(...sl.p);
-      const m = inv[sl.box];
-      return m ? v.applyMatrix4(m) : v;
-    });
+    this.cadBoxInv = inv;
+    this.cadWpi = wpi;
+    this.hopperSim = new HopperFuelSim(boxes, this.cadSlots);
     this.cadBoxMeshes = boxes.map((b, i) => {
       const n = this.cadSlots.filter((sl) => sl.box === i).length;
       const mesh = new THREE.InstancedMesh(geo, SHARED.fuel, Math.max(1, n));
@@ -707,25 +713,42 @@ export class RobotView {
   }
 
   /**
-   * FUEL del hopper del CAD: los primeros `n` lugares (de abajo hacia arriba) que caben con la
-   * intake desplegada `e` (cajas que crecen hacia el frente).
+   * FUEL del hopper del CAD: `n` FUEL con física visual (`HopperFuelSim`): los nuevos caen desde
+   * la entrada, al tirar sale el de abajo, y la aceleración del robot los recorre.
    */
-  private fillCadHopper(n: number, e: number): void {
-    if (!this.cadBoxMeshes.length) return;
+  private fillCadHopper(n: number, e: number, dt: number): void {
+    const sim = this.hopperSim;
+    if (!sim || !this.cadBoxMeshes.length) return;
     n = shownFuel(n, this.cadSlots.length, this.spec.hopperCapacity);
-    if (n === this.cadFill && Math.abs(e - this.cadFillE) < 0.01) return;
-    this.cadFill = n;
-    this.cadFillE = e;
-    const boxes = this.rig!.hopper!;
+    let moved = false;
+    if (n !== this.cadFill || Math.abs(e - this.cadFillE) > 0.01) {
+      // la primera vez (o tras reiniciar el campo) aparecen ya acomodados
+      moved = sim.sync(n, e, this.cadFill < 0 || Math.abs(n - this.cadFill) > 12) || Math.abs(e - this.cadFillE) > 0.01;
+      this.cadFill = n;
+      this.cadFillE = e;
+    }
+    // inercia: aceleración del robot en el marco del CAD (WPILib)
+    let ax = 0;
+    let ay = 0;
+    if (this.cadWpi && this.accel.lengthSq() > 0.01) {
+      const q = this.cadWpi.getWorldQuaternion(new THREE.Quaternion()).invert();
+      const a = this.accel.clone().applyQuaternion(q);
+      ax = a.x;
+      ay = a.y;
+    }
+    if (sim.step(dt, ax, ay)) moved = true;
+    if (!moved) return;
     const counts = this.cadBoxMeshes.map(() => 0);
     const m4 = new THREE.Matrix4();
-    let k = 0;
-    this.cadSlots.forEach((sl, i) => {
-      if (k >= n || !slotFits(boxes[sl.box], sl, e)) return;
-      const p = this.cadSlotLocal[i];
-      this.cadBoxMeshes[sl.box].setMatrixAt(counts[sl.box]++, m4.makeTranslation(p.x, p.y, p.z));
-      k++;
-    });
+    const v = new THREE.Vector3();
+    for (const b of sim.balls) {
+      const mesh = this.cadBoxMeshes[b.box];
+      if (counts[b.box] >= mesh.instanceMatrix.count) continue;
+      v.set(b.p[0], b.p[1], b.p[2]);
+      const inv = this.cadBoxInv[b.box];
+      if (inv) v.applyMatrix4(inv);
+      mesh.setMatrixAt(counts[b.box]++, m4.makeTranslation(v.x, v.y, v.z));
+    }
     this.cadBoxMeshes.forEach((mesh, b) => {
       mesh.count = counts[b];
       mesh.instanceMatrix.needsUpdate = true;
@@ -792,7 +815,20 @@ export class RobotView {
     for (const c of this.climberInners) c.position.y = BUMPER_TOP + s.climbHeight;
     for (const w of this.wheels) w.rotation.y = this.spec.drivetrain === 'swerve' ? s.wheelYaw : 0;
     for (const w of this.wheelSpinners) w.rotation.z = -s.wheelSpin;
-    if (this.rig?.hopper) this.fillCadHopper(s.hopper, this.mech.intake);
+    if (this.rig?.hopper) {
+      // aceleración del robot (posición interpolada del grupo), suavizada
+      const pos = this.group.getWorldPosition(new THREE.Vector3());
+      if (dt > 1e-4 && Number.isFinite(this.lastPos.x)) {
+        const vel = pos.clone().sub(this.lastPos).divideScalar(dt);
+        if (vel.lengthSq() > 100) vel.set(0, 0, 0); // teletransporte (reinicio)
+        const acc = vel.clone().sub(this.lastVel).divideScalar(dt);
+        acc.y = 0;
+        this.accel.lerp(acc, Math.min(1, dt * 12));
+        this.lastVel.copy(vel);
+      }
+      this.lastPos.copy(pos);
+      this.fillCadHopper(s.hopper, this.mech.intake, dt);
+    }
     else {
       const n = shownFuel(s.hopper, this.hopperSlots.length, this.spec.hopperCapacity);
       if (this.hopperBalls.count !== n) this.hopperBalls.count = n;
