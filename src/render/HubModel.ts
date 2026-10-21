@@ -14,7 +14,7 @@ import * as F from '../config/field';
 import type { Alliance } from '../core/types';
 import { netTexture } from './textures';
 
-type Bucket = 'black' | 'alu' | 'cap' | 'plate' | 'inner' | 'funnel' | 'smoke' | 'net' | 'steel' | 'graphic' | 'light' | 'slot';
+type Bucket = 'black' | 'alu' | 'cap' | 'plate' | 'inner' | 'funnel' | 'clear' | 'smoke' | 'net' | 'steel' | 'graphic' | 'light' | 'slot';
 
 const hs = F.HUB_SIZE / 2;
 const Rb = F.HUB_FUNNEL_BOTTOM_R;
@@ -116,8 +116,8 @@ export class HubModel {
     const top = F.HUB_BODY_TOP;
     const base = F.inch(3);
     const inset = 0.006; // las caras quedan justo detrás de los AprilTags
-    // Núcleo interior oscuro (se ve entre los rieles de las caras laterales)
-    this.add('inner', boxAt(2 * hs - 0.16, top - base, 2 * hs - 0.16, 0, base + (top - base) / 2, 0));
+    // Interior: se ve a través de las caras laterales (fig. 5-5), piso claro de lámina
+    this.add('cap', boxAt(2 * hs - 0.04, 0.01, 2 * hs - 0.04, 0, base + 0.005, 0));
     // Base de acero alrededor (con el corte en V hacia las caras principales)
     this.add('steel', boxAt(2 * hs + 0.004, base, 2 * hs + 0.004, 0, base / 2, 0));
     // Caras hacia las paredes (±X): panel negro de lado a lado
@@ -134,6 +134,8 @@ export class HubModel {
       const z = sz * (hs - TUBE / 2);
       for (const y of [base + TUBE / 2, 0.42, 0.78]) this.add('alu', boxAt(2 * hs, TUBE, TUBE, 0, y, z));
       this.add('alu', boxAt(2 * hs, TUBE * 0.6, TUBE, 0, 0.6, z)); // riel intermedio delgado
+      // policarbonato transparente detrás del marco
+      this.add('clear', boxAt(2 * hs - 0.02, 0.93 - base, 0.006, 0, base + (0.93 - base) / 2, sz * (hs - TUBE - 0.004)));
       // banda superior (soporte de los AprilTags)
       this.add('cap', boxAt(2 * hs - 0.01, top - 0.93, 0.012, 0, (0.93 + top) / 2, sz * (hs - inset - 0.006)));
       // diagonales del marco
@@ -283,6 +285,7 @@ export class HubModel {
         side: THREE.DoubleSide,
         depthWrite: false,
       }),
+      clear: new THREE.MeshStandardMaterial({ color: 0xf2f5f8, roughness: 0.1, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
       smoke: new THREE.MeshStandardMaterial({ color: 0x1d2026, roughness: 0.3, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
       net: new THREE.MeshStandardMaterial({ map: netTexture(), transparent: true, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9 }),
       steel: new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.6, roughness: 0.45 }),
@@ -294,7 +297,7 @@ export class HubModel {
       const merged = mergeGeometries(geos, false);
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, mats[b]);
-      const transparent = b === 'funnel' || b === 'smoke' || b === 'net';
+      const transparent = b === 'funnel' || b === 'clear' || b === 'smoke' || b === 'net';
       mesh.castShadow = !transparent && b !== 'light' && b !== 'graphic';
       mesh.receiveShadow = !transparent;
       mesh.renderOrder = transparent ? 3 : 0;

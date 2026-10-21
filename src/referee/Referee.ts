@@ -178,23 +178,11 @@ export class Referee {
   }
 
   /**
-   * FUEL que salió del campo (G405). La regla castiga sacarlo A PROPÓSITO ("intentionally
-   * eject"), directo o rebotando: se cobra al robot que lo lanzó si salió todavía en vuelo
-   * (tiro o pase fuera del campo). Uno que se escapa empujado o rebotando en el piso no es
-   * intencional (y FIELD STAFF lo regresa por donde salió).
+   * FUEL que salió del campo (G405). No se cobra: decidir si fue "intencional" depende del
+   * criterio del REFEREE y la heurística (tiro que sale en vuelo) castigaba tiros y pases
+   * fallados. FIELD STAFF lo regresa por donde salió (FuelSystem).
    */
-  onOut(i: number, shot: boolean): void {
-    if (!shot) return;
-    const f = this.ctx.fuel;
-    const who = f.shotBy[i];
-    if (who < 0 || this.t - f.shotTime[i] > 6) return;
-    const r = this.ctx.robots[who];
-    if (!r) return;
-    const repeated = this.count('G405', r) > 0;
-    this.foul('G405', repeated ? 'MAJOR' : 'MINOR', r);
-    // G211: sacar mucho FUEL del campo a propósito
-    if (this.count('G405', r) === 5) this.card('G211', r);
-  }
+  onOut(_i: number, _shot: boolean): void {}
 
   /** FUEL que entró a un HUB (G407). */
   onHubEnter(i: number, hub: Alliance): void {
