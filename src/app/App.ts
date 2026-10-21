@@ -445,6 +445,9 @@ export class App {
           station: (k + 1) as StationNumber,
           control: team.isPlayer ? { type: 'player', slot: 0 } : { type: 'ai' },
           autoRoutine: team.isPlayer ? m.autoRoutine : undefined,
+          startOffsetZ: team.isPlayer ? m.startOffset * (a === 'blue' ? 1 : -1) : 0,
+          // Tu estrategia para tu alianza; los demás, en automático
+          plan: team.isPlayer ? undefined : planFor(strategyById(ids.some((x) => tt.teams[x].isPlayer) ? m.strategy : 'auto'), a, (k + 1) as StationNumber),
         });
       });
     this.startSession({

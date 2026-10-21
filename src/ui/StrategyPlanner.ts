@@ -1,12 +1,14 @@
 /**
  * Planeador de estrategia (3 vs 3): vista superior de todo el campo, desde el lado azul. Para
  * cada DRIVER STATION se elige rol, carril y nivel de climb, y en el campo se dibuja su línea de
- * recolección (toca para agregar puntos, arrástralos) y su punto de tiro. La estrategia se usa
+ * recolección (toca para agregar puntos, arrástralos), su punto de tiro, su posición inicial y su
+ * rutina de AUTO (en automático se reparten sin choques; se ve la ruta). La estrategia se usa
  * para tu alianza o para el rival; para la alianza roja se refleja sola (ver src/ai/Strategy.ts).
  */
 import { BUILTIN_STRATEGIES, LANE_EDGE, LANES, loadStrategies, plan, ROLES, saveCustomStrategies, type Lane, type Pt, type Role, type Strategy } from '../ai/Strategy';
+import { assignAutos, loadRoutines, type AutoRoutine } from '../auto/AutoRoutine';
 import * as F from '../config/field';
-import { defaultStart } from '../core/startRules';
+import { defaultStart, separateStarts } from '../core/startRules';
 import type { StationNumber } from '../core/types';
 import { bind, esc, seg, select, type Opt } from './forms';
 import { t, type TKey } from './i18n';
@@ -19,7 +21,7 @@ const ROBOT_HALF = 0.43;
 /** Color de cada DRIVER STATION (líneas y puntos). */
 const DS_COLOR = ['#ff9f1c', '#2ec4b6', '#c77dff'];
 
-type Tool = 'route' | 'shoot';
+type Tool = 'route' | 'shoot' | 'start';
 
 export class StrategyPlanner {
   private list: Strategy[] = [];
@@ -28,6 +30,7 @@ export class StrategyPlanner {
   private tool: Tool = 'route';
   private canvas!: HTMLCanvasElement;
   private drag = -1;
+  private routines: AutoRoutine[] = [];
 
   constructor(
     private root: HTMLElement,
@@ -39,6 +42,7 @@ export class StrategyPlanner {
 
   open(id?: string): void {
     this.list = loadStrategies();
+    this.routines = loadRoutines();
     this.cur = structuredClone(this.list.find((s) => s.id === id) ?? this.list[0]);
     this.render();
   }
@@ -83,10 +87,12 @@ export class StrategyPlanner {
       <label></label><div class="msg">${t(`roleHelp_${p.role}` as TKey)}</div>
       <label>${t('lane')}</label>${seg('lane', LANES.map((l) => ({ value: l, label: t(`lane_${l}` as TKey) })), p.lane)}
       <label>${t('endgameClimb')}</label>${seg('climb', ['auto', '0', '1', '2', '3'].map((v) => ({ value: v, label: v === 'auto' ? 'Auto' : v === '0' ? '—' : `L${v}` })), String(p.climb))}
-      <label>${t('tool')}</label>${seg('tool', [{ value: 'route', label: t('tool_route') }, { value: 'shoot', label: t('tool_shoot') }], this.tool)}
+      <label>${t('autoRoutine')}</label>${select('auto', [{ value: '', label: t('autoAssigned') }, ...this.routines.map((r) => ({ value: r.id, label: r.name }))], p.auto ?? '')}
+      <label>${t('tool')}</label>${seg('tool', [{ value: 'route', label: t('tool_route') }, { value: 'shoot', label: t('tool_shoot') }, { value: 'start', label: t('tool_start') }], this.tool)}
       <label></label><div class="row">
         <button class="chipbtn" data-clearroute ${ro ? 'disabled' : ''}>${t('clearRoute')}</button>
         <button class="chipbtn" data-clearshoot ${ro ? 'disabled' : ''}>${t('clearShoot')}</button>
+        <button class="chipbtn" data-clearstart ${ro ? 'disabled' : ''}>${t('clearStart')}</button>
       </div>
       <label></label><div class="row">
         <button class="chipbtn" data-new>${t('newStrategy')}</button>
@@ -112,6 +118,7 @@ export class StrategyPlanner {
       if (name === 'role') pl.role = v as Role;
       if (name === 'lane') pl.lane = v as Lane;
       if (name === 'climb') pl.climb = v === 'auto' ? 'auto' : (Number(v) as 0 | 1 | 2 | 3);
+      if (name === 'auto') pl.auto = v ? String(v) : null;
       if (name === 'ds' || name === 'role') this.renderSide();
       this.draw();
     });
@@ -124,6 +131,11 @@ export class StrategyPlanner {
       this.cur.plans[this.ds - 1].shootSpot = null;
       this.draw();
     });
+    side.querySelector('[data-clearstart]')?.addEventListener('click', () => {
+      this.cur.plans[this.ds - 1].startZ = null;
+      this.draw();
+    });
+    if (ro) side.querySelector<HTMLSelectElement>('[data-sel="auto"]')?.setAttribute('disabled', '');
     side.querySelector('[data-new]')!.addEventListener('click', () => {
       this.cur = this.newStrategy();
       this.renderSide();
@@ -191,6 +203,9 @@ export class StrategyPlanner {
       if (this.tool === 'shoot') {
         pl.shootSpot = p;
         this.drag = -2;
+      } else if (this.tool === 'start') {
+        pl.startZ = p.z;
+        this.drag = -3;
       } else {
         const hit = pl.route.findIndex((q) => Math.hypot(q.x - p.x, q.z - p.z) < 0.35);
         if (hit >= 0) this.drag = hit;
@@ -207,6 +222,7 @@ export class StrategyPlanner {
       const p = pos(e);
       const pl = this.cur.plans[this.ds - 1];
       if (this.drag === -2) pl.shootSpot = p;
+      else if (this.drag === -3) pl.startZ = p.z;
       else if (pl.route[this.drag]) pl.route[this.drag] = p;
       this.draw();
     });
@@ -270,13 +286,39 @@ export class StrategyPlanner {
     label('HUB', F.HUB_CENTER_X_BLUE - 0.3, 0.05, '#222');
     label('NEUTRAL ZONE', -0.9, -F.HALF_W + 0.35);
     if (p.lane !== 'any') label(t(`lane_${p.lane}` as TKey), -F.HALF_L + 0.2, p.lane === 'top' ? -LANE_EDGE - 0.2 : p.lane === 'bottom' ? LANE_EDGE + 0.45 : 0.05);
+    // Posiciones iniciales (como quedan en el match: sin encimarse) y rutas de AUTO
+    const starts = separateStarts(this.cur.plans.map((pl, i) => ({ z: pl.startZ ?? defaultStart('blue', (i + 1) as StationNumber, ROBOT_HALF).z, halfZ: ROBOT_HALF })));
+    const autos = assignAutos(
+      this.cur.plans.map((pl, i) => ({ station: (i + 1) as StationNumber, canClimb: true, z: starts[i], fixed: pl.auto ?? undefined })),
+      this.routines,
+    );
+    this.cur.plans.forEach((_, i) => {
+      const r = this.routines.find((x) => x.id === autos[i]);
+      const st = defaultStart('blue', (i + 1) as StationNumber, ROBOT_HALF);
+      if (!r) return;
+      g.globalAlpha = (i + 1) === this.ds ? 0.95 : 0.5;
+      g.strokeStyle = DS_COLOR[i];
+      g.lineWidth = Math.max(1.5, S * 0.035);
+      g.setLineDash([S * 0.12, S * 0.1]);
+      g.beginPath();
+      g.moveTo(...this.toPx(st.x, starts[i]));
+      for (const w of r.waypoints) g.lineTo(...this.toPx(w.x, w.z));
+      g.stroke();
+      g.setLineDash([]);
+      if (i + 1 === this.ds) {
+        g.fillStyle = DS_COLOR[i];
+        g.font = `bold ${Math.round(S * 0.17)}px sans-serif`;
+        g.fillText(`AUTO: ${r.name}`, ...this.toPx(-1.3 - r.name.length * 0.085, F.HALF_W - 0.25));
+      }
+      g.globalAlpha = 1;
+    });
     // Robots (posición inicial), líneas y puntos de tiro de cada DS
     this.cur.plans.forEach((pl, i) => {
       const ds = (i + 1) as StationNumber;
       const color = DS_COLOR[i];
       const on = ds === this.ds;
       const st = defaultStart('blue', ds, ROBOT_HALF);
-      const [sx, sy] = this.toPx(st.x, st.z);
+      const [sx, sy] = this.toPx(st.x, starts[i]);
       g.globalAlpha = on ? 1 : 0.55;
       g.fillStyle = color;
       g.fillRect(sx - ROBOT_HALF * S, sy - ROBOT_HALF * S, 2 * ROBOT_HALF * S, 2 * ROBOT_HALF * S);

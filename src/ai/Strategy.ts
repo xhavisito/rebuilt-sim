@@ -35,6 +35,10 @@ export interface RobotPlan {
   shootSpot: Pt | null;
   /** Nivel de climb en END GAME ('auto' = el máximo de su robot; 0 = no trepa). */
   climb: 'auto' | 0 | 1 | 2 | 3;
+  /** Z de la posición inicial (lado azul, sobre la ROBOT STARTING LINE); null = frente a su DS. */
+  startZ: number | null;
+  /** Rutina de AUTO (id); null = automática (sin choques con su alianza, `assignAutos`). */
+  auto: string | null;
 }
 
 export interface Strategy {
@@ -46,7 +50,7 @@ export interface Strategy {
   builtin?: boolean;
 }
 
-export const plan = (o: Partial<RobotPlan> = {}): RobotPlan => ({ role: 'auto', lane: 'any', route: [], shootSpot: null, climb: 'auto', ...o });
+export const plan = (o: Partial<RobotPlan> = {}): RobotPlan => ({ role: 'auto', lane: 'any', route: [], shootSpot: null, climb: 'auto', startZ: null, auto: null, ...o });
 
 const HUB_X = F.HUB_CENTER_X_BLUE;
 const NEUTRAL_X = HUB_X + 1.8;
@@ -110,7 +114,12 @@ export function toAlliance(p: Pt, a: Alliance): Pt {
 /** Plan de una DRIVER STATION en el marco real de su alianza. */
 export function planFor(s: Strategy, a: Alliance, station: StationNumber): RobotPlan {
   const p = s.plans[station - 1] ?? plan();
-  return { ...p, route: p.route.map((q) => toAlliance(q, a)), shootSpot: p.shootSpot ? toAlliance(p.shootSpot, a) : null };
+  return {
+    ...p,
+    route: p.route.map((q) => toAlliance(q, a)),
+    shootSpot: p.shootSpot ? toAlliance(p.shootSpot, a) : null,
+    startZ: p.startZ === null ? null : a === 'blue' ? p.startZ : -p.startZ,
+  };
 }
 
 /** ¿z (marco real de la alianza) cae en el carril? (el carril se define del lado azul) */

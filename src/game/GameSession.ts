@@ -14,10 +14,10 @@ import { Referee } from '../referee/Referee';
 import { RobotAI, type AiContext } from '../ai/RobotAI';
 import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
-import { routineById } from '../auto/AutoRoutine';
+import { assignAutos, routineById } from '../auto/AutoRoutine';
 import type { Difficulty } from '../config/settings';
 import { Rng } from '../core/rng';
-import { defaultStart } from '../core/startRules';
+import { defaultStart, separateStarts } from '../core/startRules';
 import { ALLIANCES, type Alliance, type EventType, type Phase, type StationNumber } from '../core/types';
 import type { PlayerInput } from '../input/actions';
 import { buildFieldColliders } from '../physics/FieldColliders';
@@ -118,13 +118,19 @@ export class GameSession {
     this.pw = new PhysicsWorld(renderer.preset.physicsHz);
     this.pw.setIterations(renderer.preset.solverIterations);
     buildFieldColliders(this.pw);
-    // Robots
+    // Robots: salida elegida (estrategia o desplazamiento del jugador) sin encimarse con su alianza
+    const startZ = cfg.robots.map((rc) => {
+      const st = defaultStart(rc.alliance, rc.station, F.inch(rc.spec.lengthIn / 2 + rc.spec.bumperIn));
+      return rc.plan?.startZ ?? st.z + (rc.startOffsetZ ?? 0);
+    });
+    for (const a of ALLIANCES) {
+      const ids = cfg.robots.map((rc, i) => (rc.alliance === a ? i : -1)).filter((i) => i >= 0);
+      const zs = separateStarts(ids.map((i) => ({ z: startZ[i], halfZ: F.inch(cfg.robots[i].spec.widthIn / 2 + cfg.robots[i].spec.bumperIn) })));
+      ids.forEach((i, k) => (startZ[i] = zs[k]));
+    }
     cfg.robots.forEach((rc, i) => {
-      const halfX = F.inch(rc.spec.lengthIn / 2 + rc.spec.bumperIn);
-      const st = defaultStart(rc.alliance, rc.station, halfX);
-      const halfZ = F.inch(rc.spec.widthIn / 2 + rc.spec.bumperIn);
-      const z = THREE.MathUtils.clamp(st.z + (rc.startOffsetZ ?? 0), -F.HALF_W + halfZ + 0.02, F.HALF_W - halfZ - 0.02);
-      const r = new Robot(this.pw, i, rc.spec, rc.alliance, rc.station, rc.control, st.x, z, st.heading);
+      const st = defaultStart(rc.alliance, rc.station, F.inch(rc.spec.lengthIn / 2 + rc.spec.bumperIn));
+      const r = new Robot(this.pw, i, rc.spec, rc.alliance, rc.station, rc.control, st.x, startZ[i], st.heading);
       r.fieldRelative = settings.drive.fieldRelative;
       this.robots.push(r);
       this.group.add(r.view.group);
@@ -211,13 +217,21 @@ export class GameSession {
   /** Arranca el reloj del match (después de la cuenta regresiva de la App). */
   beginMatch(): void {
     if (this.match && !this.match.running) {
-      // Rutinas de AUTO: la elegida para el jugador; la IA según su posición y diseño
-      this.robots.forEach((r, i) => {
-        const rc = this.cfg.robots[i];
-        let id = rc.autoRoutine;
-        if (!id) id = r.spec.climb.maxLevel > 0 && r.station === 3 ? 'climb-l1' : r.station === 1 ? 'depot' : 'default-score';
-        if (r.control.type !== 'none') this.autos.set(i, new AutoExecutor(r, routineById(id)));
-      });
+      // Rutinas de AUTO: la elegida (jugador o estrategia); las demás, repartidas por alianza para
+      // que nadie comparta zona con su compañero (DEPOT, TOWER, mitades de la NEUTRAL ZONE)
+      for (const a of ALLIANCES) {
+        const mine = this.robots.filter((r) => r.alliance === a);
+        const ids = assignAutos(
+          mine.map((r) => {
+            const rc = this.cfg.robots[r.index];
+            const z = a === 'blue' ? r.phys.curPos.z : -r.phys.curPos.z;
+            return { station: r.station, canClimb: r.spec.climb.maxLevel > 0, z, fixed: rc.autoRoutine ?? rc.plan?.auto ?? undefined };
+          }),
+        );
+        mine.forEach((r, k) => {
+          if (r.control.type !== 'none') this.autos.set(r.index, new AutoExecutor(r, routineById(ids[k])));
+        });
+      }
       this.match.start();
       this.field.setLeds(true);
     }

@@ -39,7 +39,7 @@ export class AutoExecutor {
       if (r.spec.shooter.type === 'fixed') {
         const hub = F.hubCenter(r.alliance);
         const want = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(hub.z - r.phys.curPos.z), hub.x - r.phys.curPos.x));
-        cmd.drive.omega = this.nav.omegaTo(want);
+        cmd.drive.omega = this.nav.omegaTo(want, 0.03); // sin zona muerta: el tiro necesita ~2°
       }
     };
     switch (st.kind) {
