@@ -41,6 +41,9 @@ export interface Settings {
     humanPlayer: 'ai' | 'player';
     /** Desplazamiento lateral de la posición inicial (m), validado con G303. */
     startOffset: number;
+    /** Estrategia de tu alianza y la del rival (ids de `Strategy`). */
+    strategy: string;
+    oppStrategy: string;
   };
 }
 
@@ -69,6 +72,8 @@ export const DEFAULT_SETTINGS: Settings = {
     autoRoutine: 'default-score',
     humanPlayer: 'ai',
     startOffset: 0,
+    strategy: 'auto',
+    oppStrategy: 'auto',
   },
 };
 

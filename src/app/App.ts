@@ -1,12 +1,14 @@
 /**
  * Orquestador: ajustes, renderer, campo persistente, entrada, audio, HUD, sesión activa y bucle.
  */
+import { planFor, strategyById } from '../ai/Strategy';
 import { AudioEngine } from '../audio/Audio';
 import { DIFFICULTY } from '../ai/RobotAI';
 import * as THREE from 'three';
 import * as F from '../config/field';
 import { CAD_ROBOTS, robotById, ROBOT_PRESETS, type RobotSpec } from '../config/robots';
 import type { Tournament, TMatch } from '../core/tournament';
+import { StrategyPlanner } from '../ui/StrategyPlanner';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
 import { RobotEditor } from '../ui/RobotEditor';
@@ -62,6 +64,9 @@ export class App {
   private countdownShown = -1;
   readonly screens: Screens;
   private designer: AutoDesigner;
+  private planner: StrategyPlanner;
+  /** A dónde regresa el planeador (menú principal o configuración del match). */
+  private plannerBack: () => void = () => this.screens.main();
   private editor: RobotEditor;
   private tourney: TournamentScreen;
   private menuCam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
@@ -130,6 +135,16 @@ export class App {
       this.save();
       this.startMatch();
     });
+    this.planner = new StrategyPlanner(
+      this.screens.root,
+      () => this.plannerBack(),
+      (id, mine) => {
+        if (mine) this.settings.match.strategy = id;
+        else this.settings.match.oppStrategy = id;
+        this.save();
+      },
+      () => ({ mine: this.settings.match.strategy, opp: this.settings.match.oppStrategy }),
+    );
     this.editor = new RobotEditor(this.screens.root, this.screens.showroom, back, (id) => {
       this.settings.match.robotId = id;
       this.save();
@@ -172,6 +187,13 @@ export class App {
     this.touch.setEnabled(false);
     this.closeOverlay();
     this.screens.prepare(() => this.screens.main());
+  }
+
+  /** Planeador de estrategia; `back` = a dónde regresa (por defecto, el menú principal). */
+  openStrategyPlanner(id?: string, back?: () => void): void {
+    this.openScreen();
+    this.plannerBack = back ?? (() => this.screens.main());
+    this.planner.open(id ?? this.settings.match.strategy);
   }
 
   openAutoDesigner(): void {
@@ -354,6 +376,8 @@ export class App {
           control: isPlayer ? { type: 'player', slot: 0 } : { type: 'ai' },
           autoRoutine: isPlayer ? m.autoRoutine : undefined,
           startOffsetZ: isPlayer ? m.startOffset * (a === 'blue' ? 1 : -1) : 0,
+          // Estrategia: la tuya para tu alianza (en espectador, la de azul) y la del rival
+          plan: isPlayer ? undefined : planFor(strategyById(a === (spectate ? 'blue' : m.alliance) ? m.strategy : m.oppStrategy), a, ds),
         });
       }
     this.startSession({

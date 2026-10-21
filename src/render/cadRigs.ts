@@ -73,7 +73,7 @@ export interface HopperSlot {
   p: Vec3;
 }
 
-const FUEL_D = 0.150114; // 5.91 in
+export const FUEL_D = 0.150114; // 5.91 in
 
 /**
  * Lugares del FUEL en las cajas del hopper: capas de abajo hacia arriba (cada capa corrida medio

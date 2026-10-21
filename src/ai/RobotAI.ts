@@ -23,6 +23,8 @@ import { chassisYawFor } from '../game/Mechanisms';
 import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
 import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
+import { inLane, inNeutral, routeDistance, type RobotPlan } from './Strategy';
+import { passTarget } from '../game/Mechanisms';
 
 export interface AiContext {
   robots: Robot[];
@@ -36,7 +38,7 @@ export interface AiContext {
   claims: Map<number, number>;
 }
 
-type State = 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'descend' | 'idle';
+type State = 'pass' | 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'descend' | 'idle';
 
 export const DIFFICULTY: Record<Difficulty, { speed: number; think: number; accuracy: number; climbMargin: number; mistakes: number }> = {
   easy: { speed: 0.68, think: 0.9, accuracy: 0.82, climbMargin: 7, mistakes: 0.25 },
@@ -67,6 +69,10 @@ export class RobotAI {
   /** Juega defensa cuando su HUB está inactivo y el del rival activo (lo asigna la sesión). */
   defender = false;
   private climbLevel = 0;
+  /** Plan de la estrategia de su alianza (rol, carril, línea, punto de tiro, climb). */
+  private plan: RobotPlan | null = null;
+  /** Siguiente punto de la línea de recolección que recorre cuando no hay FUEL. */
+  private routeIdx = 0;
   private readonly d: (typeof DIFFICULTY)[Difficulty];
 
   constructor(
@@ -80,6 +86,20 @@ export class RobotAI {
     this.climbLevel = Math.max(0, r.spec.climb.maxLevel - (difficulty === 'easy' ? 1 : 0));
   }
 
+  /** Aplica el plan de la estrategia (lo asigna la sesión, después de crear la IA). */
+  setPlan(p: RobotPlan | null): void {
+    this.plan = p;
+    if (!p) return;
+    if (p.role === 'defender') this.defender = true;
+    else if (p.role !== 'auto') this.defender = false;
+    if (p.climb !== 'auto') this.climbLevel = Math.min(p.climb, this.r.spec.climb.maxLevel);
+  }
+
+  /** Alimentador: recoge en la NEUTRAL ZONE y pasa (en END GAME juega normal). */
+  private get feeding(): boolean {
+    return this.plan?.role === 'feeder' && this.ctx.match?.phase !== 'END_GAME';
+  }
+
   private get sgn(): number {
     return F.allianceSign(this.r.alliance);
   }
@@ -91,8 +111,36 @@ export class RobotAI {
     return fuelCounts(m.t + dt, this.r.alliance, m.firstInactive);
   }
 
+  /** ¿El robot puede tirar al HUB desde donde está? (dentro de su ALLIANCE ZONE, G407) */
+  private inShootZone(): boolean {
+    const p = this.r.phys.curPos;
+    return this.r.alliance === 'blue' ? p.x - this.r.phys.outerL < F.STARTING_LINE_X_BLUE - 0.15 : p.x + this.r.phys.outerL > -F.STARTING_LINE_X_BLUE + 0.15;
+  }
+
+  /** ¿(x, z) está en la ALLIANCE ZONE propia, con margen para recoger sin salirse de ella? */
+  private inOwnZone(x: number): boolean {
+    const line = Math.abs(F.STARTING_LINE_X_BLUE) - 0.3;
+    return this.r.alliance === 'blue' ? x < -line : x > line;
+  }
+
+  /**
+   * Ciclo continuo (robots con turret): con su HUB activo y FUEL suelto en su ALLIANCE ZONE no
+   * se para a tirar: recoge en su zona y la turret dispara en movimiento mientras se alimenta.
+   */
+  private continuousCycle(): boolean {
+    if (this.r.spec.shooter.type !== 'turret' || !this.hubCountsIn(1.0)) return false;
+    const f = this.ctx.fuel;
+    let k = 0;
+    for (let i = 0; i < f.count && k < 3; i++) {
+      if (f.state[i] !== FuelState.Field || f.flags[i] & FLAG_FROM_HUB || f.pos[i * 3 + 1] > 0.2) continue;
+      if (this.inOwnZone(f.pos[i * 3]) && !behindTower(f.pos[i * 3], f.pos[i * 3 + 2], 0.5, 0.35)) k++;
+    }
+    return k >= 3;
+  }
+
   /** Punto de tiro propio dentro de la ALLIANCE ZONE, repartido por DRIVER STATION. */
   private shootSpot(): Pt {
+    if (this.plan?.shootSpot) return this.plan.shootSpot;
     const hub = F.hubCenter(this.r.alliance);
     const lanes = { 1: -2.0, 2: 0.0, 3: 2.0 } as const;
     const lane = lanes[this.r.station] * (this.r.alliance === 'blue' ? -1 : 1);
@@ -135,6 +183,15 @@ export class RobotAI {
           this.targetBall = -1;
         }
         if (this.targetBall < 0 || this.targetAge > 1.5) this.pickBall();
+        const route = this.plan?.route ?? [];
+        if (this.targetBall < 0 && route.length) {
+          // sin FUEL a la vista: recorre su línea de recolección
+          const q = route[this.routeIdx % route.length];
+          const p = r.phys.curPos;
+          if (Math.hypot(q.x - p.x, q.z - p.z) < 0.5) this.routeIdx = (this.routeIdx + 1) % route.length;
+          this.nav.plan(q);
+          cmd.drive = this.nav.follow(dt, others, { speed: speed * 0.8, heading: null, tol: 0.3 }).cmd;
+        }
         if (this.targetBall >= 0) {
           const o = this.targetBall * 3;
           // apunta un poco más allá de la pelota para que entre en la intake
@@ -151,6 +208,21 @@ export class RobotAI {
           cmd.drive = res.cmd;
           if (res.arrived) this.targetBall = -1;
         }
+        // Turret: dispara mientras se mueve y se alimenta, si está en su zona y el HUB contará
+        if (r.spec.shooter.type === 'turret' && n > 0 && this.inShootZone() && this.hubCountsIn((r.lastSolution?.tof ?? 1.0) + 0.1)) cmd.shoot = true;
+        break;
+      }
+      case 'pass': {
+        // Alimentador: pasa a su ALLIANCE ZONE desde la NEUTRAL ZONE (sigue recogiendo)
+        r.intakeOn = n < r.spec.hopperCapacity;
+        const p = r.phys.curPos;
+        const goal = passTarget(r.alliance, p.z);
+        if (!inNeutral(p.x)) {
+          this.nav.plan({ x: -this.sgn * 0.5, z: p.z });
+          cmd.drive = this.nav.follow(dt, others, { speed, heading: null, tol: 0.4 }).cmd;
+        }
+        cmd.pass = n > 0;
+        if (r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x)), 0.03);
         break;
       }
       case 'score':
@@ -270,6 +342,21 @@ export class RobotAI {
     const willCount = this.hubCountsIn(eta + 1.0);
     const countsNow = this.hubCountsIn(1.0);
     const full = n >= cap - 1;
+    if (this.feeding) {
+      // junta unos cuantos y los pasa; sigue pasando hasta vaciarse
+      const batch = Math.min(cap, 6);
+      if (n >= batch || (this.state === 'pass' && n > 0)) this.state = 'pass';
+      else {
+        if (this.state !== 'collect') this.targetBall = -1;
+        this.state = 'collect';
+      }
+      return;
+    }
+    if (!full && this.continuousCycle()) {
+      if (this.state !== 'collect') this.targetBall = -1;
+      this.state = 'collect';
+      return;
+    }
     const enough = n >= Math.min(cap, 10) || (n > 0 && m !== null && m.phase === 'END_GAME');
     if ((countsNow || willCount) && (enough || (countsNow && n > 0 && this.state === 'score'))) {
       this.state = 'score';
@@ -318,6 +405,7 @@ export class RobotAI {
     const endgame = m?.phase === 'END_GAME';
     const allies = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance);
     const tall = r.phys.height > F.TRENCH_CLEAR_HEIGHT;
+    const cycling = r.spec.shooter.type === 'turret' && this.hubCountsIn(1.0);
     let best = -1;
     let bestC = Infinity;
     for (let i = 0; i < f.count; i++) {
@@ -346,7 +434,15 @@ export class RobotAI {
         const tw = F.towerInfo(opponent(r.alliance));
         if (Math.hypot(x - tw.cx, z - tw.cz) < 2.2) continue;
       }
+      if (this.feeding && !inNeutral(x)) continue;
       let c = Math.hypot(x - p.x, z - p.z);
+      // Plan: su carril y su línea de recolección
+      if (this.plan) {
+        if (!inLane(this.plan.lane, z, r.alliance)) c += 3;
+        if (this.plan.route.length) c += Math.min(4, routeDistance(this.plan.route, x, z)) * 0.8;
+      }
+      // Ciclo continuo: se queda recogiendo en su ALLIANCE ZONE, donde puede seguir tirando
+      if (cycling) c += this.inOwnZone(x) ? -1.5 : 3;
       // girar cuesta: ~0.5 m por cada radián de giro hacia la pelota
       const turn = Math.abs(Math.atan2(Math.sin(Math.atan2(-(z - p.z), x - p.x) - h0), Math.cos(Math.atan2(-(z - p.z), x - p.x) - h0)));
       c += turn * 0.5;

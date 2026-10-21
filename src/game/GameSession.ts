@@ -12,6 +12,7 @@ import { Match, type MatchEvent } from '../core/match';
 import { scoreAutoTower, scoreTeleopTower, type ClimbSnapshot } from '../core/tower';
 import { Referee } from '../referee/Referee';
 import { RobotAI, type AiContext } from '../ai/RobotAI';
+import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
 import { routineById } from '../auto/AutoRoutine';
 import type { Difficulty } from '../config/settings';
@@ -28,7 +29,7 @@ import { FuelView } from '../render/FuelView';
 import type { Renderer, Viewport } from '../render/Renderer';
 import { climbSlots, type TowerOccupancy } from './Climber';
 import { HumanPlayer, type HpContext } from './HumanPlayer';
-import { chassisYawFor, plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
+import { chassisYawFor, passTarget, plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
 import { AimGuide } from '../render/AimGuide';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
@@ -43,6 +44,8 @@ export interface RobotSlotConfig {
   startOffsetZ?: number;
   /** Rutina de AUTO (id). */
   autoRoutine?: string;
+  /** Plan de la estrategia de su alianza (IA), ya en el marco real de la alianza. */
+  plan?: RobotPlan;
 }
 
 export interface SessionConfig {
@@ -194,6 +197,10 @@ export class GameSession {
         const d = mine.reduce((x, y) => (y.spec.hopperCapacity < x.spec.hopperCapacity ? y : x));
         this.ais.get(d.index)!.defender = true;
       }
+    // Estrategia de alianza: el plan de cada DRIVER STATION manda sobre lo automático
+    cfg.robots.forEach((rc, i) => {
+      if (rc.plan) this.ais.get(i)?.setPlan(rc.plan);
+    });
   }
 
   /** Fase actual del match ('AUTO'… o null en práctica). */
@@ -393,9 +400,10 @@ export class GameSession {
       vz = (my * fz + lat * Math.cos(h)) * s.maxSpeed * slow;
     }
     cmd.drive = { vx, vz, omega: -rot * s.maxOmega * (inp.held.slow ? 0.4 : 1) };
-    // Auto-aim con shooter fijo: el robot gira solo hacia la solución mientras disparas
-    if (inp.held.shoot && this.settings.drive.autoAim && s.shooter.type === 'fixed' && Math.abs(rot) < 0.05 && !inp.mouseNdc) {
-      const want = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(F.hubCenter(r.alliance).z - r.phys.curPos.z), F.hubCenter(r.alliance).x - r.phys.curPos.x));
+    // Auto-aim con shooter fijo: el robot gira solo hacia la solución mientras disparas o pasas
+    if ((inp.held.shoot || inp.held.pass) && this.settings.drive.autoAim && s.shooter.type === 'fixed' && Math.abs(rot) < 0.05 && !inp.mouseNdc) {
+      const goal = inp.held.pass ? passTarget(r.alliance, r.phys.curPos.z) : F.hubCenter(r.alliance);
+      const want = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - r.phys.curPos.z), goal.x - r.phys.curPos.x));
       const d = Math.atan2(Math.sin(want - h), Math.cos(want - h));
       cmd.drive.omega = THREE.MathUtils.clamp(d * 7, -s.maxOmega, s.maxOmega);
     }
