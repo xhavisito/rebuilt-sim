@@ -22,7 +22,7 @@ import { climbSlots, type TowerOccupancy } from '../game/Climber';
 import { chassisYawFor } from '../game/Mechanisms';
 import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
-import { Navigator, zoneOf, type Pt } from './Navigator';
+import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
 
 export interface AiContext {
   robots: Robot[];
@@ -171,7 +171,9 @@ export class RobotAI {
         const tof = r.lastSolution?.tof ?? 1.0;
         if (this.state === 'score' && inZone && n > 0 && this.hubCountsIn(tof + 0.1)) {
           cmd.shoot = true;
-          if (r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(faceHub);
+          // Zona muerta (0.03 rad) menor que la tolerancia de tiro del shooter fijo (6°): con la
+          // de 0.1 rad se quedaba quieto entre 0.09 y 0.1, sin girar ni disparar
+          if (r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(faceHub, 0.03);
         }
         break;
       }
@@ -338,6 +340,7 @@ export class RobotAI {
       // pegadas a la pared o a la TOWER: la intake (sólida) toca la estructura antes que la pelota
       if (Math.abs(z) > F.HALF_W - 0.17 || Math.abs(x) > F.HALF_L - 0.3) continue;
       if (TOWERS.some((tw) => Math.hypot(x - tw.x, z - tw.z) < 1.05)) continue;
+      if (behindTower(x, z, 0.5, 0.35)) continue; // y en la esquina junto a ella
       // En END GAME no se acerca a la TOWER rival (G420)
       if (endgame) {
         const tw = F.towerInfo(opponent(r.alliance));

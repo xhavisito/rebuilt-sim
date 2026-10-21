@@ -248,7 +248,7 @@ export function predictLaunch(
   }
   if (!sol) return null;
   let yaw = s.type === 'turret' ? sol.yaw : hs;
-  if (s.type === 'fixed' && Math.abs(wrap(sol.yaw - hs)) < 6 * DEG) yaw = sol.yaw;
+  if (s.type === 'fixed' && Math.abs(wrap(sol.yaw - hs)) < FIXED_AIM_TOL) yaw = sol.yaw;
   const lv = launchVector(yaw, sol.pitch, sol.speed);
   return {
     from: { x: from.x + Math.cos(yaw) * 0.05, y: from.y, z: from.z - Math.sin(yaw) * 0.05 },
@@ -356,7 +356,8 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
   if (available === 0) return;
   if (ctx.requireAlign && solution && kind !== 'corral') {
     const aimYaw = s.type === 'turret' ? h + r.turretYaw : hs;
-    if (Math.abs(wrap(solution.yaw - aimYaw)) > 0.09) return;
+    // El shooter fijo corrige hasta ±6° al tirar (abajo): esa es su tolerancia
+    if (Math.abs(wrap(solution.yaw - aimYaw)) > (s.type === 'fixed' ? FIXED_AIM_TOL : 0.09)) return;
   }
 
   // ---- Lanzamiento
@@ -369,7 +370,7 @@ export function runShooter(r: Robot, ctx: MechContext, dt: number): void {
     speed = 2.6;
   } else if (solution && s.type === 'turret') yaw = solution.yaw;
   // Un shooter fijo solo puede tirar hacia su frente: si la solución cae fuera (±6°), dispara de frente.
-  if (s.type === 'fixed' && solution && Math.abs(wrap(solution.yaw - hs)) < 6 * DEG) yaw = solution.yaw;
+  if (s.type === 'fixed' && solution && Math.abs(wrap(solution.yaw - hs)) < FIXED_AIM_TOL) yaw = solution.yaw;
   if (kind === 'corral') {
     launchOne(r, ctx, kind, yaw, pitch, speed, 0);
     r.shootCooldown = 1 / Math.max(0.5, s.rate);
@@ -453,4 +454,7 @@ function launchOne(r: Robot, ctx: MechContext, kind: 'shot' | 'pass' | 'corral',
 }
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Error de rumbo que corrige un shooter fijo al tirar (más allá tira de frente). */
+const FIXED_AIM_TOL = 6 * DEG;
 
