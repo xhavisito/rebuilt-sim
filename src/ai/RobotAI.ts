@@ -8,11 +8,12 @@
  *   cuando su propio HUB está inactivo,
  *   soltando antes de 3 s de PIN (G418).
  * - CLIMB: en END GAME sube a su TOWER si le alcanza el tiempo.
+ * - DESCEND: si quedó colgado desde AUTO, en TELEOP baja para seguir jugando.
  * Evita G420 (no se acerca a rivales en su TOWER en los últimos 30 s) y G419.
  */
 import * as F from '../config/field';
 import type { Difficulty } from '../config/settings';
-import { T } from '../core/clock';
+import { isTeleop, T } from '../core/clock';
 import { fuelCounts } from '../core/hub';
 import type { Match } from '../core/match';
 import type { Rng } from '../core/rng';
@@ -35,7 +36,7 @@ export interface AiContext {
   claims: Map<number, number>;
 }
 
-type State = 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'idle';
+type State = 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'descend' | 'idle';
 
 export const DIFFICULTY: Record<Difficulty, { speed: number; think: number; accuracy: number; climbMargin: number; mistakes: number }> = {
   easy: { speed: 0.68, think: 0.9, accuracy: 0.82, climbMargin: 7, mistakes: 0.25 },
@@ -43,6 +44,12 @@ export const DIFFICULTY: Record<Difficulty, { speed: number; think: number; accu
   hard: { speed: 0.94, think: 0.3, accuracy: 1.0, climbMargin: 4, mistakes: 0.04 },
   einstein: { speed: 1.0, think: 0.18, accuracy: 1.06, climbMargin: 3, mistakes: 0 },
 };
+
+/** Centro aproximado de cada TOWER (UPRIGHTS y base). */
+const TOWERS = (['red', 'blue'] as const).map((a) => {
+  const tw = F.towerInfo(a);
+  return { x: tw.uprightX - tw.facing * 0.3, z: tw.cz };
+});
 
 export class RobotAI {
   state: State = 'idle';
@@ -53,6 +60,9 @@ export class RobotAI {
   private targetAge = 0;
   private target: Pt | null = null;
   private retreatT = 0;
+  /** Pelotas por las que se atoró (índice → momento): las evita unos segundos. */
+  private skip = new Map<number, number>();
+  private seenEscapes = 0;
   private defendTarget = -1;
   /** Juega defensa cuando su HUB está inactivo y el del rival activo (lo asigna la sesión). */
   defender = false;
@@ -118,6 +128,12 @@ export class RobotAI {
         r.intakeOn = true;
         this.targetAge += dt;
         if (this.targetBall >= 0 && f.state[this.targetBall] !== FuelState.Field) this.targetBall = -1;
+        // Se atoró yendo por esta pelota (pegada a una pared o estructura): otra por un rato
+        if (this.nav.escapes !== this.seenEscapes) {
+          this.seenEscapes = this.nav.escapes;
+          if (this.targetBall >= 0) this.skip.set(this.targetBall, this.ctx.match?.t ?? 0);
+          this.targetBall = -1;
+        }
         if (this.targetBall < 0 || this.targetAge > 1.5) this.pickBall();
         if (this.targetBall >= 0) {
           const o = this.targetBall * 3;
@@ -198,6 +214,13 @@ export class RobotAI {
         if (Math.hypot(slot.x - p.x, slot.z - p.z) < 1.0) cmd.climbUp = true;
         break;
       }
+      case 'descend': {
+        // Bajó de la TOWER de AUTO (ya se evaluaron sus puntos): suelta el RUNG y sigue jugando
+        r.intakeOn = false;
+        if (r.climbing) cmd.climbDown = true;
+        else this.state = 'collect';
+        break;
+      }
       case 'idle':
         break;
     }
@@ -227,6 +250,13 @@ export class RobotAI {
     const n = this.ctx.fuel.robotCount(r.index);
     const cap = r.spec.hopperCapacity;
     const m = this.ctx.match;
+    // Colgado desde AUTO (§6.5-C: esa TOWER se evalúa al llegar a 0:00): en TELEOP baja a jugar y
+    // vuelve a subir en END GAME. Si la IA misma decidió subir (estado 'climb'), se queda.
+    if (r.climbing && this.state !== 'climb' && m && isTeleop(m.phase) && m.phase !== 'END_GAME' && !this.canClimbNow()) {
+      this.state = 'descend';
+      return;
+    }
+    if (this.state === 'descend' && r.climbing) return;
     if (r.climbing || this.state === 'climb' || this.canClimbNow()) {
       this.state = 'climb';
       return;
@@ -299,11 +329,15 @@ export class RobotAI {
       if (zx === oppZone) continue;
       const owner = claims.get(i);
       if (owner !== undefined && owner !== r.index) continue;
+      const sk = this.skip.get(i);
+      if (sk !== undefined && (m?.t ?? 0) - sk < 8) continue;
       // lejos de las salidas de los HUBS (G408) y de las estructuras
       if (Math.abs(Math.abs(x) - Math.abs(F.HUB_CENTER_X_BLUE)) < 1.0 && Math.abs(z) < 1.0) continue;
       if (Math.abs(Math.abs(x) - Math.abs(F.HUB_CENTER_X_BLUE)) < 0.8) continue;
       if (tall && Math.abs(z) > F.HALF_W - F.TRENCH_CLEAR_WIDTH && Math.abs(Math.abs(x) - Math.abs(F.HUB_CENTER_X_BLUE)) < 0.9) continue;
-      if (Math.abs(z) > F.HALF_W - 0.12 || Math.abs(x) > F.HALF_L - 0.12) continue;
+      // pegadas a la pared o a la TOWER: la intake (sólida) toca la estructura antes que la pelota
+      if (Math.abs(z) > F.HALF_W - 0.17 || Math.abs(x) > F.HALF_L - 0.3) continue;
+      if (TOWERS.some((tw) => Math.hypot(x - tw.x, z - tw.z) < 1.05)) continue;
       // En END GAME no se acerca a la TOWER rival (G420)
       if (endgame) {
         const tw = F.towerInfo(opponent(r.alliance));

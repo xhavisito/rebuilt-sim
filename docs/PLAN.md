@@ -195,6 +195,18 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     más chico. Los diseños propios se hacen en el editor (con una plantilla sin CAD).
 22. **Cámara a bordo**: el robot propio no se dibuja en esa vista (la cámara quedaba dentro de su
     hopper y sus paredes de policarbonato tapaban todo).
+23. **IA y la TOWER de AUTO**: un robot que quedó colgado en L1 al terminar AUTO (sus 15 puntos
+    ya se evaluaron a las 0:00, §6.5-C) baja al empezar TELEOP, sigue jugando y vuelve a subir en
+    END GAME. Si la IA misma decidió subir, no baja.
+24. **IA atorada**: si quiere moverse y no avanza por 1 s, se aleja en la dirección contraria a lo
+    que toca (normal de los contactos de BUMPERS, superestructura e intake con el campo y los
+    robots), un poco de lado y sin girar (al girar, la intake desplegada vuelve a trabarse), y
+    deja por 8 s la pelota que perseguía. No persigue FUEL pegado a las paredes (0.17 m del
+    barandal, 0.3 m de la ALLIANCE WALL) ni a 1.05 m de su TOWER, cruza el TRENCH alineada con el
+    campo y cruza el BUMP a ≤ 2.6 m/s.
+25. **Robots que no se voltean**: el robot real tiene el centro de masa muy bajo y aterriza plano;
+    la caja simulada podía caer de lado al pasar el BUMP girando o al chocar. Más allá de 20° de
+    inclinación (la rampa es de 15°: no se toca) se frena el cabeceo/alabeo y un par lo endereza.
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
