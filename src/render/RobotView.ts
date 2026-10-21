@@ -716,28 +716,43 @@ export class RobotView {
   /** Paredes de policarbonato del hopper que el CAD no trae (`CadRig.walls`). */
   private wallFronts: Array<{ mesh: THREE.Object3D; x0: number; x1: number }> = [];
   private buildCadWalls(wpi: THREE.Object3D, walls: NonNullable<CadRig['walls']>): void {
-    const mat = new THREE.MeshStandardMaterial({ color: 0xe6edf3, roughness: 0.25, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false });
-    const edge = new THREE.LineBasicMaterial({ color: 0xc9d2da });
-    const panel = (sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
-      const geo = new THREE.BoxGeometry(sx, sy, sz);
-      const m = new THREE.Mesh(geo, mat);
-      m.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), edge));
+    // Policarbonato con un poco de tinte y brillo, en marco de aluminio (postes en las esquinas y
+    // riel arriba y abajo), como los hoppers de verdad
+    const poly = new THREE.MeshStandardMaterial({ color: 0xd9e6f2, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false });
+    const alu = SHARED.alu;
+    const T = inch(1); // tubo de 1 in
+    const box = (parent: THREE.Object3D, mat: THREE.Material, sx: number, sy: number, sz: number, x: number, y: number, z: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
       m.position.set(x, y, z);
-      m.renderOrder = 2;
-      wpi.add(m);
+      if (mat === poly) m.renderOrder = 2;
+      else m.castShadow = true;
+      parent.add(m);
       return m;
     };
-    const t = 0.004;
     for (const b of walls) {
       const [x0, y0, z0] = b.min;
       const [x1, y1, z1] = b.max;
       const h = z1 - z0;
       const zc = (z0 + z1) / 2;
       const xMax = b.maxDeployed ? b.maxDeployed[0] : x1;
-      // laterales del largo desplegado (el frente se recorre por dentro de ellos), atrás y frente
-      for (const y of [y0, y1]) panel(xMax - x0, t, h, (x0 + xMax) / 2, y, zc);
-      panel(t, y1 - y0, h, x0, (y0 + y1) / 2, zc);
-      const front = panel(t, y1 - y0, h, x1, (y0 + y1) / 2, zc);
+      const L = xMax - x0;
+      const W = y1 - y0;
+      // laterales (del largo desplegado: el frente corre por dentro) y pared de atrás
+      for (const y of [y0, y1]) {
+        box(wpi, poly, L, 0.004, h, x0 + L / 2, y, zc);
+        box(wpi, alu, L, T, T, x0 + L / 2, y, z1 - T / 2);
+        box(wpi, alu, L, T, T, x0 + L / 2, y, z0 + T / 2);
+        box(wpi, alu, T, T, h, x0 + T / 2, y, zc);
+      }
+      box(wpi, poly, 0.004, W, h, x0, (y0 + y1) / 2, zc);
+      box(wpi, alu, T, W, T, x0 + T / 2, (y0 + y1) / 2, z1 - T / 2);
+      // frente: pared con su marco (se mueve como bloque)
+      const front = new THREE.Group();
+      front.position.x = x1;
+      box(front, poly, 0.004, W, h, 0, (y0 + y1) / 2, zc);
+      box(front, alu, T, W, T, -T / 2, (y0 + y1) / 2, z1 - T / 2);
+      for (const y of [y0, y1]) box(front, alu, T, T, h, -T / 2, y, zc);
+      wpi.add(front);
       if (b.maxDeployed) this.wallFronts.push({ mesh: front, x0: x1, x1: b.maxDeployed[0] });
     }
   }

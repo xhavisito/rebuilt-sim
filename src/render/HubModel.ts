@@ -120,11 +120,18 @@ export class HubModel {
     this.add('cap', boxAt(2 * hs - 0.04, 0.01, 2 * hs - 0.04, 0, base + 0.005, 0));
     // Base de acero alrededor (con el corte en V hacia las caras principales)
     this.add('steel', boxAt(2 * hs + 0.004, base, 2 * hs + 0.004, 0, base / 2, 0));
-    // Caras hacia las paredes (±X): panel negro de lado a lado
+    // Caras hacia las ALLIANCE WALLS (±X): banda negra arriba (AprilTags), marco negro en las
+    // orillas y el centro de policarbonato: el DRIVER ve a través lo que el HUB le tapa
+    const band = 0.93;
+    const rim = 0.07;
     for (const sx of [-1, 1]) {
-      this.add('black', boxAt(0.012, top - base, 2 * hs, sx * (hs - inset - 0.006), base + (top - base) / 2, 0));
-      // Gráfico genérico (debajo de los AprilTags)
-      const gfx = new THREE.PlaneGeometry(2 * hs - 0.16, 0.5);
+      const x = sx * (hs - inset - 0.006);
+      this.add('black', boxAt(0.012, top - band, 2 * hs, x, (band + top) / 2, 0));
+      this.add('black', boxAt(0.012, rim, 2 * hs, x, base + rim / 2, 0));
+      for (const sz of [-1, 1]) this.add('black', boxAt(0.012, band - base, rim, x, base + (band - base) / 2, sz * (hs - rim / 2)));
+      this.add('clear', boxAt(0.008, band - base - rim, 2 * hs - 2 * rim, x, base + rim + (band - base - rim) / 2, 0));
+      // Gráfico genérico translúcido (no tapa la vista)
+      const gfx = new THREE.PlaneGeometry(2 * hs - 0.24, 0.42);
       gfx.rotateY(sx > 0 ? Math.PI / 2 : -Math.PI / 2);
       gfx.translate(sx * (hs - inset + 0.001), 0.6, 0);
       this.add('graphic', gfx);
@@ -289,7 +296,7 @@ export class HubModel {
       smoke: new THREE.MeshStandardMaterial({ color: 0x1d2026, roughness: 0.3, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }),
       net: new THREE.MeshStandardMaterial({ map: netTexture(), transparent: true, side: THREE.DoubleSide, depthWrite: false, roughness: 0.9 }),
       steel: new THREE.MeshStandardMaterial({ color: 0x9aa0a8, metalness: 0.6, roughness: 0.45 }),
-      graphic: new THREE.MeshStandardMaterial({ map: graphicTexture(), roughness: 0.6 }),
+      graphic: new THREE.MeshStandardMaterial({ map: graphicTexture(), roughness: 0.6, transparent: true, opacity: 0.35, depthWrite: false }),
       light: this.lightMaterial,
       slot: new THREE.MeshStandardMaterial({ color: 0x08090b, roughness: 1 }),
     };
@@ -297,8 +304,8 @@ export class HubModel {
       const merged = mergeGeometries(geos, false);
       if (!merged) continue;
       const mesh = new THREE.Mesh(merged, mats[b]);
-      const transparent = b === 'funnel' || b === 'clear' || b === 'smoke' || b === 'net';
-      mesh.castShadow = !transparent && b !== 'light' && b !== 'graphic';
+      const transparent = b === 'funnel' || b === 'clear' || b === 'smoke' || b === 'net' || b === 'graphic';
+      mesh.castShadow = !transparent && b !== 'light';
       mesh.receiveShadow = !transparent;
       mesh.renderOrder = transparent ? 3 : 0;
       mesh.name = `hub-${b}`;

@@ -503,11 +503,14 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([hopperExt3478(deg), 0, 0]),
       ];
     },
-    // El FUEL da vueltas alrededor del cono del spindexer (anillo de ~0.47 m de diámetro) y se
-    // apila encima, al frente; con la intake desplegada el hopper crece hasta su nuevo frente
+    // Todo el hopper (mitad del frente, de la pared del elevador/turret a la pared del frente y de
+    // lado a lado, hasta arriba): el FUEL da vueltas alrededor del cono del spindexer, se apila
+    // arriba de la intake guardada y ocupa el hueco que ella deja al salir; con la intake
+    // desplegada el hopper crece hasta su nuevo frente. Lleno se ve lleno (75 FUEL).
     hopper: [
       { min: [0, 0, 0.11], max: [0, 0, 0.26], ring: [0.0985, -0.004, 0.16] },
-      { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.12 + HOPPER_EXT_3478, 0.3, 0.6] },
+      { min: [0.02, -0.31, 0.27], max: [0.12, 0.31, 0.44], maxDeployed: [0.12 + HOPPER_EXT_3478, 0.31, 0.44] },
+      { min: [0.02, -0.31, 0.44], max: [0.33, 0.31, 0.72], maxDeployed: [0.33 + HOPPER_EXT_3478, 0.31, 0.72] },
     ],
   },
 };
