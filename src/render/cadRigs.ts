@@ -457,6 +457,11 @@ export const CAD_RIGS: Record<string, CadRig> = {
         rotateAround(IDENTITY, spinC, rot(0, 0, m.spin)),
       ];
     },
-    hopper: { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.3, 0.3, 0.6] },
+    // El FUEL da vueltas alrededor del cono del spindexer (anillo de ~0.47 m de diámetro) y se
+    // apila encima, al frente; con la intake desplegada el hopper crece hasta el frente
+    hopper: [
+      { min: [0, 0, 0.11], max: [0, 0, 0.26], ring: [0.0985, -0.004, 0.16] },
+      { min: [-0.02, -0.3, 0.27], max: [0.12, 0.3, 0.6], maxDeployed: [0.3, 0.3, 0.6] },
+    ],
   },
 };
