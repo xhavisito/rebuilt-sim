@@ -76,7 +76,8 @@ export class Robot {
   /** Nivel/puntos de TOWER evaluados (para resultados). */
   towerResult = { auto: 0, teleop: 0, level: 0 };
   /** Estadísticas del match (MVP). */
-  stats = { fuelScored: 0, fuelShot: 0, towerPts: 0, fouls: 0, intaked: 0, passes: 0 };
+  /** Estadísticas del match (resultados y ranking por categoría del torneo). */
+  stats = { fuelScored: 0, fuelShot: 0, towerPts: 0, fouls: 0, intaked: 0, passes: 0, distance: 0, defenseSec: 0 };
 
   constructor(
     pw: PhysicsWorld,

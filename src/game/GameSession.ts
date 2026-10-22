@@ -545,6 +545,7 @@ export class GameSession {
       r.phys.plow = plowLoad(r, this.fuel);
       r.phys.drive(r.cmd.drive, dt);
       if (r.enabled) {
+        this.trackStats(r, dt);
         this.runClimb(r, dt);
         const ctx = this.mechContext(r);
         runIntake(r, ctx, dt);
@@ -587,6 +588,18 @@ export class GameSession {
   }
 
   /** Golpes fuertes: sonido, vibración y temblor de cámara. */
+  /**
+   * Recorrido y tiempo defendiendo (para el ranking por categoría del torneo): defiende si está
+   * del lado del campo del rival, a menos de 1.4 m de un robot rival.
+   */
+  private trackStats(r: Robot, dt: number): void {
+    const v = r.phys.velocity();
+    r.stats.distance += Math.hypot(v.x, v.z) * dt;
+    const p = r.phys.curPos;
+    if (p.x * F.allianceSign(r.alliance) > 0) return; // en su propio lado
+    if (this.robots.some((o) => o.alliance !== r.alliance && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < 1.4)) r.stats.defenseSec += dt;
+  }
+
   private onContactForce(h1: number, h2: number, force: number): void {
     const a = this.pw.tagOf(h1);
     const b = this.pw.tagOf(h2);

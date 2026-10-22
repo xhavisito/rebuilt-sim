@@ -7,7 +7,8 @@ import { DIFFICULTY } from '../ai/RobotAI';
 import * as THREE from 'three';
 import * as F from '../config/field';
 import { CAD_ROBOTS, robotById, ROBOT_PRESETS, type RobotSpec } from '../config/robots';
-import type { Tournament, TMatch } from '../core/tournament';
+import { Rng } from '../core/rng';
+import { simulateMatch, type TeamPerf, type Tournament, type TMatch } from '../core/tournament';
 import { StrategyPlanner } from '../ui/StrategyPlanner';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
@@ -150,7 +151,7 @@ export class App {
       this.save();
       this.screens.setup('match');
     });
-    this.tourney = new TournamentScreen(this.screens.root, this.settings, back, (tt, m) => this.playTournamentMatch(tt, m));
+    this.tourney = new TournamentScreen(this.screens.root, this.settings, back, (tt, m, watch) => this.playTournamentMatch(tt, m, watch));
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.installPrompt = e as Event & { prompt: () => Promise<void> };
@@ -426,8 +427,11 @@ export class App {
     });
   }
 
-  /** Juega un match del torneo con los equipos del calendario. */
-  playTournamentMatch(tt: Tournament, match: TMatch): void {
+  /**
+   * Juega un match del torneo con los equipos del calendario, o lo ve (`watch`: todos los robots
+   * de la IA, con cámara de transmisión o desde las gradas).
+   */
+  playTournamentMatch(tt: Tournament, match: TMatch, watch?: 'broadcast' | 'stands'): void {
     const m = this.settings.match;
     const robots: RobotSlotConfig[] = [];
     for (const [a, ids] of [
@@ -435,7 +439,7 @@ export class App {
       ['blue', match.blue],
     ] as const)
       ids.forEach((ti, k) => {
-        const team = tt.teams[ti];
+        const team = watch ? { ...tt.teams[ti], isPlayer: false } : tt.teams[ti];
         const spec = robotById(team.specId);
         spec.teamNumber = team.team;
         if (!team.isPlayer) spec.shooter.accuracy = Math.min(0.97, spec.shooter.accuracy * (0.85 + 0.2 * team.strength));
@@ -447,13 +451,13 @@ export class App {
           autoRoutine: team.isPlayer ? m.autoRoutine : undefined,
           startOffsetZ: team.isPlayer ? m.startOffset * (a === 'blue' ? 1 : -1) : 0,
           // Tu estrategia para tu alianza; los demás, en automático
-          plan: team.isPlayer ? undefined : planFor(strategyById(ids.some((x) => tt.teams[x].isPlayer) ? m.strategy : 'auto'), a, (k + 1) as StationNumber),
+          plan: team.isPlayer ? undefined : planFor(strategyById(!watch && ids.some((x) => tt.teams[x].isPlayer) ? m.strategy : 'auto'), a, (k + 1) as StationNumber),
         });
       });
     this.startSession({
       mode: 'tournament',
       robots,
-      humanPlayers: { [robots.find((r) => r.control.type === 'player')!.alliance]: m.humanPlayer },
+      humanPlayers: watch ? {} : { [robots.find((r) => r.control.type === 'player')!.alliance]: m.humanPlayer },
       aiDifficulty: m.difficulty,
       fuelTotal: m.fuel,
       eventType: tt.eventType,
@@ -461,7 +465,24 @@ export class App {
       playoff: match.kind !== 'qual',
       seed: (Math.random() * 2 ** 32) >>> 0,
     });
+    if (watch) this.session?.setCamera(watch);
     this.tournamentCtx = { tt, match };
+  }
+
+  /** Omite un match del torneo que se está viendo: se simula su resultado. */
+  skipTournamentMatch(): void {
+    const c = this.tournamentCtx;
+    if (!c) return;
+    const target = (c.match.kind === 'qual' ? c.tt.quals : c.tt.playoffs).find((x) => x.id === c.match.id);
+    if (target && !target.result) target.result = simulateMatch(c.tt.teams, target, c.tt.eventType, new Rng((Math.random() * 2 ** 32) >>> 0));
+    saveTournament(c.tt);
+    this.session?.dispose();
+    this.session = null;
+    this.tournamentCtx = null;
+    this.audio.stopMusic();
+    this.closeOverlay();
+    this.hud.setVisible(false);
+    this.openTournament();
   }
 
   /** Guarda el resultado del match jugado en el torneo y vuelve a su pantalla. */
@@ -479,7 +500,20 @@ export class App {
       rp: mm.rp(a, s.robots.some((r) => r.alliance === a && r.isPlayer && mm.disqualified.has(r.index))).total,
     });
     const target = (c.match.kind === 'qual' ? c.tt.quals : c.tt.playoffs).find((x) => x.id === c.match.id);
-    if (target) target.result = { red: side('red'), blue: side('blue') };
+    // Desempeño por categoría (ranking del torneo): los robots van en el orden rojo, azul
+    const ids = [...c.match.red, ...c.match.blue];
+    const perf: Record<number, TeamPerf> = {};
+    s.robots.forEach((r, k) => {
+      const st = r.stats;
+      const fouls = mm.fouls.filter((f) => f.robot === r.index).length;
+      perf[ids[k]] = {
+        fuel: st.fuelScored,
+        passes: st.passes,
+        defense: Math.round(st.defenseSec),
+        driving: Math.round(Math.max(0, Math.min(100, 100 * (0.7 * Math.min(1, st.distance / 260) + 0.3 * Math.max(0, 1 - fouls * 0.2))))),
+      };
+    });
+    if (target) target.result = { red: side('red'), blue: side('blue'), perf };
     saveTournament(c.tt);
     this.tournamentCtx = null;
     this.openTournament();
@@ -646,6 +680,7 @@ export class App {
             <button data-a="resume" class="primary" data-nav data-nav-default>${I.play}<span>${t('resume')}</span><kbd>Esc</kbd></button>
             ${practice ? `<button data-a="reset" data-nav>${I.reset}<span>${t('resetField')}</span></button>` : ''}
             ${this.tournamentCtx ? '' : `<button data-a="restart" data-nav>${I.restart}<span>${t('restart')}</span></button>`}
+            ${this.tournamentCtx && !s.players().length ? `<button data-a="skipMatch" data-nav>${I.restart}<span>${t('skipMatch')}</span></button>` : ''}
             <button data-a="quit" class="quit" data-nav>${I.quit}<span>${t('quit')}</span></button>
           </nav>
         </section>
@@ -674,6 +709,7 @@ export class App {
           this.session?.resetField();
           this.togglePause();
         } else if (a === 'restart') this.restart();
+        else if (a === 'skipMatch') this.skipTournamentMatch();
         else if (a === 'quit') this.quitToMenu();
         else if (a.startsWith('t:')) {
           const k = a.slice(2);

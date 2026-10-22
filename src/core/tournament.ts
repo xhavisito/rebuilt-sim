@@ -2,7 +2,10 @@
  * Torneo rápido (§10.5, §10.6): Qualifications con calendario, ranking por Ranking Score
  * y desempates de la Tabla 10-1, selección de alianzas serpentina y Playoffs
  * (semifinales a 1 match, final al mejor de 3). Los matches donde no juega el jugador se
- * simulan estadísticamente a partir de la "fuerza" de cada equipo.
+ * simulan estadísticamente a partir de la "fuerza" de cada equipo (o se ven en vivo).
+ * Además: ranking por categoría (anotar, defensa, pases, manejo) y selección de alianzas por
+ * turnos donde el capitán invita y el equipo acepta o rechaza (§10.6: quien rechaza ya no puede
+ * ser elegido).
  */
 import type { Rng } from './rng';
 import { rankingPoints } from './rp';
@@ -15,7 +18,31 @@ export interface TeamEntry {
   /** 0–1: calidad del equipo para la simulación estadística. */
   strength: number;
   isPlayer: boolean;
+  /** Pros y contras del robot (0–1, del scouting): para simular categorías y elegir alianzas. */
+  traits?: TeamTraits;
 }
+
+export interface TeamTraits {
+  scoring: number;
+  defense: number;
+  passing: number;
+  driving: number;
+}
+
+/** Desempeño de un equipo en un match, por categoría. */
+export interface TeamPerf {
+  /** FUEL anotado en su HUB. */
+  fuel: number;
+  /** FUEL pasado a su ALLIANCE ZONE. */
+  passes: number;
+  /** Segundos defendiendo (cerca de un rival, de su lado del campo). */
+  defense: number;
+  /** Manejo 0–100 (recorrido, velocidad, limpieza: pocas faltas). */
+  driving: number;
+}
+
+export type Category = keyof TeamPerf;
+export const CATEGORIES: Category[] = ['fuel', 'defense', 'passes', 'driving'];
 
 export interface AllianceMatchResult {
   score: number;
@@ -31,7 +58,23 @@ export interface TMatch {
   kind: 'qual' | 'semi' | 'final';
   red: number[]; // índices de equipo
   blue: number[];
-  result?: { red: AllianceMatchResult; blue: AllianceMatchResult };
+  result?: { red: AllianceMatchResult; blue: AllianceMatchResult; perf?: Record<number, TeamPerf> };
+}
+
+export interface SelectionLog {
+  alliance: number;
+  team: number;
+  accepted: boolean;
+}
+
+/** Selección de alianzas en curso (§10.6). */
+export interface Selection {
+  alliances: number[][];
+  /** Turno en el orden serpentina 1-2-3-4-4-3-2-1. */
+  turn: number;
+  /** Equipos que rechazaron: ya no pueden ser elegidos. */
+  declined: number[];
+  log: SelectionLog[];
 }
 
 export interface Tournament {
@@ -42,6 +85,9 @@ export interface Tournament {
   playoffs: TMatch[];
   champion: number | null; // índice de alianza
   seed: number;
+  selection?: Selection | null;
+  /** Matches de otros equipos: preguntar si verlos u omitirlos siempre. */
+  others?: 'ask' | 'skip';
 }
 
 /** Calendario: cada equipo juega `perTeam` matches; se evita repetir compañeros cuando se puede. */
@@ -79,14 +125,23 @@ export function generateSchedule(nTeams: number, perTeam: number, rng: Rng): TMa
 const key = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 
 /** Simulación estadística de un match entre dos alianzas. */
-export function simulateMatch(teams: TeamEntry[], m: TMatch, ev: EventType, rng: Rng): { red: AllianceMatchResult; blue: AllianceMatchResult } {
+export function simulateMatch(teams: TeamEntry[], m: TMatch, ev: EventType, rng: Rng): { red: AllianceMatchResult; blue: AllianceMatchResult; perf: Record<number, TeamPerf> } {
+  const perf: Record<number, TeamPerf> = {};
   const side = (idx: number[]) => {
     let fuel = 0;
     let auto = 0;
     let tower = 0;
     for (const i of idx) {
       const s = teams[i].strength;
-      fuel += Math.max(0, 25 + 95 * s + rng.gauss() * 14);
+      const tr = teams[i].traits ?? { scoring: s, defense: 0.5, passing: 0.5, driving: 0.5 };
+      const f = Math.max(0, 25 + 95 * s + rng.gauss() * 14);
+      fuel += f;
+      perf[i] = {
+        fuel: Math.round(f * (0.75 + 0.5 * tr.scoring) * 0.8),
+        passes: Math.max(0, Math.round((tr.passing > 0.6 ? 26 : 8) * tr.passing * (0.5 + s) + rng.gauss() * 4)),
+        defense: Math.max(0, Math.round(45 * tr.defense * (1 - tr.scoring) + rng.gauss() * 5)),
+        driving: Math.round(Math.max(0, Math.min(100, 100 * (0.55 * tr.driving + 0.45 * s) + rng.gauss() * 6))),
+      };
       auto += Math.max(0, 3 + 12 * s + rng.gauss() * 3);
       tower += rng.next() < 0.3 + 0.6 * s ? (s > 0.75 ? 30 : s > 0.5 ? 20 : 10) : 0;
     }
@@ -101,7 +156,114 @@ export function simulateMatch(teams: TeamEntry[], m: TMatch, ev: EventType, rng:
     const opScore = op.fuel + op.tower + me.fouls;
     return { score, noFoul, autoFuel: me.auto, tower: me.tower, rp: rankingPoints({ fuel: me.fuel, towerPoints: me.tower, score, opponentScore: opScore }, ev).total };
   };
-  return { red: mk(r, b), blue: mk(b, r) };
+  return { red: mk(r, b), blue: mk(b, r), perf };
+}
+
+/** Fila del ranking por categoría: promedio por match. */
+export interface CategoryRow {
+  team: number;
+  value: number;
+  played: number;
+}
+
+/** Ranking de una categoría (Qualifications y Playoffs con datos). */
+export function categoryRankings(t: Tournament, cat: Category): CategoryRow[] {
+  const sum = t.teams.map(() => ({ v: 0, n: 0 }));
+  for (const m of [...t.quals, ...t.playoffs])
+    for (const [k, p] of Object.entries(m.result?.perf ?? {})) {
+      sum[Number(k)].v += p[cat];
+      sum[Number(k)].n++;
+    }
+  return sum
+    .map((s, team) => ({ team, value: s.n ? s.v / s.n : 0, played: s.n }))
+    .sort((a, b) => b.value - a.value || a.team - b.team);
+}
+
+// ------------------------------------------------------------------ selección de alianzas
+
+const SERPENTINE = [0, 1, 2, 3, 3, 2, 1, 0];
+
+/** Empieza la selección: los 4 primeros del ranking son capitanes. */
+export function beginSelection(t: Tournament, ranking: RankRow[]): Selection {
+  t.selection = { alliances: ranking.slice(0, 4).map((r) => [r.team]), turn: 0, declined: [], log: [] };
+  return t.selection;
+}
+
+/**
+ * Equipos que todavía se pueden elegir (ni en una alianza ni rechazaron). En un evento chico, si
+ * ya no alcanzan para llenar las alianzas, los que rechazaron vuelven a la lista y tienen que
+ * aceptar (`mustAccept`).
+ */
+export function availableTeams(t: Tournament): number[] {
+  const s = t.selection!;
+  const taken = new Set(s.alliances.flat());
+  const free = t.teams.map((_, i) => i).filter((i) => !taken.has(i));
+  const open = free.filter((i) => !s.declined.includes(i));
+  return open.length >= SERPENTINE.length - s.turn ? open : free;
+}
+
+/**
+ * ¿El equipo tiene que aceptar? Si ya rechazó antes y volvió a la lista, o si rechazar dejaría
+ * alguna alianza incompleta (evento sin equipos de sobra).
+ */
+export function mustAccept(t: Tournament, team: number): boolean {
+  const s = t.selection!;
+  if (s.declined.includes(team)) return true;
+  const taken = new Set(s.alliances.flat());
+  const others = t.teams.filter((_, i) => i !== team && !taken.has(i) && !s.declined.includes(i)).length;
+  return others < SERPENTINE.length - s.turn;
+}
+
+/** Alianza que elige ahora (índice 0–3), o null si terminó. */
+export function selectionTurn(t: Tournament): number | null {
+  const s = t.selection;
+  if (!s || s.turn >= SERPENTINE.length || !availableTeams(t).length) return null;
+  return SERPENTINE[s.turn];
+}
+
+/**
+ * Elección de un capitán de la IA: el mejor disponible por fuerza, con un extra por lo que le
+ * falta a su alianza (si nadie anota mucho, busca anotador; si nadie defiende, defensor…).
+ */
+export function aiPick(t: Tournament, alliance: number): number {
+  const s = t.selection!;
+  const mine = s.alliances[alliance].map((i) => t.teams[i]);
+  const keys: Array<keyof TeamTraits> = ['scoring', 'defense', 'passing', 'driving'];
+  const have = Object.fromEntries(keys.map((k) => [k, Math.max(...mine.map((m) => m.traits?.[k] ?? 0.5))])) as Record<keyof TeamTraits, number>;
+  const value = (i: number) => {
+    const tm = t.teams[i];
+    const gap = Math.max(...keys.map((k) => (tm.traits?.[k] ?? 0.5) - have[k]));
+    return tm.strength * 0.75 + Math.max(0, gap) * 0.25;
+  };
+  return availableTeams(t).sort((a, b) => value(b) - value(a))[0];
+}
+
+/**
+ * ¿Un equipo de la IA acepta la invitación? Casi siempre; un equipo bastante mejor que el
+ * capitán que lo invita a veces rechaza (espera una mejor oferta).
+ */
+export function aiAccepts(t: Tournament, team: number, alliance: number, rng: Rng): boolean {
+  if (mustAccept(t, team)) return true;
+  const cap = t.teams[t.selection!.alliances[alliance][0]];
+  const pDecline = Math.max(0.03, Math.min(0.45, 0.06 + 0.9 * (t.teams[team].strength - cap.strength)));
+  return rng.next() >= pDecline;
+}
+
+/** Registra la respuesta a una invitación y avanza el turno si aceptó. */
+export function respondInvite(t: Tournament, team: number, alliance: number, accepted: boolean): void {
+  const s = t.selection!;
+  accepted ||= mustAccept(t, team);
+  s.log.push({ alliance, team, accepted });
+  if (accepted) {
+    s.alliances[alliance].push(team);
+    s.turn++;
+  } else s.declined.push(team);
+}
+
+/** Cierra la selección y arma las semifinales. */
+export function finishSelection(t: Tournament): void {
+  t.alliances = t.selection!.alliances;
+  startPlayoffs(t);
 }
 
 export interface RankRow {
