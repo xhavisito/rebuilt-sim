@@ -26,6 +26,11 @@ export interface AutoRoutine {
   builtin?: boolean;
   /** Si es true, empieza disparando lo precargado desde la posición inicial. */
   shootPreload: boolean;
+  /**
+   * Rutina "de cualquier lado": si el robot sale del lado contrario (en z) al de su primer
+   * waypoint, se refleja en z para no cruzar por enfrente de sus compañeros.
+   */
+  mirrorToStart?: boolean;
   waypoints: AutoWaypoint[];
 }
 
@@ -39,13 +44,15 @@ export const BUILTIN_ROUTINES: AutoRoutine[] = [
   { id: 'none', name: 'Nada / Nothing', builtin: true, shootPreload: false, waypoints: [] },
   { id: 'preload', name: 'Solo precarga · Preload only', builtin: true, shootPreload: true, waypoints: [] },
   {
+    // Sale por el lado de su DRIVER STATION (el cruce lo elige el navegador), barre la NEUTRAL
+    // ZONE de su lado al otro y regresa a tirar por el otro lado
     id: 'default-score',
     name: 'Precarga + NEUTRAL ZONE',
     builtin: true,
     shootPreload: true,
+    mirrorToStart: true,
     waypoints: [
-      { x: line - 0.6, z: F.BUMP_CENTER_Z, heading: 0, intake: true },
-      { x: hubX + 1.4, z: F.BUMP_CENTER_Z, heading: 0 },
+      { x: hubX + 1.4, z: F.BUMP_CENTER_Z, heading: 0, intake: true },
       { x: -0.9, z: 0.9, heading: 0 },
       { x: -0.9, z: -0.9, heading: -Math.PI / 2 },
       { x: hubX + 1.4, z: -F.BUMP_CENTER_Z, heading: Math.PI },
@@ -94,14 +101,24 @@ export const BUILTIN_ROUTINES: AutoRoutine[] = [
 /** Zona del campo que ocupa una rutina en AUTO (para que dos robots de una alianza no choquen). */
 export type AutoZone = 'depot' | 'tower' | 'neutral-top' | 'neutral-bottom' | 'zone-top' | 'zone-bottom';
 
+/** Zona de un punto (marco azul). */
+export function pointZone(x: number, z: number): AutoZone {
+  if (Math.hypot(x - depot.x, z - depot.z) < F.DEPOT_WIDTH / 2 + 1.3) return 'depot';
+  if (Math.hypot(x - tower.uprightX, z - tower.cz) < 1.4) return 'tower';
+  if (x > hubX) return z < 0 ? 'neutral-top' : 'neutral-bottom';
+  return z < 0 ? 'zone-top' : 'zone-bottom';
+}
+
 /** Zonas por las que pasa una rutina (marco azul). */
 export function routineZones(r: AutoRoutine): AutoZone[] {
   const out = new Set<AutoZone>();
   for (const w of r.waypoints) {
     if (w.climb) out.add('tower');
-    else if (Math.hypot(w.x - depot.x, w.z - depot.z) < F.DEPOT_WIDTH / 2 + 1.3) out.add('depot');
-    else if (w.x > hubX) out.add(w.z < 0 ? 'neutral-top' : 'neutral-bottom');
-    else if (!w.shoot) out.add(w.z < 0 ? 'zone-top' : 'zone-bottom');
+    else {
+      const z = pointZone(w.x, w.z);
+      // el punto donde solo tira no "ocupa" su zona
+      if (!(w.shoot && (z === 'zone-top' || z === 'zone-bottom'))) out.add(z);
+    }
   }
   return [...out];
 }

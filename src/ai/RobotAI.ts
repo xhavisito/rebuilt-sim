@@ -28,6 +28,7 @@ import { climbSlots, type TowerOccupancy } from '../game/Climber';
 import { chassisYawFor } from '../game/Mechanisms';
 import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
+import { hubFuelNear } from './fuelSense';
 import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
 import { inLane, inNeutral, routeDistance, type RobotPlan } from './Strategy';
 import { passTarget, PASS_LANE_MIN } from '../game/Mechanisms';
@@ -346,6 +347,8 @@ export class RobotAI {
       case 'idle':
         break;
     }
+    // G408: no agarrar FUEL recién salido del HUB (la intake se apaga mientras pasa)
+    if (r.intakeOn && hubFuelNear(f, r)) r.intakeOn = false;
     cmd.intake = r.intakeOn;
     return cmd;
   }
