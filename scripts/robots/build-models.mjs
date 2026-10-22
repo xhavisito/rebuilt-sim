@@ -51,7 +51,8 @@ const qmul = (a, b) => [
 /** Secuencia de rotaciones de AdvantageScope (en orden, cada una premultiplicada). */
 const seqQuat = (rots) => {
   let q = [0, 0, 0, 1];
-  for (const r of rots ?? []) q = qmul(axisQuat(r.axis, r.degrees), q);
+  // Algunos config.json traen `{}` en vez de `[]` (8214): sin rotaciones
+  for (const r of Array.isArray(rots) ? rots : []) q = qmul(axisQuat(r.axis, r.degrees), q);
   return q;
 };
 
@@ -114,7 +115,9 @@ for (const src of SOURCES) {
   const root = doc.getRoot();
   const scene = root.getDefaultScene() ?? root.listScenes()[0];
   // ---- Partes: `main` + componentes con su transformación zeroed
-  const main = doc.createNode('main').setRotation(seqQuat(cfg.rotations)).setTranslation(cfg.position ?? [0, 0, 0]);
+  // `lift` (m): sube el modelo cuando el asset quedó bajo el piso (9584 trae las ruedas a −0.1 m)
+  const pos = cfg.position ?? [0, 0, 0];
+  const main = doc.createNode('main').setRotation(seqQuat(cfg.rotations)).setTranslation([pos[0], pos[1], pos[2] + (src.lift ?? 0)]);
   for (const n of scene.listChildren()) {
     scene.removeChild(n);
     main.addChild(n);
@@ -141,9 +144,11 @@ for (const src of SOURCES) {
   }
   // ---- CAD sin assets de AdvantageScope (`parts`): los subensambles que se mueven, por nombre,
   // pasan a ser los componentes c0, c1… con zeroed nulo (malla en el marco WPILib del robot).
+  // Si el asset ya trae componentes, los de `parts` siguen después de ellos.
   const mainM = mat4(main.getWorldMatrix());
   const mainInv = mainM.clone().invert();
-  for (const [i, re] of (src.parts ?? []).map((r) => new RegExp(r, 'i')).entries()) {
+  for (const re of (src.parts ?? []).map((r) => new RegExp(r, 'i'))) {
+    const i = groups.length - 1;
     const g = doc.createNode(`c${i}`);
     const frame = doc.createNode(`c${i}_frame`).setMatrix(mainM.toArray());
     g.addChild(frame);
@@ -303,6 +308,10 @@ for (const src of SOURCES) {
       max: box.isEmpty() ? null : box.max.toArray().map((v) => +v.toFixed(3)),
     };
   }
+  // Nodos que ya no cuelgan de la escena (prune() no siempre los quita: 9410 quedaba en 20 MB)
+  const live = new Set();
+  scene.traverse((n) => live.add(n));
+  for (const n of root.listNodes()) if (!live.has(n)) n.dispose();
   await doc.transform(prune({ keepLeaves: false }), dedup());
   // Un solo buffer (los componentes traían el suyo) y sin texturas (los CAD solo usan colores)
   const [buf0, ...extraBufs] = root.listBuffers();
