@@ -8,7 +8,6 @@ export const FOUL_POINTS: Record<FoulSeverity, number> = { MINOR: 5, MAJOR: 15 }
 
 export type RuleCode =
   | 'G211'
-  | 'G303'
   | 'G403'
   | 'G404'
   | 'G405'
@@ -30,7 +29,6 @@ export type RuleCode =
 /** Título corto de la regla (tal como lo nombra el manual) y explicación. */
 export const RULES: Record<RuleCode, { title: string; es: string; en: string }> = {
   G211: { title: 'Egregious or exceptional violations', es: 'Conducta grave o reincidente', en: 'Egregious or repeated behavior' },
-  G303: { title: 'Start your ROBOTS', es: 'Requisitos de inicio', en: 'MATCH-start requirements' },
   G403: { title: 'Limited AUTO opponent interaction', es: 'Cruzó la CENTER LINE en AUTO', en: 'Crossed the CENTER LINE in AUTO' },
   G404: { title: 'Use SCORING ELEMENTS as directed', es: 'Uso indebido de FUEL', en: 'FUEL misuse' },
   G405: { title: 'Keep SCORING ELEMENTS in bounds', es: 'Sacó FUEL del campo', en: 'Ejected FUEL from the FIELD' },

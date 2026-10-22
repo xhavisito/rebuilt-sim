@@ -133,14 +133,6 @@ export function validateSpec(s: RobotSpec): ValidationIssue[] {
         en: 'Total mass > 65 kg (115 lb + BUMPERS + battery)',
       },
     });
-  if (s.preload > 8)
-    out.push({ rule: 'G303', fatal: true, message: { es: 'Máximo 8 FUEL precargados', en: 'Max 8 preloaded FUEL' } });
-  if (s.preload > s.hopperCapacity)
-    out.push({
-      rule: 'G303',
-      fatal: true,
-      message: { es: 'La precarga excede la capacidad del hopper', en: 'Preload exceeds hopper capacity' },
-    });
   if (s.widthIn < 15 || s.lengthIn < 15)
     out.push({ rule: '—', fatal: true, message: { es: 'Dimensiones demasiado pequeñas', en: 'Dimensions too small' } });
   return out;
@@ -527,14 +519,14 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 21.6,
     massKg: 62,
     maxSpeed: 4.7,
-    // Asset de una pieza: solo la intake se mueve (sources.mjs `parts`)
+    // Asset de una pieza: la intake y la turret se separan por nombre (sources.mjs `parts`)
     intake: { widthIn: 25, extensionIn: 12, rate: 11 },
     hopperCapacity: 45,
-    shooter: { type: 'fixed', rate: 10, maxSpeed: 13, minAngle: 45, maxAngle: 76, accuracy: 0.87, exitHeightIn: 20, backspin: 25, lanes: 1, yawDeg: 0, posIn: [-3, 0] },
+    shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 45, maxAngle: 76, accuracy: 0.87, exitHeightIn: 20, backspin: 25, lanes: 1, posIn: [-2.2, -5.1] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#d4a017' },
     cad: { file: '2363.glb' },
-    real: cadReal('Triple Helix', 'Rho', 'Nivel medio-alto: spindexer grande e intake de cuatro barras al frente; rendimiento estimado.', 'Upper-mid tier: big spindexer and a front four-bar intake; estimated performance.'),
+    real: cadReal('Triple Helix', 'Rho', 'Nivel medio-alto: turret de 270° sobre un spindexer grande e intake de cuatro barras al frente; rendimiento estimado.', 'Upper-mid tier: 270° turret over a big spindexer and a front four-bar intake; estimated performance.'),
   }),
   base({
     id: 'cad-2412',
@@ -623,11 +615,11 @@ export const CAD_ROBOTS: RobotSpec[] = [
     deployedHopperIn: [24, 18],
     intake: { widthIn: 28, extensionIn: 11.8, rate: 9 },
     hopperCapacity: 50,
-    shooter: { type: 'fixed', rate: 8, maxSpeed: 13, minAngle: 45, maxAngle: 75, accuracy: 0.84, exitHeightIn: 26, backspin: 25, lanes: 1, yawDeg: 0, posIn: [0, 0] },
+    shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 45, maxAngle: 75, accuracy: 0.84, exitHeightIn: 22, backspin: 25, lanes: 1, posIn: [-4.2, 0.75] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#0077be' },
     cad: { file: '2826.glb' },
-    real: cadReal('Wave Robotics', 'Rebuilt 2026', 'Nivel medio: hopper extensible con la intake y shooter alto (no pasa bajo el TRENCH); rendimiento estimado.', 'Mid tier: hopper that extends with the intake and a tall shooter (does not fit under the TRENCH); estimated performance.'),
+    real: cadReal('Wave Robotics', 'Rebuilt 2026', 'Nivel medio: turret V4 con hood, hopper extensible con la intake (no pasa bajo el TRENCH); rendimiento estimado.', 'Mid tier: V4 turret with a hood, hopper that extends with the intake (does not fit under the TRENCH); estimated performance.'),
   }),
   base({
     id: 'cad-8324',
@@ -697,11 +689,11 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.2,
     intake: { widthIn: 24, extensionIn: 8, rate: 7 },
     hopperCapacity: 35,
-    shooter: { type: 'fixed', rate: 6, maxSpeed: 12, minAngle: 45, maxAngle: 70, accuracy: 0.78, exitHeightIn: 26, backspin: 25, lanes: 3, yawDeg: 0, posIn: [0, 0] },
+    shooter: { type: 'fixed', rate: 8, maxSpeed: 12, minAngle: 45, maxAngle: 70, accuracy: 0.84, exitHeightIn: 25, backspin: 25, lanes: 3, yawDeg: 180, posIn: [-7, 0] }, // 3 flywheels (Shooter.java) atrás; hood de servos
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#7a7a7a' },
     cad: { file: '9584.glb' },
-    real: cadReal('Team 9584 (WCP, con 971)', 'Competitive Concept', 'Nivel bajo: el robot de concepto de WCP (asset de una sola malla, sin partes que se muevan); rendimiento estimado.', 'Lower tier: the WCP concept robot (single-mesh asset, no moving parts); estimated performance.'),
+    real: cadReal('Team 9584 (WCP, con 971)', 'Competitive Concept', 'Nivel medio: el robot de concepto de WCP, intake al frente y tres flywheels que disparan hacia atrás (asset de una sola malla, sin partes que se muevan); rendimiento estimado.', 'Mid tier: the WCP concept robot, intake at the front and three flywheels firing backward (single-mesh asset, no moving parts); estimated performance.'),
   }),
   base({
     id: 'cad-339',

@@ -7,9 +7,9 @@ import { loadStrategies } from '../ai/Strategy';
 import type { App } from '../app/App';
 import { loadRoutines } from '../auto/AutoRoutine';
 import * as F from '../config/field';
-import { allRobots, fitsUnderTrench, perimeterIn, ROBOT_PRESETS, robotById, type RobotSpec } from '../config/robots';
+import { allRobots, fitsUnderTrench, ROBOT_PRESETS, robotById, type RobotSpec } from '../config/robots';
 import { DEFAULT_SETTINGS, type Settings } from '../config/settings';
-import { checkStart, defaultStart } from '../core/startRules';
+import { defaultStart } from '../core/startRules';
 import type { Alliance, StationNumber } from '../core/types';
 import { AXIS_ACTIONS, BUTTON_ACTIONS, keyLabel, PAD_LABELS, type AxisAction, type ButtonAction } from '../input/actions';
 import type { SlotDevice } from '../input/InputManager';
@@ -398,7 +398,7 @@ export class Screens {
           <div class="mapwrap">
             <div class="maphead"><span class="label">${t('startPos')}</span><button class="chipbtn" data-resetspot>↺ ${t('resetSpot')}</button></div>
             <div data-map></div>
-            <div class="maphint"><span>${t('dragHint')}</span><span class="msg" data-g303></span></div>
+            <div class="maphint"><span>${t('dragHint')}</span></div>
           </div>
           <div class="opts">
             <div class="opt wide"><span>${t('camera')}</span>${seg('camera', (['third', 'driver', 'onboard', 'top'] as const).map((v) => ({ value: v, label: t(`cam_${v}` as TKey) })), this.app.settings.camera)}</div>
@@ -431,11 +431,6 @@ export class Screens {
       r.querySelector('[data-rname]')!.textContent = spec.name;
       r.querySelector('[data-rsub]')!.textContent = robotSubtitle(spec);
       map.innerHTML = fieldMapSvg(m.alliance, m.station, spec, m.startOffset);
-      const issues = startIssues(m.alliance, m.station, spec, m.startOffset);
-      const el = r.querySelector<HTMLElement>('[data-g303]')!;
-      el.className = `msg ${issues.length ? 'bad' : 'ok'}`;
-      el.textContent = issues.length ? `G303: ${issues.map((i) => t(`g303_${i}` as TKey)).join(' · ')}` : `G303 ✓ ${t('startLegal')}`;
-      (r.querySelector('[data-start]') as HTMLButtonElement).disabled = issues.length > 0;
     };
     // Arrastrar el robot en el mapa (a lo largo de su ROBOT STARTING LINE)
     let drag = false;
@@ -839,22 +834,6 @@ export function robotSubtitle(s: RobotSpec): string {
   const shooter = s.shooter.type === 'turret' ? (lanes > 1 ? `Turret ×${lanes}` : 'Turret') : lanes > 1 ? `Dumper ×${lanes}` : t('fixed');
   const parts = [s.drivetrain === 'swerve' ? 'Swerve' : 'Tank', shooter, s.climb.maxLevel ? `Climb L${s.climb.maxLevel}` : t('noClimb')];
   return parts.join(' · ');
-}
-
-/** Códigos de G303 para la posición de salida elegida (vacío = legal). */
-function startIssues(a: Alliance, ds: StationNumber, spec: RobotSpec, offset: number): string[] {
-  const halfX = F.inch(spec.lengthIn / 2 + spec.bumperIn);
-  const st = defaultStart(a, ds, halfX);
-  return checkStart({
-    alliance: a,
-    x: st.x,
-    z: st.z + offset * (a === 'blue' ? 1 : -1),
-    halfX,
-    halfZ: F.inch(spec.widthIn / 2 + spec.bumperIn),
-    heightM: F.inch(spec.heightIn),
-    perimeterM: F.inch(perimeterIn(spec)),
-    preload: spec.preload,
-  }).map((i) => i.code);
 }
 
 /** Mapa del campo en líneas (vista superior, azul a la izquierda) con el robot del jugador. */

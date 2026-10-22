@@ -18,7 +18,7 @@ import { ALLIANCE_COLOR } from './FieldView';
 import { mergeStaticChildren } from './merge';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { CAD_RIGS, hopperSlots, openingFor, shownFuel, type CadRig, type HopperSlot, type MechState } from './cadRigs';
+import { CAD_RIGS, CLEAR_MIN_OPACITY, hopperSlots, openingFor, shownFuel, type CadRig, type HopperSlot, type MechState } from './cadRigs';
 import { HopperFuelSim } from './hopperFuel';
 
 export interface RobotVisualState {
@@ -614,6 +614,12 @@ export class RobotView {
           const mesh = o as THREE.Mesh;
           if (!mesh.isMesh) return;
           const mat = mesh.material as THREE.MeshStandardMaterial;
+          // Policarbonato del CAD (hoppers, belly pans): en AdvantageScope viene casi invisible
+          // (alfa 0.1–0.3); sobre el campo claro desaparece. Se sube a un acrílico ahumado que se lee.
+          if (mat.transparent && mat.opacity < CLEAR_MIN_OPACITY) {
+            mat.opacity = CLEAR_MIN_OPACITY;
+            mat.roughness = 0.3;
+          }
           mesh.castShadow = !mat.transparent;
           mesh.receiveShadow = true;
         });
