@@ -233,37 +233,33 @@ function fourBar(position: number, offset: number, zeroOffset: number, AB: numbe
 // ------------------------------------------------------------------ rigs por equipo
 
 /**
- * 3478: la intake gira hasta 140° sobre su pivote al frente del chasis y empuja el frente del
- * hopper. `INTAKE_SWING_3478`: x máximo (m) de la intake, a la altura de la pared del frente del
- * hopper (z 0.19–0.73), para cada ángulo (medido sobre la malla de c0): la pared va siempre
- * 1 cm por delante, así la intake nunca la atraviesa.
+ * 3478: la intake gira hasta 140° sobre su pivote al frente del chasis, baja un poco a medio
+ * camino (como una cuatro barras) y empuja el frente del hopper hasta 0.25 m (~10 in, R105).
+ * Tabla [grados, empuje del frente (m), bajada de la intake (m)] calculada sobre las mallas: el
+ * panel del frente (c3) cubre z 0.30–0.69 en x 0.341 y ningún punto de la intake (c0) queda
+ * dentro de él en todo el giro (revisado cada 0.5°); al final la intake queda abajo del panel.
  */
-const INTAKE_SWING_3478: Array<[number, number]> = [
-  [0, 0.335],
-  [20, 0.412],
-  [40, 0.487],
-  [60, 0.542],
-  [80, 0.588],
-  [100, 0.645],
-  [120, 0.665],
-  [140, 0.677],
+const INTAKE_SWING_3478: Array<[number, number, number]> = [
+  [0, 0, 0], [5, 0.032, 0], [10, 0.053, 0], [15, 0.074, 0], [20, 0.094, 0], [25, 0.114, 0],
+  [30, 0.132, 0], [35, 0.149, 0], [40, 0.165, 0], [45, 0.179, 0], [50, 0.192, 0], [55, 0.204, 0],
+  [60, 0.214, 0], [65, 0.215, 0], [70, 0.235, 0], [75, 0.25, 0.129], [80, 0.25, 0.134],
+  [85, 0.25, 0.136], [90, 0.25, 0.136], [95, 0.25, 0.13], [100, 0.25, 0.119], [105, 0.25, 0.118],
+  [110, 0.25, 0.118], [115, 0.25, 0.111], [120, 0.25, 0.098], [125, 0.25, 0.073],
+  [130, 0.25, 0.047], [135, 0.25, 0.019], [140, 0.25, 0],
 ];
 const INTAKE_DEG_3478 = 140;
-/** Cara interior de la pared del frente del hopper (guardada, m). */
-const HOPPER_FRONT_3478 = 0.314;
-/** Cuánto se recorre el frente del hopper con la intake a `deg` grados (m). */
-export function hopperExt3478(deg: number): number {
+/** Empuje del frente del hopper y bajada de la intake con la intake a `deg` grados (m). */
+export function intakeSwing3478(deg: number): { ext: number; drop: number } {
   const t = INTAKE_SWING_3478;
-  let x = t[t.length - 1][1];
   for (let i = 0; i + 1 < t.length; i++)
     if (deg <= t[i + 1][0]) {
       const k = Math.max(0, (deg - t[i][0]) / (t[i + 1][0] - t[i][0]));
-      x = t[i][1] + (t[i + 1][1] - t[i][1]) * k;
-      break;
+      return { ext: t[i][1] + (t[i + 1][1] - t[i][1]) * k, drop: t[i][2] + (t[i + 1][2] - t[i][2]) * k };
     }
-  return Math.max(0, x + 0.01 - HOPPER_FRONT_3478);
+  const last = t[t.length - 1];
+  return { ext: last[1], drop: last[2] };
 }
-const HOPPER_EXT_3478 = hopperExt3478(INTAKE_DEG_3478);
+const HOPPER_EXT_3478 = intakeSwing3478(INTAKE_DEG_3478).ext;
 
 export const CAD_RIGS: Record<string, CadRig> = {
   /**
@@ -486,21 +482,22 @@ export const CAD_RIGS: Record<string, CadRig> = {
    * movimientos se dedujeron del CAD y de lo que contó el equipo. c0 intake (guardada dentro del
    * hopper; gira 140° sobre su pivote al frente del chasis hasta el piso), c1 shooter de la
    * turret (atrás a la derecha), c2 spindexer y c3 frente del hopper: la intake lo empuja al
-   * salir, siempre por delante de ella (`hopperExt3478`), y sus paredes laterales se deslizan en
-   * las placas fijas.
+   * salir sin atravesarlo (`intakeSwing3478`) y sus paredes laterales se deslizan en las placas
+   * fijas.
    */
   '3478.glb': {
     poses(m) {
       const ip: Vec3 = [0.31, 0, 0.2];
       const turretC: Vec3 = [-0.155, -0.168, 0];
       const spinC: Vec3 = [0.0985, -0.004, 0];
-      const deg = INTAKE_DEG_3478 * m.intake;
+      const sw = intakeSwing3478(INTAKE_DEG_3478 * m.intake);
+      const swing = rotateAround(IDENTITY, ip, rot(0, INTAKE_DEG_3478 * m.intake * DEG, 0));
       return [
-        rotateAround(IDENTITY, ip, rot(0, deg * DEG, 0)),
+        pose([swing.t[0], swing.t[1], swing.t[2] - sw.drop], swing.q),
         // En el CAD el shooter (flywheels y hood) queda atrás del eje: turret 0 = tirar hacia atrás
         rotateAround(IDENTITY, turretC, rot(0, 0, m.turret + Math.PI)),
         rotateAround(IDENTITY, spinC, rot(0, 0, m.spin)),
-        pose([hopperExt3478(deg), 0, 0]),
+        pose([sw.ext, 0, 0]),
       ];
     },
     // Todo el hopper (mitad del frente, de la pared del elevador/turret a la pared del frente y de
