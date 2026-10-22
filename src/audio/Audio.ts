@@ -1,12 +1,24 @@
 /**
- * Audio 100 % sintetizado con Web Audio (sin archivos ni audio oficial).
- * Cues del FMS (Tabla 5-4): "Cavalry Charge", "Buzzer", "3 Bells", "Power Up – Linear Popping",
- * "Steam Whistle", "Foghorn". Más efectos, un loop de música ligero y voces (SpeechSynthesis).
+ * Audio con Web Audio. Los cues del FMS (Tabla 5-4): "Cavalry Charge", "Buzzer", "3 Bells",
+ * "Power Up – Linear Popping", "Steam Whistle" se tocan con las grabaciones reales del
+ * campo (`public/sounds/*.wav`, ver `public/sounds/LICENSES.md`); si un archivo no carga, se usa la
+ * versión sintetizada (también "Foghorn", que no tiene grabación).
+ * Más efectos, un loop de música ligero y voces (SpeechSynthesis).
  * Buses de volumen separados: música, efectos y voces.
  */
 import type { Settings } from '../config/settings';
 
 type Wave = OscillatorType;
+
+/** Grabaciones del campo: cue → archivo en `public/sounds/`. */
+const FIELD_SOUNDS = {
+  start: 'start.wav', // Cavalry Charge
+  end: 'end.wav', // Buzzer
+  resume: 'resume.wav', // 3 Bells
+  shift: 'shift_change.wav', // Power Up – Linear Popping
+  warning: 'warning.wav', // Steam Whistle
+} as const;
+type FieldSound = keyof typeof FIELD_SOUNDS;
 
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -18,8 +30,18 @@ export class AudioEngine {
   private musicStep = 0;
   private nextNoteTime = 0;
   private lastHit = 0;
+  private sampleData = new Map<FieldSound, Promise<ArrayBuffer | null>>();
+  private samples = new Map<FieldSound, AudioBuffer>();
 
   constructor(private settings: Settings) {
+    // se descargan desde el inicio; se decodifican al crear el AudioContext (requiere un gesto)
+    for (const [k, file] of Object.entries(FIELD_SOUNDS) as Array<[FieldSound, string]>)
+      this.sampleData.set(
+        k,
+        fetch(`${import.meta.env.BASE_URL}sounds/${file}`)
+          .then((r) => (r.ok ? r.arrayBuffer() : null))
+          .catch(() => null),
+      );
     const unlock = () => {
       this.ensure();
       void this.ctx?.resume();
@@ -48,7 +70,27 @@ export class AudioEngine {
     const d = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.applyVolumes();
+    for (const [k, data] of this.sampleData)
+      void data.then(async (buf) => {
+        if (!buf) return;
+        try {
+          this.samples.set(k, await ctx.decodeAudioData(buf));
+        } catch {
+          /* formato no soportado: queda la versión sintetizada */
+        }
+      });
     return ctx;
+  }
+
+  /** Toca la grabación del campo si ya está lista; false si hay que sintetizar. */
+  private playSample(k: FieldSound, t: number): boolean {
+    const buf = this.samples.get(k);
+    if (!buf) return false;
+    const src = this.ctx!.createBufferSource();
+    src.buffer = buf;
+    src.connect(this.sfxBus);
+    src.start(t);
+    return true;
   }
 
   updateSettings(s: Settings): void {
@@ -137,6 +179,7 @@ export class AudioEngine {
   cavalryCharge(): void {
     const t = this.now();
     if (t === null) return;
+    if (this.playSample('start', t)) return;
     const N = { G4: 392, C5: 523.25, E5: 659.25, G5: 783.99 };
     const seq: Array<[number, number, number]> = [
       [N.G4, 0, 0.13],
@@ -156,6 +199,7 @@ export class AudioEngine {
   buzzer(): void {
     const t = this.now();
     if (t === null) return;
+    if (this.playSample('end', t)) return;
     this.tone(110, t, 1.1, { wave: 'square', gain: 0.16, filter: 1400 });
     this.tone(165, t, 1.1, { wave: 'sawtooth', gain: 0.1, filter: 1200 });
   }
@@ -164,6 +208,7 @@ export class AudioEngine {
   threeBells(): void {
     const t = this.now();
     if (t === null) return;
+    if (this.playSample('resume', t)) return;
     for (let k = 0; k < 3; k++) {
       const s = t + k * 0.42;
       for (const [mul, g] of [
@@ -179,6 +224,7 @@ export class AudioEngine {
   powerUp(): void {
     const t = this.now();
     if (t === null) return;
+    if (this.playSample('shift', t)) return;
     this.tone(220, t, 0.9, { wave: 'triangle', to: 1100, gain: 0.16, attack: 0.05 });
     // "pops" cada vez más rápidos y agudos (burbujeo)
     let s = 0;
@@ -193,6 +239,7 @@ export class AudioEngine {
   steamWhistle(): void {
     const t = this.now();
     if (t === null) return;
+    if (this.playSample('warning', t)) return;
     for (const f of [523, 659, 784]) this.tone(f, t, 1.6, { wave: 'sine', gain: 0.09, attack: 0.12, release: 0.3, vibrato: 3 });
     this.noise(t, 1.6, { gain: 0.08, filter: 3200, q: 0.8 });
   }
