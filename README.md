@@ -1,7 +1,7 @@
 # REBUILT Sim — simulador 3D de FRC 2026 REBUILT (fan project)
 
-> **Simulador no oficial hecho por fans. No está afiliado a FIRST®.** No usa logos, arte ni audio
-> oficiales. Los nombres de los elementos del juego (HUB, FUEL, TOWER…) se usan como referencia.
+> **Simulador no oficial hecho por fans. No está afiliado a FIRST®.** No usa logos ni arte
+> oficiales; los cues de audio del campo son las grabaciones reales (ver `public/sounds/LICENSES.md`). Los nombres de los elementos del juego (HUB, FUEL, TOWER…) se usan como referencia.
 
 Simulador web de **FRC 2026 REBUILT presented by Haas** con reglas del Game Manual (TU22),
 física con Rapier (WASM) y gráficos con Three.js. Funciona en **celular, tablet y computadora**,
@@ -136,7 +136,7 @@ src/
   ai/        IA de robots y navegación
   auto/      rutinas de AUTO y su ejecutor
   referee/   árbitro automático
-  audio/     sonidos sintetizados (Web Audio) y voces
+  audio/     cues del campo (grabaciones), efectos sintetizados (Web Audio) y voces
   ui/        HUD, menús, ajustes, resultados, diseñador de AUTO, editor de robots, torneo
 ```
 
@@ -158,7 +158,7 @@ contador lógico y los 504 FUEL se dibujan en una sola malla instanciada.
   [Vite](https://vitejs.dev) (MIT).
 - Códigos de AprilTag 36h11: [AprilRobotics/apriltag](https://github.com/AprilRobotics/apriltag) (BSD-2).
 - Posiciones de AprilTags: layout "2026-rebuilt-welded" de [WPILib](https://github.com/wpilibsuite/allwpilib) (BSD).
-- Todo el audio es sintetizado en el navegador; todas las texturas se generan con código.
+- Los cues del campo usan las grabaciones reales (`public/sounds/LICENSES.md`); el resto del audio es sintetizado; todas las texturas se generan con código.
 - Modelos 3D de robots: publicados por los equipos 1678, 5000, 604, 6328, 971, 341, 190 y 4915
   en sus repositorios de código (licencias MIT / BSD) y el CAD que mandó el equipo 3478 LamBot (detalle y textos en
   [public/robots/LICENSES.md](public/robots/LICENSES.md)). Datos de rendimiento:

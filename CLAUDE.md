@@ -1,7 +1,8 @@
 # REBUILT Sim — contexto para Claude Code
 
 Simulador 3D web **no oficial** (fan project) de FRC 2026 *REBUILT presented by Haas*.
-Sin logos ni audio/arte oficial. Nombres de elementos (HUB, FUEL, TOWER…) sí.
+Sin logos ni arte oficial; el único audio oficial son los cues del campo en `public/sounds/`
+(ver su `LICENSES.md`). Nombres de elementos (HUB, FUEL, TOWER…) sí.
 UI en español (México) por defecto + inglés; términos del juego siempre en inglés.
 
 - Reglas: `docs/2026GameManual.pdf` (TU22, local, no versionado). Extraer con
@@ -32,7 +33,7 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
 - `input/` acciones abstractas; teclado/mouse, gamepad, táctil; reasignables.
 - `ai/` robots y HUMAN PLAYERS de la computadora; navegación por grafo.
 - `referee/` árbitro automático (faltas G4xx, tarjetas).
-- `audio/` sonidos sintetizados con Web Audio (sin archivos).
+- `audio/` Web Audio: cues del campo con grabaciones reales (`public/sounds/`), lo demás sintetizado.
 - `ui/` DOM: menús, HUD, resultados, ajustes, diseñador de AUTO, editor de robot.
 - `game/` sesión de juego: une física + core + render + IA + árbitro.
 - `auto/` rutinas de AUTO (marco azul, se reflejan para rojo) y su ejecutor.
