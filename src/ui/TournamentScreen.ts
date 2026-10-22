@@ -30,7 +30,7 @@ import {
 } from '../core/tournament';
 import type { EventType } from '../core/types';
 import { bind, seg } from './forms';
-import { renderDashboard } from './StrategyDashboard';
+import { myStation, renderDashboard } from './StrategyDashboard';
 import { t, type TKey } from './i18n';
 
 const KEY = 'rebuilt-sim.tournament.v1';
@@ -205,7 +205,7 @@ export class TournamentScreen {
     // ---- Panel de lo que sigue
     let action = '';
     if (next?.kind === 'play')
-      action = `<div class="panel row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b>${next.m.id}</b> <span class="sw red"></span>${side(next.m.red)} <span style="color:var(--muted)">vs</span> <span class="sw blue"></span>${side(next.m.blue)}</div><div class="row" style="gap:8px"><button class="btn" data-dash>${t('dash_open')}</button><button class="btn primary" data-play>▶ ${t('play')} ${next.m.id}</button></div></div>`;
+      action = `<div class="panel row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b>${next.m.id}</b> <span class="sw red"></span>${side(next.m.red)} <span style="color:var(--muted)">vs</span> <span class="sw blue"></span>${side(next.m.blue)} <span class="dsbadge mini ${myStation(tt, next.m).alliance}">${t('dash_nextDs', { ds: myStation(tt, next.m).station, a: t(myStation(tt, next.m).alliance) })}</span></div><div class="row" style="gap:8px"><button class="btn" data-dash>${t('dash_open')}</button><button class="btn primary" data-play>▶ ${t('play')} ${next.m.id}</button></div></div>`;
     else if (next?.kind === 'watch')
       action = `<div class="panel" style="display:flex;flex-direction:column;gap:8px"><div><b>${next.m.id}</b> · ${t('otherTeamsMatch')} &nbsp;<span class="sw red"></span>${side(next.m.red)} <span style="color:var(--muted)">vs</span> <span class="sw blue"></span>${side(next.m.blue)}</div>
         <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn primary" data-watch="broadcast">📺 ${t('watchBroadcast')}</button><button class="btn" data-watch="stands">🏟 ${t('watchStands')}</button><button class="chipbtn" data-skip>⏭ ${t('skipMatch')}</button><button class="chipbtn" data-skipall>⏩ ${t('skipToMine')}</button></div></div>`;
@@ -265,7 +265,7 @@ export class TournamentScreen {
     const m = next && (next.kind === 'play' || next.kind === 'watch') ? next.m : null;
     this.root.querySelector('[data-play]')?.addEventListener('click', () => m && this.onPlay(tt, m));
     this.root.querySelector('[data-dash]')?.addEventListener('click', () => {
-      if (m) renderDashboard(this.root, tt, m, this.settings, { back: () => this.view(tt), play: () => this.onPlay(tt, m) });
+      if (m) renderDashboard(this.root, tt, m, this.settings, { back: () => this.view(tt), play: () => this.onPlay(tt, m), save: () => saveTournament(tt) });
     });
     this.root.querySelectorAll<HTMLElement>('[data-watch]').forEach((b) => b.addEventListener('click', () => m && this.onPlay(tt, m, b.dataset.watch as 'broadcast' | 'stands')));
     this.root.querySelector('[data-skip]')?.addEventListener('click', () => {

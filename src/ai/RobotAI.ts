@@ -135,7 +135,8 @@ export class RobotAI {
   setPlan(p: RobotPlan | null): void {
     this.plan = p;
     if (!p) return;
-    if (p.role === 'defender') this.defender = true;
+    if (p.inactive) this.defender = p.inactive === 'defend';
+    else if (p.role === 'defender') this.defender = true;
     else if (p.role !== 'auto') this.defender = false;
     if (p.climb !== 'auto') this.climbLevel = Math.min(p.climb, this.r.spec.climb.maxLevel);
   }
@@ -145,10 +146,15 @@ export class RobotAI {
     return !this.plan || this.plan.role === 'auto';
   }
 
-  /** Alimentador: recoge en la NEUTRAL ZONE y pasa (en END GAME juega normal). */
+  /**
+   * Alimentador: recoge en la NEUTRAL ZONE y pasa (en END GAME juega normal). Con tareas por fase
+   * del plan, según si su HUB está activo o no.
+   */
   private get feeding(): boolean {
-    const role = this.plan?.role === 'feeder' || (this.roleFree && this.dynRole === 'feeder');
-    return role && this.ctx.match?.phase !== 'END_GAME';
+    if (this.ctx.match?.phase === 'END_GAME') return false;
+    const pl = this.plan;
+    if (pl?.active || pl?.inactive) return this.hubCountsIn(0) ? pl.active === 'feed' : pl.inactive === 'feed';
+    return pl?.role === 'feeder' || (this.roleFree && this.dynRole === 'feeder');
   }
 
   /** Orden vigente del drive coach (o null). */
@@ -654,7 +660,8 @@ export class RobotAI {
           this.state = 'defend';
           return;
         }
-        const coach = this.coachTask();
+        // la orden del coach o la tarea del plan para el SHIFT inactivo
+        const coach = this.coachTask() ?? (this.plan?.inactive === 'stockpile' ? 'stockpile' : null);
         if (coach === 'stockpile' || n >= cap - 2 || this.tactic) {
           let t: Tactic;
           if (coach === 'stockpile') {

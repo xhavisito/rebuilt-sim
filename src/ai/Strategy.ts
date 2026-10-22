@@ -17,6 +17,15 @@ export type Role = 'auto' | 'scorer' | 'feeder' | 'defender';
 /** Carril (lado azul, vista superior): z < −1.35 · |z| ≤ 1.35 · z > 1.35. */
 export type Lane = 'any' | 'top' | 'mid' | 'bottom';
 export const ROLES: Role[] = ['auto', 'scorer', 'feeder', 'defender'];
+/** Tarea con el HUB propio activo: anotar o alimentar (pasar FUEL a la zona para los anotadores). */
+export type ActiveTask = 'score' | 'feed';
+/**
+ * Tarea con el HUB propio inactivo (nunca esperar todo el SHIFT): acaparar (llenarse y pasar el
+ * excedente a la zona), defender al rival marcado o pasar todo a la zona.
+ */
+export type InactiveTask = 'stockpile' | 'defend' | 'feed';
+export const ACTIVE_TASKS: ActiveTask[] = ['score', 'feed'];
+export const INACTIVE_TASKS: InactiveTask[] = ['stockpile', 'defend', 'feed'];
 export const LANES: Lane[] = ['any', 'top', 'mid', 'bottom'];
 /** Límite entre carriles (m): los BUMPS quedan en el carril de arriba y el de abajo. */
 export const LANE_EDGE = 1.35;
@@ -41,6 +50,9 @@ export interface RobotPlan {
   auto: string | null;
   /** Defensor: número de equipo rival que marca (null = el más peligroso según el scouting). */
   defendTeam?: number | null;
+  /** Tarea por fase (tablas del dashboard); sin ellas manda `role`. */
+  active?: ActiveTask;
+  inactive?: InactiveTask;
 }
 
 export interface Strategy {

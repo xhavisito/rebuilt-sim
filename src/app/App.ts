@@ -14,7 +14,7 @@ import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
 import { RobotEditor } from '../ui/RobotEditor';
 import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
-import { applyPlan, COACH_PLAN_ID, planForMatch } from '../ui/StrategyDashboard';
+import { applyRows, COACH_PLAN_ID, rowsForMatch } from '../ui/StrategyDashboard';
 import { loadSettings, saveSettings, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
 import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
@@ -293,7 +293,8 @@ export class App {
       coach: (msg) => {
         const c = this.settings.coach;
         if (!c.show && !c.voice) return;
-        const params = Object.fromEntries(Object.entries(msg.params ?? {}).map(([k, v]) => [k, v === 'coach_you' ? t('coach_you') : String(v)]));
+        // parámetros con '@' son claves de i18n (tareas, "Tú")
+        const params = Object.fromEntries(Object.entries(msg.params ?? {}).map(([k, v]) => [k, typeof v === 'string' && v.startsWith('@') ? t(v.slice(1) as TKey) : String(v)]));
         const text = t(msg.key as TKey, params);
         if (c.show) this.hud.coach(text, msg.kind);
         // en voz alta solo lo urgente, y sin encimarse
@@ -451,8 +452,9 @@ export class App {
    */
   playTournamentMatch(tt: Tournament, match: TMatch, watch?: 'broadcast' | 'stands'): void {
     const m = this.settings.match;
-    // Con el plan del estratega: se rehace para ESTE match (los robots y DRIVER STATIONS cambian)
-    if (!watch && m.strategy === COACH_PLAN_ID) applyPlan(planForMatch(tt, match).plan, this.settings, `${t('dash_title')} ${match.id}`);
+    // Con el plan del dashboard: el de ESTE match (el que guardaste o la sugerencia del drive coach;
+    // los robots y las DRIVER STATIONS cambian de un match a otro)
+    if (!watch && m.strategy === COACH_PLAN_ID) applyRows(rowsForMatch(tt, match).rows, this.settings, `${t('dash_title')} ${match.id}`);
     const robots: RobotSlotConfig[] = [];
     for (const [a, ids] of [
       ['red', match.red],
