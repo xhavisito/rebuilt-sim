@@ -39,6 +39,22 @@ export interface PlayerHudInfo {
   disabled: boolean;
   /** Mensaje contextual (p. ej. "AUTO: tu robot ejecuta la rutina"). */
   note: string | null;
+  /** Multijugador local: quién maneja este robot (p. ej. "J2 · Control 1"). */
+  tag?: string;
+}
+
+/** Rectángulo normalizado (0–1, origen abajo-izquierda) de la vista de un jugador. */
+export interface HudRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface PlayerPanel {
+  root: HTMLElement;
+  els: Record<string, HTMLElement>;
+  key: string;
 }
 
 const ICON_CAM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9 4 7.2 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.2L15 4H9Zm3 4.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9Zm0 2a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z"/></svg>';
@@ -47,7 +63,9 @@ const ICON_PAUSE = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5
 export class Hud {
   readonly root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
-  private lastKey = '';
+  /** Un panel por cada robot que se juega en esta pantalla (multijugador local: 2–4). */
+  private panels: PlayerPanel[] = [];
+  private layoutKey = '';
 
   constructor(parent: HTMLElement, onPause: () => void, onCamera: () => void) {
     const r = document.createElement('div');
@@ -76,15 +94,7 @@ export class Hud {
         <div class="shiftline" data-k="shift"></div>
         <div class="banner" data-k="banner"></div>
       </div>
-      <div class="player" data-k="player">
-        <div class="p-head"><span class="p-num" data-k="pnum"></span><span class="p-name" data-k="pname"></span></div>
-        <div class="p-hopper">
-          <div class="p-fuel"><b data-k="hcount">0</b><small data-k="hcap">/0</small><span>FUEL</span></div>
-          <div class="hbar"><i data-k="hbar"></i></div>
-        </div>
-        <div class="chips" data-k="chips"></div>
-        <div class="pnote" data-k="pnote"></div>
-      </div>
+      <div class="players" data-k="players"></div>
       <div class="hud-tr">
         <button class="cam-btn" data-k="cam" aria-label="${t('camera')}">${ICON_CAM}<span data-k="camname"></span><kbd>C</kbd></button>
         <button class="pause-btn" data-k="pause" aria-label="${t('paused')}">${ICON_PAUSE}</button>
@@ -149,7 +159,7 @@ export class Hud {
     }
   }
 
-  update(m: Match | null, ev: EventType, player: PlayerHudInfo | null): void {
+  update(m: Match | null, ev: EventType, players: PlayerHudInfo[], views: HudRect[] | null = null): void {
     const e = this.els;
     if (m) {
       e.redScore.textContent = String(m.score('red'));
@@ -172,7 +182,7 @@ export class Hud {
         h.className = `hub ${cls}`;
         h.querySelector('span')!.textContent = `HUB ${label}`;
         e[`${a}Side`].classList.toggle('hub-off', cls === 'off');
-        e[`${a}Side`].classList.toggle('mine', player?.alliance === a);
+        e[`${a}Side`].classList.toggle('mine', players.some((p) => p.alliance === a));
         // Progreso ENERGIZED → SUPERCHARGED (como el letrero de la DRIVER STATION)
         const th = RP_THRESHOLDS[ev];
         const fuel = m.fuelPoints(a);
@@ -190,28 +200,77 @@ export class Hud {
         m.phase === 'TRANSITION' && fi ? t('inactiveFirst', { a: `HUB ${t(fi)}`.toUpperCase() }) : '';
       e.banner.className = `banner ${fi && m.phase === 'TRANSITION' ? fi : ''}`;
     }
-    e.player.style.display = player ? '' : 'none';
-    e.cam.style.display = player ? '' : 'none';
-    if (player && e.camname.textContent !== player.camera) e.camname.textContent = player.camera;
-    if (player) {
-      const key = JSON.stringify(player);
-      if (key !== this.lastKey) {
-        this.lastKey = key;
-        const full = player.hopper >= player.capacity;
-        e.player.className = `player ${player.alliance}${full ? ' full' : ''}${player.disabled ? ' disabled' : ''}`;
-        e.pnum.textContent = String(player.team);
-        e.pname.textContent = player.robotName;
-        (e.hbar as HTMLElement).style.transform = `scaleX(${Math.min(1, player.hopper / Math.max(1, player.capacity)).toFixed(3)})`;
-        e.hcount.textContent = String(player.hopper);
-        e.hcap.textContent = `/${player.capacity}`;
-        const chip = (txt: string, on?: boolean) => `<span class="${on === undefined ? '' : on ? 'on' : 'off'}">${txt}</span>`;
-        const chips = [chip(player.fieldRelative ? t('fieldRel') : t('robotRel')), chip('INTAKE', player.intakeOn), chip('AUTO-AIM', player.autoAim)];
-        if (player.climb) chips.push(chip(player.climb, true));
-        chips.push(`<span class="wide">${player.outpost}</span>`);
-        e.chips.innerHTML = chips.join('');
-        e.pnote.textContent = player.disabled ? t('disabled') : (player.note ?? '');
-      }
+    this.updatePlayers(players, views);
+  }
+
+  /**
+   * Paneles de los jugadores. Una sola cámara: abajo, los de la alianza roja a la izquierda y los
+   * de la azul a la derecha (como el marcador). Pantalla dividida: cada panel en la esquina
+   * inferior izquierda de la vista de su jugador.
+   */
+  private updatePlayers(players: PlayerHudInfo[], views: HudRect[] | null): void {
+    const e = this.els;
+    while (this.panels.length < players.length) this.panels.push(this.makePanel());
+    while (this.panels.length > players.length) this.panels.pop()!.root.remove();
+    const split = !!views && views.length > 1 && views.length >= players.length;
+    const order = players.map((p, i) => ({ p, i }));
+    if (!split) order.sort((a, b) => (a.p.alliance === b.p.alliance ? a.i - b.i : a.p.alliance === 'red' ? -1 : 1));
+    const layoutKey = `${split ? views!.map((v) => `${v.x},${v.y},${v.w},${v.h}`).join('|') : 'row'}:${order.map((o) => `${o.i}${o.p.alliance}`).join(',')}`;
+    if (layoutKey !== this.layoutKey) {
+      this.layoutKey = layoutKey;
+      e.players.className = `players${split ? ' split' : ''}${split && views!.length > 2 ? ' quad' : ''}${players.length > 1 ? ' multi' : ''}`;
+      order.forEach(({ i }, k) => {
+        const el = this.panels[i].root;
+        e.players.appendChild(el); // orden en pantalla
+        const v = split ? views![i] : null;
+        el.style.left = v ? `${(v.x * 100).toFixed(2)}%` : '';
+        el.style.bottom = v ? `${(v.y * 100).toFixed(2)}%` : '';
+        el.style.setProperty('--vw', v ? `${(v.w * 100).toFixed(2)}vw` : '');
+        // una cámara: entre la última roja y la primera azul queda el espacio libre
+        el.classList.toggle('push', !split && k > 0 && order[k - 1].p.alliance === 'red' && order[k].p.alliance === 'blue');
+      });
     }
+    players.forEach((p, i) => this.fillPanel(this.panels[i], p));
+    const solo = players.length === 1 ? players[0] : null;
+    e.cam.style.display = solo ? '' : 'none';
+    if (solo && e.camname.textContent !== solo.camera) e.camname.textContent = solo.camera;
+  }
+
+  private makePanel(): PlayerPanel {
+    const root = document.createElement('div');
+    root.className = 'player';
+    root.innerHTML = `
+      <div class="p-head"><span class="p-num" data-k="pnum"></span><span class="p-name" data-k="pname"></span><span class="p-tag" data-k="ptag"></span></div>
+      <div class="p-hopper">
+        <div class="p-fuel"><b data-k="hcount">0</b><small data-k="hcap">/0</small><span>FUEL</span></div>
+        <div class="hbar"><i data-k="hbar"></i></div>
+      </div>
+      <div class="chips" data-k="chips"></div>
+      <div class="pnote" data-k="pnote"></div>`;
+    const els: Record<string, HTMLElement> = {};
+    root.querySelectorAll<HTMLElement>('[data-k]').forEach((el) => (els[el.dataset.k!] = el));
+    return { root, els, key: '' };
+  }
+
+  private fillPanel(panel: PlayerPanel, player: PlayerHudInfo): void {
+    const key = JSON.stringify(player);
+    if (key === panel.key) return;
+    panel.key = key;
+    const e = panel.els;
+    const full = player.hopper >= player.capacity;
+    panel.root.className = `player ${player.alliance}${full ? ' full' : ''}${player.disabled ? ' disabled' : ''}${panel.root.classList.contains('push') ? ' push' : ''}`;
+    e.pnum.textContent = String(player.team);
+    e.pname.textContent = player.robotName;
+    e.ptag.textContent = player.tag ?? '';
+    e.hbar.style.transform = `scaleX(${Math.min(1, player.hopper / Math.max(1, player.capacity)).toFixed(3)})`;
+    e.hcount.textContent = String(player.hopper);
+    e.hcap.textContent = `/${player.capacity}`;
+    const chip = (txt: string, on?: boolean) => `<span class="${on === undefined ? '' : on ? 'on' : 'off'}">${txt}</span>`;
+    const chips = [chip(player.fieldRelative ? t('fieldRel') : t('robotRel')), chip('INTAKE', player.intakeOn), chip('AUTO-AIM', player.autoAim)];
+    if (player.climb) chips.push(chip(player.climb, true));
+    chips.push(`<span class="wide">${player.outpost}</span>`);
+    e.chips.innerHTML = chips.join('');
+    e.pnote.textContent = player.disabled ? t('disabled') : (player.note ?? '');
   }
 
   /** Contadores de PIN (G418) sobre los robots, en coordenadas de pantalla. */

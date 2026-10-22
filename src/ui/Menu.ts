@@ -103,26 +103,30 @@ export class Screens {
 
   /** Barra superior con la marca. */
   private brandbar(ctx = '', right = ''): string {
-    return `<div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div>${ctx ? `<div class="ctx">${ctx}</div>` : ''}<div class="grow"></div>${right}</div>`;
+    return `<div class="brandbar"><div class="brand"><i class="logo" aria-hidden="true"></i>REBUILT<span>SIM</span></div>${ctx ? `<div class="ctx">${ctx}</div>` : ''}<div class="grow"></div>${right}</div>`;
   }
 
   // ------------------------------------------------------------------ principal
   main(): void {
-    const items: Array<[string, TKey, TKey]> = [
-      ['match', 'match', 'matchDesc'],
+    // Jugar: el match va destacado arriba; abajo, los demás modos en mosaico
+    const play: Array<[string, TKey, TKey]> = [
       ['practice', 'practice', 'practiceDesc'],
       ['local', 'local', 'localDesc'],
       ['tournament', 'tournament', 'tournamentDesc'],
+      ['spectate', 'spectate', 'spectateDesc'],
+    ];
+    const workshop: Array<[string, TKey, TKey]> = [
       ['strategy', 'strategyPlanner', 'strategyPlannerDesc'],
       ['auto', 'autoDesigner', 'autoDesignerDesc'],
       ['editor', 'robotEditor', 'robotEditorDesc'],
-      ['spectate', 'spectate', 'spectateDesc'],
       ['settings', 'settings', 'settingsDesc'],
     ];
     const name = this.s.driverName || '';
+    const tile = ([go, label, desc]: [string, TKey, TKey], cls: string) =>
+      `<button class="${cls}" data-nav data-go="${go}">${MODE_ICON[go]}<span class="mt-txt"><b>${t(label)}</b><small>${t(desc)}</small></span></button>`;
     this.show(`
       ${this.brandbar(
-        '',
+        `${t('season2026')} · ${t('mm_fan')}`,
         `<button class="chipbtn ${getLang() === 'es' ? 'on' : ''}" data-lang="es">ES</button>
          <button class="chipbtn ${getLang() === 'en' ? 'on' : ''}" data-lang="en">EN</button>
          <button class="chipbtn" data-fs title="${t('fullscreen')}">⛶</button>
@@ -130,19 +134,31 @@ export class Screens {
       )}
       <div class="mm">
         <div class="mm-left">
-          <div class="mm-season">${t('season2026')}</div>
-          <div class="mm-title">REBUILT</div>
-          <nav class="mm-menu">
-            ${items.map(([go, label, desc], i) => `<button class="mm-item" data-nav data-go="${go}" ${i === 0 ? 'data-nav-default' : ''}>${t(label)}<small>${t(desc)}</small></button>`).join('')}
-          </nav>
-          <div class="driver">
-            <div class="avatar" data-avatar>${esc((name || 'R').slice(0, 1))}</div>
-            <div><label>${t('driverName')}</label><input type="text" maxlength="24" data-driver value="${esc(name)}" placeholder="${t('driverPlaceholder')}"/></div>
+          <div class="mm-eyebrow"><span>01</span>${t('mm_play')}</div>
+          <button class="mm-hero" data-nav data-nav-default data-go="match">
+            <span class="mh-kick">3 vs 3 · AUTO + TELEOP</span>
+            <b>${t('match')}</b>
+            <small>${t('matchDesc')}</small>
+            <span class="mh-go">${MODE_ICON.go}</span>
+          </button>
+          <div class="mm-tiles">${play.map((it) => tile(it, 'mm-tile')).join('')}</div>
+          <div class="mm-eyebrow"><span>02</span>${t('mm_workshop')}</div>
+          <div class="mm-tools">${workshop.map((it) => tile(it, 'mm-tool')).join('')}</div>
+          <div class="mm-timeline" aria-hidden="true">
+            <div class="tl-head"><span>MATCH 2:40</span><small>${t('mm_tlNote')}</small></div>
+            <div class="tl-bar">${TIMELINE.map(([label, sec, cls]) => `<i class="${cls}" style="flex-grow:${sec}"><span>${label}</span></i>`).join('')}</div>
           </div>
         </div>
         <div class="mm-right">
-          <div class="showcase" data-showcase></div>
-          <div class="robotinfo" data-robotinfo></div>
+          <div class="bay">
+            <div class="bay-head">
+              <span class="bay-label">${t('mm_yourRobot')}</span>
+              <label class="driver"><span class="avatar" data-avatar>${esc((name || 'R').slice(0, 1))}</span>
+                <span class="drv-txt"><small>${t('driverName')}</small><input type="text" maxlength="24" data-driver value="${esc(name)}" placeholder="${t('driverPlaceholder')}"/></span></label>
+            </div>
+            <div class="showcase" data-showcase></div>
+            <div class="robotinfo" data-robotinfo></div>
+          </div>
         </div>
       </div>
       <div class="mm-bottom">
@@ -172,19 +188,23 @@ export class Screens {
       const sp = robots[i];
       this.showroom.setRobot(sp, this.s.match.alliance);
       const info = r.querySelector<HTMLElement>('[data-robotinfo]')!;
+      const bar = (label: string, v: number, txt: string) =>
+        `<div class="sbar"><span>${label}</span><div><i style="width:${Math.round(Math.min(1, Math.max(0.04, v)) * 100)}%"></i></div><b>${txt}</b></div>`;
       info.innerHTML = `
-        <div class="statrow">
-          <span class="stat">${t('maxSpeed')}<b>${sp.maxSpeed.toFixed(1)} m/s</b></span>
-          <span class="stat">${t('hopper')}<b>${sp.hopperCapacity}</b></span>
-          <span class="stat">SHOOTER<b>${sp.shooter.rate}/s</b></span>
-          <span class="stat">TRENCH<b>${fitsUnderTrench(sp) ? '✓' : '—'}</b></span>
+        <div class="ri-plate">
+          <div class="num">${sp.teamNumber}</div>
+          <div class="meta"><b>${esc(sp.name)}</b><span>${robotSubtitle(sp)}</span></div>
         </div>
-        <div class="line1"><div class="num">${sp.teamNumber}</div>
-          <div class="meta"><b>${esc(sp.name)}</b><span>${robotSubtitle(sp)}</span></div></div>
+        <div class="ri-stats">
+          ${bar(t('statSpeed'), sp.maxSpeed / 5.5, `${sp.maxSpeed.toFixed(1)} m/s`)}
+          ${bar(t('statShot'), sp.shooter.rate / 30, `${sp.shooter.rate} FUEL/s`)}
+          ${bar(t('statHopper'), sp.hopperCapacity / 115, `${sp.hopperCapacity}`)}
+          <div class="ri-flags"><span class="${fitsUnderTrench(sp) ? 'on' : ''}">TRENCH ${fitsUnderTrench(sp) ? '✓' : '—'}</span><span class="${sp.climb.maxLevel ? 'on' : ''}">CLIMB ${sp.climb.maxLevel ? `L${sp.climb.maxLevel}` : '—'}</span></div>
+        </div>
         <div class="nav"><button class="arrowbtn" data-prev aria-label="prev">‹</button>
           <div class="track"><i style="width:${100 / robots.length}%;margin-left:${(100 * i) / robots.length}%"></i></div>
           <span class="count">${i + 1}/${robots.length}</span><button class="arrowbtn" data-next aria-label="next">›</button>
-          <button class="btn" data-all style="min-height:40px;padding:8px 14px;font-size:14px">▦ ${t('viewAll')}</button></div>`;
+          <button class="btn ghost" data-all>▦ ${t('viewAll')}</button></div>`;
       info.querySelector('[data-all]')!.addEventListener('click', () => this.robotPicker(() => this.main()));
       info.querySelector('[data-prev]')!.addEventListener('click', () => step(-1));
       info.querySelector('[data-next]')!.addEventListener('click', () => step(1));
@@ -245,6 +265,7 @@ export class Screens {
     const groupOf = (r: RobotSpec): PickerTab => (r.real || ROBOT_PRESETS.some((p) => p.id === r.id) ? 'top' : 'custom');
     let tab: PickerTab = groupOf(all.find((r) => r.id === m.robotId) ?? all[0]);
     let current = m.robotId;
+    let query = '';
     const render = () => {
       const list = all.filter((r) => groupOf(r) === tab);
       const tabs = (['top', 'custom'] as PickerTab[])
@@ -252,17 +273,20 @@ export class Screens {
         .join('');
       this.show(`
         ${this.brandbar('2026 REBUILT')}
-        <h1>${t('chooseRobot')}</h1>
         <div class="picker">
           <div class="picker-left">
-            <div class="tabs">${tabs}</div>
+            <div class="pk-top">
+              <h1>${t('chooseRobot')}</h1>
+              <div class="tabs">${tabs}</div>
+              <input type="search" class="pk-search" data-search placeholder="${t('pk_search')}" value="${esc(query)}"/>
+            </div>
             <div class="rgrid" data-grid>
               ${
                 list.length
                   ? list
                       .map(
                         (r) => `<button class="rcard ${r.id === current ? 'sel' : ''} ${r.id === m.robotId ? 'mine' : ''}" data-nav data-id="${r.id}" ${r.id === current ? 'data-nav-default' : ''}>
-                  <div class="thumb"><img alt="" data-thumb="${r.id}"/>${badge(r)}</div>
+                  <div class="thumb loading"><img alt="" data-thumb="${r.id}"/>${badge(r)}</div>
                   <div class="rc-head"><span class="rc-num">${r.teamNumber}</span><span class="rc-name"><b>${esc(r.name)}</b><small>${esc(r.real?.team ?? t('customRobot'))}</small></span></div>
                   <div class="rc-chips">${chips(r)}</div>
                 </button>`,
@@ -270,6 +294,7 @@ export class Screens {
                       .join('')
                   : `<div class="msg warn">${t('noCustom')}</div>`
               }
+              <div class="msg warn pk-none" data-none hidden>${t('pk_none')}</div>
             </div>
           </div>
           <div class="picker-right" data-detail></div>
@@ -330,7 +355,7 @@ export class Screens {
       r.querySelector('[data-pick]')!.addEventListener('click', pick);
       const grid = r.querySelector<HTMLElement>('[data-grid]')!;
       const cols = () => {
-        const cards = Array.from(grid.querySelectorAll<HTMLElement>('.rcard'));
+        const cards = Array.from(grid.querySelectorAll<HTMLElement>('.rcard:not([hidden])'));
         if (cards.length < 2) return 1;
         const top0 = cards[0].offsetTop;
         const n = cards.findIndex((c) => c.offsetTop !== top0);
@@ -345,6 +370,24 @@ export class Screens {
       });
       const first = list.find((x) => x.id === current) ?? list[0];
       if (first) showDetail(first.id);
+      // Búsqueda: oculta las tarjetas que no coinciden (número, robot o equipo)
+      const search = r.querySelector<HTMLInputElement>('[data-search]')!;
+      const filter = () => {
+        query = search.value.trim().toLowerCase();
+        let shown = 0;
+        r.querySelectorAll<HTMLElement>('.rcard').forEach((c) => {
+          const sp = all.find((x) => x.id === c.dataset.id);
+          const hay = sp ? `${sp.teamNumber} ${sp.name} ${sp.real?.team ?? ''} ${sp.real?.robot ?? ''}`.toLowerCase() : '';
+          const ok = !query || hay.includes(query);
+          c.hidden = !ok;
+          c.toggleAttribute('data-nav', ok);
+          if (ok) shown++;
+        });
+        r.querySelector<HTMLElement>('[data-none]')!.hidden = shown > 0 || !list.length;
+        this.nav?.refresh();
+      };
+      search.addEventListener('input', filter);
+      if (query) filter();
       // Miniaturas una por una (no congela la pantalla)
       const imgs = Array.from(r.querySelectorAll<HTMLImageElement>('[data-thumb]'));
       const next = async () => {
@@ -352,6 +395,7 @@ export class Screens {
         if (!img || !img.isConnected) return;
         const sp = all.find((x) => x.id === img.dataset.thumb);
         if (sp) img.src = await this.showroom.snapshot(sp, m.alliance);
+        img.parentElement?.classList.remove('loading');
         setTimeout(next, 0);
       };
       setTimeout(next, 30);
@@ -882,3 +926,37 @@ function fieldMapSvg(a: Alliance, ds: StationNumber, spec: RobotSpec, offset: nu
     <polygon points="${st.x + dir * hx * 0.75},${z} ${st.x + dir * hx * 0.1},${z - hz * 0.45} ${st.x + dir * hx * 0.1},${z + hz * 0.45}" fill="#fff"/></g>`;
   return `<svg viewBox="${-L - 0.25} ${-W - 0.05} ${2 * L + 0.5} ${2 * W + 0.1}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="field">${g}</svg>`;
 }
+
+/** Línea de tiempo del match (sección 6.4: AUTO 20 s, TRANSITION 10 s, 4 SHIFTS de 25 s, END GAME 30 s). */
+const TIMELINE: Array<[string, number, string]> = [
+  ['AUTO', 20, 'auto'],
+  ['TRANS', 10, 'trans'],
+  ['SHIFT 1', 25, 'sa'],
+  ['SHIFT 2', 25, 'sb'],
+  ['SHIFT 3', 25, 'sa'],
+  ['SHIFT 4', 25, 'sb'],
+  ['END GAME', 30, 'end'],
+];
+
+/** Íconos de línea (24×24, propios) de los modos del menú principal. */
+const svg = (d: string) =>
+  `<svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const MODE_ICON: Record<string, string> = {
+  // hexágono del HUB con una pelota de FUEL
+  practice: svg('<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><circle cx="12" cy="12" r="3.2"/>'),
+  // dos controles
+  local: svg('<rect x="2.5" y="8" width="9" height="7" rx="3.5"/><rect x="12.5" y="8" width="9" height="7" rx="3.5"/><path d="M5.5 11.5h3M7 10v3M17 11.5h1.6"/>'),
+  // trofeo
+  tournament: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>'),
+  // ojo / transmisión
+  spectate: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+  // pizarra con jugadas
+  strategy: svg('<rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 14l3-4 3 2 4-5M8 21h8"/>'),
+  // trayectoria con puntos
+  auto: svg('<circle cx="5" cy="18" r="2"/><circle cx="19" cy="6" r="2"/><path d="M6.6 16.6C9 12 9 9 13 9s4-1.5 4.6-1.8" stroke-dasharray="2.5 2.5"/>'),
+  // llave
+  editor: svg('<path d="M14.5 5.5a4 4 0 0 0 4.9 5L21 12l-9 9-3-3 9-9-1.5-1.6a4 4 0 0 1-5-4.9l2.3 2.3 2.4-.6.6-2.4z"/>'),
+  // engrane
+  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/>'),
+  go: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+};

@@ -19,12 +19,12 @@ import { loadSettings, saveSettings, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
 import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
 import { GameSession, type RobotSlotConfig, type SessionConfig } from '../game/GameSession';
-import { InputManager } from '../input/InputManager';
+import { InputManager, type SlotDevice } from '../input/InputManager';
 import { TouchControls } from '../input/TouchControls';
 import { FieldView } from '../render/FieldView';
 import { Effects } from '../render/Effects';
 import { ALLIANCE_COLOR } from '../render/FieldView';
-import { QUALITY_ORDER, Renderer, type Quality } from '../render/Renderer';
+import { QUALITY_ORDER, Renderer, type Quality, type Viewport } from '../render/Renderer';
 import { Showroom } from '../render/Showroom';
 import { Stadium } from '../render/Stadium';
 import { FLAG_SHOT, FuelState } from '../physics/FuelSystem';
@@ -32,7 +32,7 @@ import { formatTimer, timerSeconds } from '../core/clock';
 import { loadJSON, saveJSON } from '../config/settings';
 import { buildResults } from '../game/results';
 import { RULES } from '../core/fouls';
-import { Hud, PHASE_LABEL } from '../ui/Hud';
+import { Hud, PHASE_LABEL, type PlayerHudInfo } from '../ui/Hud';
 import { esc } from '../ui/forms';
 import { keyToNav, MenuNav, PadNav } from '../ui/nav';
 import { keyLabel } from '../input/actions';
@@ -826,7 +826,7 @@ export class App {
       const t2 = performance.now();
       this.fpsAcc.sim += t1 - t0;
       this.fpsAcc.gpu += t2 - t1;
-      this.updateHud(s);
+      this.updateHud(s, views);
     } else if (!this.screens.visible) {
       // Sin menú encima: el campo gira lentamente de fondo
       this.menuAngle += dt * 0.06;
@@ -914,7 +914,7 @@ export class App {
     }
   }
 
-  private updateHud(s: GameSession): void {
+  private updateHud(s: GameSession, views: Viewport[]): void {
     // Contadores de PIN (G418) encima del robot pineado
     const pins = s.referee?.activePins() ?? [];
     const cam = s.rigs[0].camera;
@@ -928,34 +928,40 @@ export class App {
         })
         .filter((p) => p.z < 1),
     );
-    const r = s.playerRobot(0);
-    if (r) this.touch.setActive('intake', r.intakeOn);
-    const rig = s.rigs[0];
+    const r0 = s.playerRobot(0);
+    if (r0) this.touch.setActive('intake', r0.intakeOn);
     const phase = s.phase;
+    const players = s.players();
+    const multi = players.length > 1;
     this.hud.update(
       s.match,
       s.cfg.eventType,
-      r
-        ? {
-            robotName: r.spec.name,
-            team: r.spec.teamNumber,
-            alliance: r.alliance,
-            hopper: s.fuel.robotCount(r.index),
-            capacity: r.spec.hopperCapacity,
-            fieldRelative: r.fieldRelative,
-            camera: t(`cam_${rig.mode}` as TKey),
-            intakeOn: r.intakeOn,
-            autoAim: this.settings.drive.autoAim,
-            climb: r.climbing ? `CLIMB L${r.climb.level()}${r.climb.attached ? '' : '…'}` : null,
-            outpost: (() => {
-              const hp = s.humanPlayers[r.alliance];
-              const f = s.fuel;
-              return `${t('chute')} ${f.chute[r.alliance].length}${hp.doorOpen ? ' ▼' : ''} · ${t('corral')} ${f.corral[r.alliance].length}`;
-            })(),
-            disabled: r.disabled,
-            note: phase === 'AUTO' ? t('autoRunning') : null,
-          }
-        : null,
+      players.map((r): PlayerHudInfo => {
+        const slot = (r.control as { slot: number }).slot;
+        const rig = s.rigs[Math.min(slot, s.rigs.length - 1)];
+        const dev = this.input.slots[slot];
+        return {
+          robotName: r.spec.name,
+          team: r.spec.teamNumber,
+          alliance: r.alliance,
+          hopper: s.fuel.robotCount(r.index),
+          capacity: r.spec.hopperCapacity,
+          fieldRelative: r.fieldRelative,
+          camera: t(`cam_${rig.mode}` as TKey),
+          intakeOn: r.intakeOn,
+          autoAim: this.settings.drive.autoAim,
+          climb: r.climbing ? `CLIMB L${r.climb.level()}${r.climb.attached ? '' : '…'}` : null,
+          outpost: (() => {
+            const hp = s.humanPlayers[r.alliance];
+            const f = s.fuel;
+            return `${t('chute')} ${f.chute[r.alliance].length}${hp.doorOpen ? ' ▼' : ''} · ${t('corral')} ${f.corral[r.alliance].length}`;
+          })(),
+          disabled: r.disabled,
+          note: phase === 'AUTO' ? t('autoRunning') : null,
+          tag: multi ? `${t('playerShort', { n: slot + 1 })}${dev ? ` · ${deviceName(dev)}` : ''}` : undefined,
+        };
+      }),
+      views.length > 1 ? views : null,
     );
   }
 
@@ -976,4 +982,12 @@ function aiRobotPool(difficulty: string, playerId: string): RobotSpec[] {
   const top = CAD_ROBOTS.filter((r) => r.id !== playerId);
   if (difficulty === 'easy') return top;
   return top.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+}
+
+/** Nombre corto del dispositivo de un jugador local (para su panel del HUD). */
+function deviceName(d: SlotDevice): string {
+  if (d.type === 'keyboard') return t('keyboard');
+  if (d.type === 'gamepad') return `${t('gamepad')} ${d.index + 1}`;
+  if (d.type === 'touch') return t('touch');
+  return '';
 }
