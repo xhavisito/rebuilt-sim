@@ -81,6 +81,8 @@ export interface HopperSlot {
   p: Vec3;
 }
 
+/** Opacidad mínima de las piezas transparentes del CAD (policarbonato) para que se vean en el campo. */
+export const CLEAR_MIN_OPACITY = 0.55;
 export const FUEL_D = 0.150114; // 5.91 in
 
 /**
@@ -655,32 +657,44 @@ export const CAD_RIGS: Record<string, CadRig> = {
   },
 
   /**
-   * 2826 (Wave Robotics) — asset sin componentes: el hopper extensible con la intake (c0) se
-   * separa por nombre (sources.mjs `parts`). En el CAD está desplegado hacia atrás; guardado
-   * entra 0.3 m (deducido del CAD). El modelo se gira 180°.
+   * 2826 (Wave Robotics) — asset sin componentes: el hopper extensible con la intake (c0) y la
+   * turret "V4 Azimuth" (c1, subsystems/turret) se separan por nombre (sources.mjs `parts`). En el
+   * CAD el hopper está desplegado hacia atrás; guardado entra 0.3 m. La turret gira en el centro
+   * de sus anillos y en el CAD su hood apunta a −90° (deducido del CAD). El modelo se gira 180°.
    */
   '2826.glb': {
     yawDeg: 180,
     poses(m) {
-      return [pose([lerp(0.3, 0, m.intake), 0, 0])];
+      return [pose([lerp(0.3, 0, m.intake), 0, 0]), rotateAround(IDENTITY, [0.106, -0.019, 0], rot(0, 0, m.turret + Math.PI / 2))];
     },
     hopper: [{ min: [-0.5, -0.3, 0.12], max: [-0.05, 0.3, 0.45], comp: 0 }],
   },
 
   /**
-   * 2363 (Triple Helix) "Rho" — asset de una pieza: la intake de cuatro barras (c0) se separa
-   * por nombre (sources.mjs `parts`, NAUO… del STEP). Desplegada en el CAD; guardada sube 100°
-   * sobre su pivote (deducido del CAD).
+   * 2363 (Triple Helix) "Rho" — asset de una pieza: la intake de cuatro barras (c0) y la turret
+   * (c1, LauncherConstants.TurretConstants: −95°…175°) se separan por nombre (sources.mjs `parts`,
+   * NAUO… del STEP). Intake desplegada en el CAD; guardada sube 100° sobre su pivote. La turret
+   * gira sobre el centro de su placa (deducido del CAD) y en el CAD apunta a −45° (el lado alto del hood, sobre el flywheel, es la salida).
    */
   '2363.glb': {
     poses(m) {
-      return [rotateAround(IDENTITY, [0.345, 0, 0.195], rot(0, -lerp(100, 0, m.intake) * DEG, 0))];
+      return [
+        rotateAround(IDENTITY, [0.345, 0, 0.195], rot(0, -lerp(100, 0, m.intake) * DEG, 0)),
+        rotateAround(IDENTITY, [-0.055, -0.13, 0], rot(0, 0, m.turret + Math.PI / 4)),
+      ];
     },
     hopper: [{ min: [-0.3, -0.28, 0.1], max: [0.25, 0.28, 0.45] }],
   },
 
-  /** 9584 (WCP Competitive Concept, 971) — el asset es una sola malla sin partes. */
+  /**
+   * 9584 (WCP Competitive Concept, 971) — el asset es una sola malla sin partes, con los colores
+   * en una textura de paleta y los BUMPERS fundidos (ver `bumperClip`). Viene girado: los
+   * flywheels miran a +Y del CAD y la intake a −Y. Su código apunta el frente al HUB
+   * (AimAndDriveCommand), pero en el simulador la intake va al frente: se gira 90° y el
+   * shooter dispara hacia atrás (yawDeg 180 en la spec).
+   */
   '9584.glb': {
+    yawDeg: 90,
     static: true,
     poses() {
       return [];

@@ -179,7 +179,7 @@ export class FuelSystem {
     }
     let next = 0;
     const take = (): number => next++;
-    // Precargas (G303-I: máx. 8 por robot)
+    // Precargas (máx. 8 por robot: el pool de FUEL del campo cuenta con ellas)
     preloads.forEach((n, robot) => {
       const list: number[] = [];
       for (let k = 0; k < Math.min(n, F.FUEL_MAX_PRELOAD); k++) {

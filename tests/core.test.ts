@@ -6,7 +6,6 @@ import { decideFirstInactive, fuelCounts, hubActive, hubLight } from '../src/cor
 import { Match } from '../src/core/match';
 import { Rng } from '../src/core/rng';
 import { RP_THRESHOLDS, rankingPoints } from '../src/core/rp';
-import { checkStart, defaultStart } from '../src/core/startRules';
 import { levelOf, scoreAutoTower, scoreTeleopTower, type ClimbSnapshot } from '../src/core/tower';
 import type { Alliance, Phase } from '../src/core/types';
 
@@ -248,19 +247,3 @@ describe('Ranking Points (Tabla 6-5)', () => {
   });
 });
 
-describe('G303 — posición de inicio', () => {
-  const base = { halfX: F.inch(27 / 2 + 3.25), halfZ: F.inch(27 / 2 + 3.25), heightM: F.inch(24), perimeterM: F.inch(108), preload: 8 };
-  it('la posición por defecto es legal en las 3 DRIVER STATIONS de ambas alianzas', () => {
-    for (const a of ['red', 'blue'] as Alliance[])
-      for (const ds of [1, 2, 3] as const) {
-        const s = defaultStart(a, ds, base.halfX);
-        expect(checkStart({ ...base, alliance: a, x: s.x, z: s.z }), `${a}${ds}`).toEqual([]);
-      }
-  });
-  it('detecta BUMPERS fuera de la línea, BUMP tocado y más de 8 FUEL', () => {
-    const s = defaultStart('blue', 2, base.halfX);
-    expect(checkStart({ ...base, alliance: 'blue', x: s.x - 0.3, z: s.z }).map((i) => i.code)).toContain('line');
-    expect(checkStart({ ...base, alliance: 'blue', x: s.x + 0.06, z: F.BUMP_CENTER_Z }).map((i) => i.code)).toContain('bump');
-    expect(checkStart({ ...base, alliance: 'blue', x: s.x, z: s.z, preload: 9 }).map((i) => i.code)).toContain('preload');
-  });
-});

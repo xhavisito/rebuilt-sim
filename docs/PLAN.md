@@ -27,7 +27,7 @@ src/
   game/GameSession.ts      una sesión (práctica/match): física+core+render+IA+árbitro
   game/Robot.ts            robot = spec + cuerpo físico + vista + controlador
   game/HumanPlayer.ts      HUMAN PLAYER (OUTPOST: CHUTE, CORRAL, lanzamiento)
-  game/StartPositions.ts   posiciones de salida legales (G303)
+  game/StartPositions.ts   posiciones de salida (sin validar G303, a pedido)
   config/field.ts          medidas del campo (m; pulgadas en comentario)
   config/robots.ts         RobotSpec, presets, validación R104/R105/R107
   config/settings.ts       ajustes persistentes (localStorage)

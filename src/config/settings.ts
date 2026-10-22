@@ -41,7 +41,7 @@ export interface Settings {
     robotId: string;
     autoRoutine: string;
     humanPlayer: 'ai' | 'player';
-    /** Desplazamiento lateral de la posición inicial (m), validado con G303. */
+    /** Desplazamiento lateral de la posición inicial (m) a lo largo de la ROBOT STARTING LINE. */
     startOffset: number;
     /** Estrategia de tu alianza y la del rival (ids de `Strategy`). */
     strategy: string;

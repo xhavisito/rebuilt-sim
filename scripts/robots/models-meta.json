@@ -871,18 +871,18 @@
   },
   "2363": {
     "trianglesRaw": 1864822,
-    "triangles": 139587,
+    "triangles": 139456,
     "errorMm": 1.27,
-    "kb": 365,
+    "kb": 367,
     "removedParts": 104,
     "materials": 1,
     "parts": {
       "main": {
-        "triangles": 135497,
+        "triangles": 123870,
         "min": [
           -0.427,
           -0.33,
-          -0.549
+          -0.533
         ],
         "max": [
           0.368,
@@ -901,6 +901,19 @@
           0.658,
           0.333,
           0.252
+        ]
+      },
+      "c1": {
+        "triangles": 11496,
+        "min": [
+          -0.255,
+          -0.327,
+          0.355
+        ],
+        "max": [
+          0.139,
+          0.071,
+          0.549
         ]
       }
     }
@@ -1093,14 +1106,14 @@
   },
   "2826": {
     "trianglesRaw": 1643720,
-    "triangles": 139633,
+    "triangles": 139514,
     "errorMm": 1.07,
-    "kb": 499,
+    "kb": 507,
     "removedParts": 893,
     "materials": 53,
     "parts": {
       "main": {
-        "triangles": 129299,
+        "triangles": 115342,
         "min": [
           -0.178,
           -0.044,
@@ -1123,6 +1136,19 @@
           -0.056,
           0.508,
           0.474
+        ]
+      },
+      "c1": {
+        "triangles": 13838,
+        "min": [
+          -0.06,
+          -0.191,
+          0.283
+        ],
+        "max": [
+          0.28,
+          0.15,
+          0.434
         ]
       }
     }
@@ -2186,23 +2212,23 @@
     }
   },
   "9584": {
-    "trianglesRaw": 4599841,
-    "triangles": 139113,
-    "errorMm": 5.45,
-    "kb": 400,
+    "trianglesRaw": 4592156,
+    "triangles": 138709,
+    "errorMm": 4.72,
+    "kb": 483,
     "removedParts": 0,
-    "materials": 1,
+    "materials": 34,
     "parts": {
       "main": {
-        "triangles": 139113,
+        "triangles": 138709,
         "min": [
-          -0.396,
-          -0.429,
+          -0.339,
+          -0.365,
           -0.659
         ],
         "max": [
-          0.396,
-          0.429,
+          0.339,
+          0.365,
           0.1
         ]
       }

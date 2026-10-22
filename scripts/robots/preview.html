@@ -22,7 +22,7 @@
       import * as THREE from 'three';
       import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-      import { CAD_RIGS, hopperSlots, FUEL_D } from '/src/render/cadRigs.ts';
+      import { CAD_RIGS, CLEAR_MIN_OPACITY, hopperSlots, FUEL_D } from '/src/render/cadRigs.ts';
 
       const q = new URLSearchParams(location.search);
       const file = q.get('file') ?? '6328.glb';
@@ -82,6 +82,7 @@
           if (o.isMesh) {
             o.geometry.computeVertexNormals();
             o.material.side = THREE.DoubleSide;
+            if (o.material.transparent) o.material.opacity = Math.max(o.material.opacity, CLEAR_MIN_OPACITY); // como RobotView
           }
         });
         holder.add(node);

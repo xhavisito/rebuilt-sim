@@ -13,8 +13,10 @@
 // Un CAD que no viene de AdvantageScope (SolidWorks/Onshape exportado a .glb) puede separar sus
 // partes móviles por nombre de subensamble con `parts` (sources.mjs).
 // Uso: node scripts/robots/build-models.mjs <carpeta-con-descargas> [equipo...]
+// (SHOW_REMOVED=1 lista las piezas grandes que se quitan, para revisar que no se vaya un hopper).
 // Las descargas: <carpeta>/<equipo>/{config.json, model.glb, model_N.glb} (fetch-sources.mjs).
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
 import { NodeIO, PropertyType } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, getBounds, meshopt, mergeDocuments, prune } from '@gltf-transform/functions';
@@ -99,6 +101,103 @@ function isDescendant(n, a) {
   return false;
 }
 
+/** Decodifica un PNG RGB/RGBA de 8 bits (las texturas de paleta de los assets) → { w, h, px }. */
+function decodePng(buf) {
+  const w = buf.readUInt32BE(16);
+  const h = buf.readUInt32BE(20);
+  const [depth, type] = [buf[24], buf[25]];
+  if (depth !== 8 || (type !== 2 && type !== 6) || buf[28]) throw new Error('PNG no soportado');
+  const ch = type === 6 ? 4 : 3;
+  const idat = [];
+  for (let o = 8; o < buf.length; ) {
+    const len = buf.readUInt32BE(o);
+    if (buf.toString('latin1', o + 4, o + 8) === 'IDAT') idat.push(buf.subarray(o + 8, o + 8 + len));
+    o += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = w * ch;
+  const px = new Uint8Array(w * h * 4);
+  let prev = new Uint8Array(stride);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)];
+    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    const cur = new Uint8Array(stride);
+    for (let i = 0; i < stride; i++) {
+      const a = i >= ch ? cur[i - ch] : 0;
+      const b = prev[i];
+      const c = i >= ch ? prev[i - ch] : 0;
+      const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+      const pred = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][f];
+      cur[i] = (line[i] + pred) & 255;
+    }
+    for (let x = 0; x < w; x++) for (let k = 0; k < 4; k++) px[(y * w + x) * 4 + k] = k < ch ? cur[x * ch + k] : 255;
+    prev = cur;
+  }
+  return { w, h, px };
+}
+
+const srgbToLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+
+/**
+ * Texturas de paleta (Onshape → glTF: cada cara apunta con su UV a un pixel de color, p. ej. el
+ * asset de 9584): parte cada primitiva en una por color, con el color en el material. El build no
+ * conserva texturas, y sin esto el robot queda todo blanco.
+ */
+function bakePalettes(doc) {
+  const cache = new Map();
+  for (const mesh of doc.getRoot().listMeshes())
+    for (const prim of mesh.listPrimitives()) {
+      const mat = prim.getMaterial();
+      const tex = mat?.getBaseColorTexture();
+      const uv = prim.getAttribute(`TEXCOORD_${mat?.getBaseColorTextureInfo()?.getTexCoord() ?? 0}`);
+      if (!tex || !uv || tex.getMimeType() !== 'image/png') continue;
+      let img = cache.get(tex);
+      if (!img) cache.set(tex, (img = decodePng(Buffer.from(tex.getImage()))));
+      const f = mat.getBaseColorFactor();
+      const pa = prim.getAttribute('POSITION');
+      const byColor = new Map();
+      const el = [0, 0];
+      const ia = prim.getIndices();
+      const n = ia ? ia.getCount() : uv.getCount();
+      for (let t = 0; t < n; t += 3) {
+        uv.getElement(ia ? ia.getScalar(t) : t, el);
+        const x = Math.min(img.w - 1, Math.max(0, Math.floor(el[0] * img.w)));
+        const y = Math.min(img.h - 1, Math.max(0, Math.floor(el[1] * img.h)));
+        const o = (y * img.w + x) * 4;
+        const key = (img.px[o] << 24) | (img.px[o + 1] << 16) | (img.px[o + 2] << 8) | img.px[o + 3];
+        let list = byColor.get(key);
+        if (!list) byColor.set(key, (list = []));
+        for (let k = 0; k < 3; k++) list.push(ia ? ia.getScalar(t + k) : t + k);
+      }
+      for (const [key, list] of byColor) {
+        const rgba = [(key >>> 24) & 255, (key >>> 16) & 255, (key >>> 8) & 255, key & 255].map((v) => v / 255);
+        const m = mat.clone().setBaseColorTexture(null).setBaseColorFactor([0, 1, 2, 3].map((k) => (k < 3 ? srgbToLinear(rgba[k]) : rgba[k]) * f[k]));
+        // Solo los vértices que usa este color (el build solo necesita posiciones)
+        const remap = new Map();
+        const pos = [];
+        const v = [0, 0, 0];
+        const idx = new Uint32Array(list.length);
+        for (let k = 0; k < list.length; k++) {
+          let j = remap.get(list[k]);
+          if (j === undefined) {
+            remap.set(list[k], (j = remap.size));
+            pa.getElement(list[k], v);
+            pos.push(v[0], v[1], v[2]);
+          }
+          idx[k] = j;
+        }
+        const p = doc
+          .createPrimitive()
+          .setMaterial(m)
+          .setAttribute('POSITION', doc.createAccessor().setType('VEC3').setArray(new Float32Array(pos)))
+          .setIndices(doc.createAccessor().setType('SCALAR').setArray(idx));
+        mesh.addPrimitive(p);
+      }
+      mesh.removePrimitive(prim);
+      prim.dispose();
+    }
+}
+
 /** Simplifica una malla soldada con error absoluto `e` (m). Devuelve índices. */
 function simplifyChunk(ch, e) {
   if (e <= 0) return ch.index;
@@ -166,6 +265,7 @@ for (const src of SOURCES) {
     scene.addChild(g);
     groups.push(g);
   }
+  bakePalettes(doc);
   // ---- Quita tornillería, piezas diminutas y BUMPERS
   const drop = src.drop ? new RegExp(src.drop, 'i') : null;
   const hl = src.frameIn ? (src.frameIn[0] * 0.0254) / 2 : 1;
@@ -190,6 +290,7 @@ for (const src of SOURCES) {
       // Cubos de referencia de la exportación ("Origin/Reference Cube", o con alfa 0: invisibles en AdvantageScope)
       const invisible = n.getMesh().listPrimitives().every((pr) => (pr.getMaterial()?.getBaseColorFactor()[3] ?? 1) < 0.02) || /origin cube|reference cube/i.test(names[0]);
       if (invisible || diag < (src.minPart ?? 0.025) || (diag < 0.08 && names.some((s) => HARDWARE.test(s))) || (drop && names.some((s) => drop.test(s))) || bumper) {
+        if (process.env.SHOW_REMOVED && diag > 0.2) console.log(`  quitada (${diag.toFixed(2)} m${invisible ? ', invisible' : bumper ? ', bumper' : ''}): ${names.filter(Boolean).slice(0, 3).join(' < ')}`);
         n.setMesh(null);
         removed++;
       }
@@ -208,6 +309,7 @@ for (const src of SOURCES) {
   await doc.transform(dedup({ propertyTypes: [PropertyType.MATERIAL] }));
   // ---- Geometría de cada parte, en el marco de la parte, agrupada por material y soldada
   const parts = [];
+  const clip = !!src.bumperClip;
   for (const g of groups) {
     const inv = mat4(g.getWorldMatrix()).invert();
     const byMat = new Map();
@@ -231,8 +333,28 @@ for (const src of SOURCES) {
           ch.pos.push(v.x, v.y, v.z);
         }
         const ia = prim.getIndices();
-        if (ia) for (let k = 0; k < ia.getCount(); k++) ch.idx.push(base + ia.getScalar(k));
-        else for (let k = 0; k < pa.getCount(); k++) ch.idx.push(base + k);
+        const at = (k) => (ia ? ia.getScalar(k) : k);
+        const nIdx = ia ? ia.getCount() : pa.getCount();
+        if (clip && g === main) {
+          // `bumperClip`: BUMPERS fundidos en la misma malla que el robot. Se quitan los triángulos
+          // bajos (z < 0.2 m) con el centro fuera del perímetro del FRAME (marco WPILib).
+          const w = new THREE.Matrix4().fromArray(n.getWorldMatrix());
+          const c = new THREE.Vector3();
+          const q = new THREE.Vector3();
+          for (let t = 0; t < nIdx; t += 3) {
+            c.set(0, 0, 0);
+            let zMax = -Infinity;
+            for (let k = 0; k < 3; k++) {
+              pa.getElement(at(t + k), el);
+              q.fromArray(el).applyMatrix4(w);
+              c.add(q);
+              zMax = Math.max(zMax, q.z);
+            }
+            c.divideScalar(3);
+            if (zMax < 0.2 && (Math.abs(c.x) > hl + 0.005 || Math.abs(c.y) > hw + 0.005)) continue;
+            for (let k = 0; k < 3; k++) ch.idx.push(base + at(t + k));
+          }
+        } else for (let k = 0; k < nIdx; k++) ch.idx.push(base + at(k));
       }
     });
     for (const c of g.listChildren()) {
