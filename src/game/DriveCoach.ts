@@ -43,8 +43,8 @@ export class DriveCoach {
   private once = new Set<string>();
   private cool = new Map<string, number>();
   private announced = false;
-  /** Momento en que anuncia quién acapara (la IA elige su táctica al empezar el SHIFT). */
-  private stockAt = -1;
+  /** Próxima revisión de compañeros esperando. */
+  private watchAt = 0;
   private shots0 = { shot: 0, scored: 0 };
 
   constructor(
@@ -175,9 +175,10 @@ export class DriveCoach {
         }
       }
     }
-    if (this.stockAt > 0 && m.t >= this.stockAt) {
-      this.stockAt = -1;
-      if (!active) this.announceStock();
+    // Nadie de la alianza se queda esperando todo un SHIFT inactivo (revisa cada ~2 s)
+    if (teleop && !endgame && !active && m.t >= this.watchAt) {
+      this.watchAt = m.t + 2;
+      this.watchMates(m, until);
     }
     // ---- Variar el juego (una vez cada cosa)
     if (teleop && this.teleopT > 70 && p.stats.passes === 0 && !active) this.sayOnce('coach_varyPass', 'tip');
@@ -220,39 +221,54 @@ export class DriveCoach {
   }
 
   /**
-   * Al apagarse nuestro HUB: recuerda a cada compañero de la IA su tarea. Si vamos abajo y nadie
-   * defiende, pide al compañero que menos anota (y mejor empuja) que marque al rival peligroso.
+   * Al apagarse nuestro HUB: le da a CADA compañero de la IA su tarea para el SHIFT (nadie se queda
+   * esperando en la zona): el defensor marca al rival peligroso y los demás acaparan (pasan FUEL a
+   * nuestra ALLIANCE ZONE). Si vamos abajo y nadie defiende, pone a defender al que menos anota y
+   * mejor empuja.
    */
   private orderMates(threat: Robot | null, m: Match): void {
-    const mates = this.mates();
+    const mates = this.mates().filter((o) => this.ctx.ais.has(o.index));
     const own = this.player.alliance;
     const behind = m.score(own) < m.score(opponent(own)) - 10;
-    const window = this.untilChange() + 0.5;
+    const until = m.t + this.untilChange() - 0.5;
     let defender = mates.find((o) => {
       const plan = this.ctx.plans[o.index];
-      return plan?.role === 'defender' || this.ctx.ais.get(o.index)?.dynRole === 'defender';
+      return plan?.role === 'defender' || (plan?.role !== 'scorer' && this.ctx.ais.get(o.index)?.dynRole === 'defender');
     });
     if (!defender && behind && threat) {
-      const cands = mates.filter((o) => this.ctx.ais.has(o.index) && this.ctx.plans[o.index]?.role !== 'feeder');
+      const cands = mates.filter((o) => this.ctx.plans[o.index]?.role !== 'feeder');
       cands.sort((a, b) => this.ctx.profile(a.index).scoring - this.ctx.profile(a.index).defense - (this.ctx.profile(b.index).scoring - this.ctx.profile(b.index).defense));
       defender = cands[0];
-      const ai = defender && this.ctx.ais.get(defender.index);
-      if (ai) ai.coachOrder = { role: 'defender', until: m.t + window };
     }
-    if (defender && threat) {
-      const ai = this.ctx.ais.get(defender.index);
-      const target = this.ctx.plans[defender.index]?.defendTeam ?? threat.spec.teamNumber;
-      if (ai) ai.coachVictim = target;
-      this.emit({ key: 'coach_partnerDefend', params: { who: defender.spec.teamNumber, target }, kind: 'team' });
+    for (const o of mates) {
+      const ai = this.ctx.ais.get(o.index)!;
+      if (o === defender && threat) {
+        const target = this.ctx.plans[o.index]?.defendTeam ?? threat.spec.teamNumber;
+        ai.coachOrder = { task: 'defend', until };
+        ai.coachVictim = target;
+        this.emit({ key: 'coach_partnerDefend', params: { who: o.spec.teamNumber, target }, kind: 'team' });
+      } else {
+        ai.coachOrder = { task: 'stockpile', until };
+        this.emit({ key: 'coach_partnerStock', params: { who: o.spec.teamNumber }, kind: 'team' });
+      }
     }
-    this.stockAt = m.t + 2.5;
   }
 
-  /** Recuerda a los compañeros que están acaparando (o son alimentadores) qué hacer. */
-  private announceStock(): void {
+  /**
+   * Durante nuestro SHIFT inactivo: si un compañero se quedó esperando en la zona con tiempo de
+   * sobra, se lo dice por su número y lo manda a acaparar.
+   */
+  private watchMates(m: Match, until: number): void {
+    if (until < 7) return;
     for (const o of this.mates()) {
       const ai = this.ctx.ais.get(o.index);
-      if (ai && ai.state !== 'defend' && (ai.tactic === 'stockpile' || this.ctx.plans[o.index]?.role === 'feeder')) this.emit({ key: 'coach_partnerStock', params: { who: o.spec.teamNumber }, kind: 'team' });
+      if (!ai || ai.state !== 'stage') continue;
+      ai.coachOrder = { task: 'stockpile', until: m.t + until - 0.5 };
+      // una vez cada 10 s por robot
+      const k = `noWait:${o.index}`;
+      if (m.t - (this.cool.get(k) ?? -1e9) < 10) continue;
+      this.cool.set(k, m.t);
+      this.emit({ key: 'coach_noWait', params: { who: o.spec.teamNumber }, kind: 'team' });
     }
   }
 }

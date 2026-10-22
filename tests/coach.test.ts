@@ -43,3 +43,35 @@ describe('drive coach', () => {
     expect(msgs.every((x) => x.t <= 160.5)).toBe(true);
   });
 });
+
+describe('drive coach: órdenes a toda la alianza', () => {
+  it('al apagarse el HUB cada compañero de la IA recibe tarea y al que espera se le llama', () => {
+    const m = new Match('regional', new Rng(2));
+    const robots = [fake(0, 'blue', 3478), fake(1, 'blue', 604), fake(2, 'blue', 4915), fake(3, 'red', 1678), fake(4, 'red', 971), fake(5, 'red', 6328)];
+    const ai = (state: string) => ({ state, coachOrder: null as null | { task: string; until: number }, coachVictim: null, dynRole: null, tactic: null });
+    const ais = new Map<number, ReturnType<typeof ai>>([
+      [1, ai('stage')],
+      [2, ai('collect')],
+    ]);
+    const msgs: Array<CoachMsg & { t: number }> = [];
+    const coach = new DriveCoach(
+      { robots, match: m, fuel: { robotCount: () => 30 } as never, ais: ais as never, plans: robots.map(() => undefined), profile: () => ({ scoring: 0.6, collecting: 0.5, defense: 0.5, passing: 0.5, driving: 0.5, climb: 0.3 }), eventType: 'regional' },
+      robots[0],
+      (x) => msgs.push({ ...x, t: m.t }),
+    );
+    m.start();
+    let firstOff = -1;
+    for (let k = 0; k < 166 * 20; k++) {
+      m.tick(0.05);
+      coach.update(0.05);
+      if (firstOff < 0 && m.t > 31 && !m.isHubActive('blue')) firstOff = m.t;
+      if (firstOff > 0 && m.t > firstOff + 3) break;
+    }
+    expect(firstOff).toBeGreaterThan(0);
+    // los dos compañeros con orden (acaparar) y anunciados
+    for (const [, a] of ais) expect(a.coachOrder?.task).toBe('stockpile');
+    expect(msgs.filter((x) => x.key === 'coach_partnerStock').map((x) => x.params?.who).sort()).toEqual([4915, 604]);
+    // 604 se quedó "esperando" (stage): el coach lo llama por su número
+    expect(msgs.some((x) => x.key === 'coach_noWait' && x.params?.who === 604)).toBe(true);
+  });
+});
