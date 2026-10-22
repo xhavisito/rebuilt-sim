@@ -54,24 +54,23 @@ export interface RobotPlan {
   active?: ActiveTask;
   inactive?: InactiveTask;
   /**
-   * Tareas por SHIFT: ventana 0 (SHIFT activo / inactivo 1, en SHIFT 1–2) y ventana 1 (SHIFT 3–4).
-   * Si están, mandan sobre `active` / `inactive` / `defendTeam` (ver `planAt`).
+   * Ruta y punto de cada fase (mapa del dashboard): con el HUB activo, con el HUB inactivo y en
+   * END GAME. Si están, mandan sobre `route` / `shootSpot` en esa fase (ver RobotAI).
    */
-  windows?: [ShiftPlan, ShiftPlan];
+  phases?: Partial<Record<PathPhase, PhasePath>>;
 }
 
-/** Lo que hace un robot en un par de SHIFTS (su SHIFT activo y su SHIFT inactivo de esa ventana). */
-export interface ShiftPlan {
-  active: ActiveTask;
-  inactive: InactiveTask;
-  /** Rival que marca si defiende (null = el más peligroso). */
-  defendTeam: number | null;
-}
+/** Fases del match con ruta propia en el plan. */
+export type PathPhase = 'active' | 'inactive' | 'endgame';
+export const PATH_PHASES: PathPhase[] = ['active', 'inactive', 'endgame'];
 
-/** El plan con las tareas de la ventana `w` (0 = SHIFT 1–2, 1 = SHIFT 3–4). */
-export function planAt(p: RobotPlan, w: 0 | 1): RobotPlan {
-  const s = p.windows?.[w];
-  return s ? { ...p, active: s.active, inactive: s.inactive, defendTeam: s.defendTeam } : p;
+/**
+ * Ruta de una fase (lado azul): la línea de recolección y su punto: dónde tira si anota, o dónde
+ * deja caer sus pases si alimenta o acapara.
+ */
+export interface PhasePath {
+  route: Pt[];
+  spot: Pt | null;
 }
 
 export interface Strategy {
@@ -151,6 +150,11 @@ export function planFor(s: Strategy, a: Alliance, station: StationNumber): Robot
     ...p,
     route: p.route.map((q) => toAlliance(q, a)),
     shootSpot: p.shootSpot ? toAlliance(p.shootSpot, a) : null,
+    phases: p.phases
+      ? Object.fromEntries(
+          Object.entries(p.phases).map(([k, v]) => [k, { route: v.route.map((q) => toAlliance(q, a)), spot: v.spot ? toAlliance(v.spot, a) : null }]),
+        )
+      : undefined,
     startZ: p.startZ === null ? null : a === 'blue' ? p.startZ : -p.startZ,
   };
 }

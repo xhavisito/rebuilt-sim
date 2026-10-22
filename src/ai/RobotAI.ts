@@ -20,7 +20,7 @@
 import * as F from '../config/field';
 import type { Difficulty } from '../config/settings';
 import { isTeleop, T } from '../core/clock';
-import { fuelCounts, shiftWindow } from '../core/hub';
+import { fuelCounts } from '../core/hub';
 import type { Match } from '../core/match';
 import type { Rng } from '../core/rng';
 import { opponent, type Alliance } from '../core/types';
@@ -30,7 +30,7 @@ import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
 import { hubFuelNear } from './fuelSense';
 import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
-import { inLane, inNeutral, planAt, routeDistance, type RobotPlan } from './Strategy';
+import { inLane, inNeutral, routeDistance, type PathPhase, type PhasePath, type RobotPlan } from './Strategy';
 import { passTarget, PASS_LANE_MIN } from '../game/Mechanisms';
 import type { AiMemory } from './Memory';
 import type { DynRole, RobotProfile } from './Scouting';
@@ -135,18 +135,10 @@ export class RobotAI {
   setPlan(p: RobotPlan | null): void {
     this.plan = p;
     if (!p) return;
-    if (p.windows) this.defender = false; // por SHIFT: se decide en cada ventana (`wplan`)
-    else if (p.inactive) this.defender = p.inactive === 'defend';
+    if (p.inactive) this.defender = p.inactive === 'defend';
     else if (p.role === 'defender') this.defender = true;
     else if (p.role !== 'auto') this.defender = false;
     if (p.climb !== 'auto') this.climbLevel = Math.min(p.climb, this.r.spec.climb.maxLevel);
-  }
-
-  /** El plan con las tareas del SHIFT actual (ventana 0 = SHIFT 1–2, 1 = SHIFT 3–4). */
-  private get wplan(): RobotPlan | null {
-    const p = this.plan;
-    if (!p) return null;
-    return planAt(p, shiftWindow(this.ctx.match?.phase ?? 'TRANSITION'));
   }
 
   /** ¿Su plan deja que la alianza le cambie el rol? */
@@ -160,7 +152,7 @@ export class RobotAI {
    */
   private get feeding(): boolean {
     if (this.ctx.match?.phase === 'END_GAME') return false;
-    const pl = this.wplan;
+    const pl = this.plan;
     if (pl?.active || pl?.inactive) return this.hubCountsIn(0) ? pl.active === 'feed' : pl.inactive === 'feed';
     return pl?.role === 'feeder' || (this.roleFree && this.dynRole === 'feeder');
   }
@@ -175,8 +167,7 @@ export class RobotAI {
   private get defending(): boolean {
     const coach = this.coachTask();
     if (coach === 'stockpile') return false;
-    const byShift = this.plan?.windows ? this.wplan?.inactive === 'defend' : false;
-    return this.defender || byShift || coach === 'defend' || (this.roleFree && this.dynRole === 'defender');
+    return this.defender || coach === 'defend' || (this.roleFree && this.dynRole === 'defender');
   }
 
   /** Segundos hasta que su HUB vuelve a contar FUEL (0 si ya cuenta; 99 si no vuelve). */
@@ -232,8 +223,34 @@ export class RobotAI {
     return k >= 3;
   }
 
+  /** Fase del plan en la que está (su HUB activo, inactivo o END GAME). */
+  private get pathPhase(): PathPhase {
+    return this.ctx.match?.phase === 'END_GAME' ? 'endgame' : this.hubCountsIn(0) ? 'active' : 'inactive';
+  }
+
+  /** Ruta y punto que marca el plan para esta fase (mapa del dashboard), si los hay. */
+  private get phasePath(): PhasePath | null {
+    return this.plan?.phases?.[this.pathPhase] ?? null;
+  }
+
+  /** Línea de recolección vigente: la de la fase o, si no, la general de la estrategia. */
+  private get route(): Pt[] {
+    return this.phasePath?.route ?? this.plan?.route ?? [];
+  }
+
+  /** Punto de pase del plan en esta fase (si alimenta o acapara y el plan lo marca). */
+  private planPassSpot(): Pt | null {
+    const k = this.pathPhase;
+    const task = k === 'active' ? this.plan?.active : k === 'inactive' ? this.plan?.inactive : null;
+    return task === 'feed' || task === 'stockpile' ? (this.plan?.phases?.[k]?.spot ?? null) : null;
+  }
+
   /** Punto de tiro propio dentro de la ALLIANCE ZONE, repartido por DRIVER STATION. */
   private shootSpot(): Pt {
+    // el del plan: el de END GAME en END GAME; si no, el de su SHIFT activo (donde anota)
+    const ph = this.plan?.phases;
+    const planned = this.ctx.match?.phase === 'END_GAME' ? ph?.endgame?.spot : this.plan?.active !== 'feed' ? ph?.active?.spot : null;
+    if (planned) return planned;
     if (this.plan?.shootSpot) return this.plan.shootSpot;
     const hub = F.hubCenter(this.r.alliance);
     const lanes = { 1: -2.0, 2: 0.0, 3: 2.0 } as const;
@@ -290,7 +307,7 @@ export class RobotAI {
           this.targetBall = -1;
         }
         if (this.targetBall < 0 || this.targetAge > 1.5) this.pickBall();
-        const route = this.plan?.route ?? [];
+        const route = this.route;
         if (this.targetBall < 0 && route.length) {
           // sin FUEL a la vista: recorre su línea de recolección
           const q = route[this.routeIdx % route.length];
@@ -453,6 +470,8 @@ export class RobotAI {
    * 2–3.5 m de la pared. Sin compañeros, el punto de siempre.
    */
   private passGoal(): { x: number; z: number } {
+    const planned = this.planPassSpot();
+    if (planned) return planned;
     const r = this.r;
     const f = this.ctx.fuel;
     const mates = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance && !o.climbing);
@@ -488,7 +507,7 @@ export class RobotAI {
     const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
     victims.sort((a, b) => threat(b) - threat(a));
     // el rival que le asignó la estrategia (o el drive coach), si está en la cancha
-    const assigned = this.coachVictim ?? this.wplan?.defendTeam ?? null;
+    const assigned = this.coachVictim ?? this.plan?.defendTeam ?? null;
     const marked = assigned !== null ? victims.find((o) => o.spec.teamNumber === assigned) : undefined;
     if (marked) victims.unshift(marked);
     if (!victims[0]) return false;
@@ -645,7 +664,7 @@ export class RobotAI {
       const empty = n / Math.max(1, r.spec.shooter.rate * (r.spec.shooter.lanes ?? 1));
       const mustGo = left <= eta + empty + tof + 2.0;
       const load = Math.min(cap - 1, Math.max(8, Math.round(cap * 0.85)));
-      const nothingNear = this.state === 'collect' && this.targetBall < 0 && !(this.plan?.route.length);
+      const nothingNear = this.state === 'collect' && this.targetBall < 0 && !this.route.length;
       if (n > 0 && worth && (n >= load || mustGo || nothingNear || this.state === 'score' || this.inShootZone())) {
         this.state = 'score';
         this.target = spot;
@@ -670,7 +689,7 @@ export class RobotAI {
           return;
         }
         // la orden del coach o la tarea del plan para el SHIFT inactivo
-        const coach = this.coachTask() ?? (this.wplan?.inactive === 'stockpile' ? 'stockpile' : null);
+        const coach = this.coachTask() ?? (this.plan?.inactive === 'stockpile' ? 'stockpile' : null);
         if (coach === 'stockpile' || n >= cap - 2 || this.tactic) {
           let t: Tactic;
           if (coach === 'stockpile') {
@@ -745,6 +764,7 @@ export class RobotAI {
       dens.set(k, (dens.get(k) ?? 0) + 1);
     }
     const mem = this.ctx.memory;
+    const route = this.route;
     // Poco antes de que se active su HUB: el FUEL camino a su punto de tiro vale más
     const until = this.timeUntilCounts();
     const spot = until > 0 && until < 10 && !this.feeding ? this.shootSpot() : null;
@@ -783,7 +803,7 @@ export class RobotAI {
       // Plan: su carril y su línea de recolección
       if (this.plan) {
         if (!inLane(this.plan.lane, z, r.alliance)) c += 3;
-        if (this.plan.route.length) c += Math.min(4, routeDistance(this.plan.route, x, z)) * 0.8;
+        if (route.length) c += Math.min(4, routeDistance(route, x, z)) * 0.8;
       }
       // Ciclo continuo: se queda recogiendo en su ALLIANCE ZONE, donde puede seguir tirando
       if (cycling) c += this.inOwnZone(x) ? -1.5 : 3;

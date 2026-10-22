@@ -8,11 +8,11 @@
  */
 import * as F from '../config/field';
 import { isTeleop, phaseAt, T } from '../core/clock';
-import { hubActive, shiftWindow } from '../core/hub';
+import { hubActive } from '../core/hub';
 import type { Match } from '../core/match';
 import { RP_THRESHOLDS } from '../core/rp';
 import { opponent, type EventType } from '../core/types';
-import { planAt, type RobotPlan } from '../ai/Strategy';
+import type { RobotPlan } from '../ai/Strategy';
 import type { RobotAI } from '../ai/RobotAI';
 import type { RobotProfile } from '../ai/Scouting';
 import type { FuelSystem } from '../physics/FuelSystem';
@@ -109,12 +109,6 @@ export class DriveCoach {
     return best;
   }
 
-  /** Plan del robot `i` con las tareas del SHIFT actual (ventana 0 = SHIFT 1–2, 1 = SHIFT 3–4). */
-  private plan(i: number, w: 0 | 1 = shiftWindow(this.ctx.match.phase)): RobotPlan | undefined {
-    const p = this.ctx.plans[i];
-    return p ? planAt(p, w) : undefined;
-  }
-
   private mates(): Robot[] {
     return this.ctx.robots.filter((o) => o !== this.player && o.alliance === this.player.alliance);
   }
@@ -125,22 +119,18 @@ export class DriveCoach {
     this.say('coach_plan', 'tip');
     const threat = this.threat();
     for (const r of [this.player, ...this.mates()]) {
-      // las dos ventanas: SHIFT activo / inactivo 1 (SHIFT 1–2) y 2 (SHIFT 3–4)
-      const [p1, p2] = [this.plan(r.index, 0), this.plan(r.index, 1)];
-      const [t1, t2] = [phaseTasks(p1, r.spec.climb.maxLevel), phaseTasks(p2, r.spec.climb.maxLevel)];
-      const mark = (tk: typeof t1, p: RobotPlan | undefined) => (tk.inact === 'defend' ? ` ${p?.defendTeam ?? threat?.spec.teamNumber ?? ''}` : '');
+      const p = this.ctx.plans[r.index];
+      const tk = phaseTasks(p, r.spec.climb.maxLevel);
+      const target = tk.inact === 'defend' ? ` ${p?.defendTeam ?? threat?.spec.teamNumber ?? ''}` : '';
       this.emit({
         key: 'coach_orderFull',
         params: {
           who: r === this.player ? '@coach_you' : String(r.spec.teamNumber),
           auto: this.ctx.autoName?.(r.index) ?? '—',
-          act: `@task_${t1.act}`,
-          act2: `@task_${t2.act}`,
-          inact: `@task_${t1.inact}`,
-          target: mark(t1, p1),
-          inact2: `@task_${t2.inact}`,
-          target2: mark(t2, p2),
-          eg: t2.climb > 0 ? `L${t2.climb}` : '@task_noClimb',
+          act: `@task_${tk.act}`,
+          inact: `@task_${tk.inact}`,
+          target,
+          eg: tk.climb > 0 ? `L${tk.climb}` : '@task_noClimb',
         },
         kind: r === this.player ? 'tip' : 'team',
       });
@@ -181,13 +171,13 @@ export class DriveCoach {
           this.say('coach_activeNow', 'call');
           // quién alimenta en este SHIFT (según el plan)
           for (const o of this.mates())
-            if (phaseTasks(this.plan(o.index), o.spec.climb.maxLevel).act === 'feed') this.emit({ key: 'coach_partnerFeed', params: { who: o.spec.teamNumber }, kind: 'team' });
+            if (phaseTasks(this.ctx.plans[o.index], o.spec.climb.maxLevel).act === 'feed') this.emit({ key: 'coach_partnerFeed', params: { who: o.spec.teamNumber }, kind: 'team' });
         } else {
           const threat = this.threat();
-          const mine = phaseTasks(this.plan(p.index), p.spec.climb.maxLevel);
+          const mine = phaseTasks(this.ctx.plans[p.index], p.spec.climb.maxLevel);
           // tu tarea del plan para el SHIFT inactivo
-          if (this.plan(p.index)?.inactive) {
-            const target = this.plan(p.index)?.defendTeam ?? threat?.spec.teamNumber ?? '';
+          if (this.ctx.plans[p.index]?.inactive) {
+            const target = this.ctx.plans[p.index]?.defendTeam ?? threat?.spec.teamNumber ?? '';
             this.say('coach_youInactive', 'tip', { task: `@task_${mine.inact}`, target: mine.inact === 'defend' ? ` ${target}` : '' });
           } else if (n >= cap - 2) this.say('coach_inactiveFull', 'tip', { target: threat?.spec.teamNumber ?? '' });
           else this.say('coach_inactiveFill', 'tip', { s: Math.round(until) });
@@ -227,7 +217,7 @@ export class DriveCoach {
     // ---- END GAME: cuándo salir a trepar; RP
     if (endgame) {
       // el nivel que dice el plan (o el máximo de su robot)
-      const lvl = phaseTasks(this.plan(p.index), p.spec.climb.maxLevel).climb;
+      const lvl = phaseTasks(this.ctx.plans[p.index], p.spec.climb.maxLevel).climb;
       const need = lvl ? [0, p.spec.climb.timeL1, p.spec.climb.timeL2, p.spec.climb.timeL3][lvl] + 4 : 0;
       const left = T.teleopEnd - m.t;
       if (lvl === 0 && p.spec.climb.maxLevel > 0) this.sayOnce('coach_youNoClimb', 'tip');
@@ -236,7 +226,7 @@ export class DriveCoach {
         if (!p.climbing && left <= need + 2 && left > need - 1) this.sayOnce('coach_climbNow', 'call', { s: Math.round(left) });
       }
       const climbers = this.mates()
-        .map((o) => ({ o, l: phaseTasks(this.plan(o.index), o.spec.climb.maxLevel).climb }))
+        .map((o) => ({ o, l: phaseTasks(this.ctx.plans[o.index], o.spec.climb.maxLevel).climb }))
         .filter((x) => x.l > 0)
         .map((x) => `${x.o.spec.teamNumber} L${x.l}`);
       if (climbers.length) this.sayOnce('coach_partnersClimb', 'team', { list: climbers.join(', ') });
@@ -268,24 +258,24 @@ export class DriveCoach {
     const behind = m.score(own) < m.score(opponent(own)) - 10;
     const until = m.t + this.untilChange() - 0.5;
     let defender = mates.find((o) => {
-      const plan = this.plan(o.index);
+      const plan = this.ctx.plans[o.index];
       if (plan?.inactive) return plan.inactive === 'defend';
       return plan?.role === 'defender' || (plan?.role !== 'scorer' && this.ctx.ais.get(o.index)?.dynRole === 'defender');
     });
     if (!defender && behind && threat) {
       // solo entre los que no tienen tarea fija en el plan (lo que tú decidiste se respeta)
-      const cands = mates.filter((o) => this.plan(o.index)?.role !== 'feeder' && !this.plan(o.index)?.inactive);
+      const cands = mates.filter((o) => this.ctx.plans[o.index]?.role !== 'feeder' && !this.ctx.plans[o.index]?.inactive);
       cands.sort((a, b) => this.ctx.profile(a.index).scoring - this.ctx.profile(a.index).defense - (this.ctx.profile(b.index).scoring - this.ctx.profile(b.index).defense));
       defender = cands[0];
     }
     for (const o of mates) {
       const ai = this.ctx.ais.get(o.index)!;
       if (o === defender && threat) {
-        const target = this.plan(o.index)?.defendTeam ?? threat.spec.teamNumber;
+        const target = this.ctx.plans[o.index]?.defendTeam ?? threat.spec.teamNumber;
         ai.coachOrder = { task: 'defend', until };
         ai.coachVictim = target;
         this.emit({ key: 'coach_partnerDefend', params: { who: o.spec.teamNumber, target }, kind: 'team' });
-      } else if (phaseTasks(this.plan(o.index), o.spec.climb.maxLevel).inact === 'feed') {
+      } else if (phaseTasks(this.ctx.plans[o.index], o.spec.climb.maxLevel).inact === 'feed') {
         ai.coachOrder = null; // alimentador: pasa todo a la zona (su propia lógica)
         this.emit({ key: 'coach_partnerFeed', params: { who: o.spec.teamNumber }, kind: 'team' });
       } else {

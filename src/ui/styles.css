@@ -845,7 +845,7 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 @media (max-width: 700px) { .dash .psum { display: block; overflow-x: auto; } .dash .psum th:nth-child(n + 3) { width: 130px; } }
 .dash .phase h3 .pn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--accent, #f5c518); color: #111; font-size: 14px; font-weight: 800; }
 .dash .phase { scroll-margin-top: 12px; }
-.dash .auto-body { display: grid; grid-template-columns: minmax(240px, 400px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.dash .auto-body { display: grid; grid-template-columns: minmax(260px, 560px) minmax(0, 1fr); gap: 14px; align-items: start; }
 @media (max-width: 860px) { .dash .auto-body { grid-template-columns: 1fr; } }
 .dash .phase { border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0; }
 .dash .phase h3 { margin: 0 0 8px; font-size: 15px; display: flex; gap: 8px; align-items: baseline; }
@@ -856,6 +856,20 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .dash .ph-endgame { border-top: 3px solid #c77dff; }
 .dash .automap canvas { width: 100%; border-radius: 8px; touch-action: none; cursor: ns-resize; display: block; }
 .dash .automap .msg { margin: 6px 0 8px; font-size: 12px; }
+.dash .automap.draw canvas { cursor: crosshair; }
+.dash .phase-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.dash .phase-tabs b, .dash .strat-nav b { color: var(--accent, #f5c518); margin-right: 4px; }
+.dash .phase-tabs .on b, .dash .strat-nav .on b { color: inherit; }
+.dash .psum th.on { color: var(--accent, #f5c518); }
+.dash .maptools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.dash .maptools .sep { width: 1px; height: 22px; background: var(--line); margin: 0 2px; }
+.dash .maptools .dlabel { margin: 0; }
+.dash .maptools .dsb { border-left: 4px solid var(--c); }
+.dash .ptable tr.sel td { background: rgba(245, 197, 24, 0.08); }
+.dash .ptable tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent, #f5c518); }
+.dash .ptable tr[data-ds] { cursor: pointer; }
+.dash td.pmap { color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .dash .ptable .pmap { display: none; } }
 .dash .ptable td, .dash .ptable th { text-align: left; vertical-align: top; }
 .dash .ptable { table-layout: fixed; width: 100%; }
 .dash .ptable th:nth-child(1) { width: 34px; }
