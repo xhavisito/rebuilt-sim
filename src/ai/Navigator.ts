@@ -63,6 +63,11 @@ export class Navigator {
   /** Mando anterior (suavizado: un piloto no cambia de dirección de golpe en cada cuadro). */
   private sv = { x: 0, z: 0 };
   private sw = 0;
+  /**
+   * Progreso hacia el punto actual de la ruta: si en ~1.4 s no se acerca (p. ej. la atracción y
+   * la repulsión de un robot se cancelan y el mando queda en 0), cuenta como atorado.
+   */
+  private prog = { key: '', best: Infinity, t: 0 };
 
   constructor(private r: Robot) {}
 
@@ -99,6 +104,7 @@ export class Navigator {
   clear(): void {
     this.path = [];
     this.goal = null;
+    this.prog.key = '';
   }
 
   get remaining(): number {
@@ -180,7 +186,14 @@ export class Navigator {
       vz = (Math.sign(p.z - tw.cz) || 1) * vmax * 0.6;
     } else if (!crossing) for (const o of OBSTACLES) avoid(o.x, o.z, o.r + r.phys.outerW, 2.2);
     if (opts.avoidRobots !== false)
-      for (const o of others) if (o !== r) avoid(o.phys.curPos.x, o.phys.curPos.z, o.phys.outerW + r.phys.outerW, 1.6);
+      for (const o of others) {
+        if (o === r) continue;
+        const ox = o.phys.curPos.x - p.x;
+        const oz = o.phys.curPos.z - p.z;
+        // un robot que ya quedó atrás (respecto a hacia donde va) no lo empuja
+        if ((ox * dx + oz * dz) / ((Math.hypot(ox, oz) || 1) * d) < -0.3) continue;
+        avoid(o.phys.curPos.x, o.phys.curPos.z, o.phys.outerW + r.phys.outerW, 1.6);
+      }
     const vm = Math.hypot(vx, vz);
     if (vm > vmax) {
       vx *= vmax / vm;
@@ -195,21 +208,61 @@ export class Navigator {
     const trenchX = inLane ? BARRIERS.find((bx) => Math.abs(p.x - bx) < CROSS_MARGIN + 0.3) : undefined;
     const underTrench = trenchX !== undefined && Math.abs(p.x - trenchX) < F.TRENCH_DEPTH / 2 + r.phys.outerL;
     const real = r.phys.velocity();
-    const vm2 = Math.hypot(vx, vz);
-    if (this.escapeT <= 0 && vm2 > 0.6 && Math.hypot(real.x, real.z) < 0.15) this.stuckT += dt;
+    const speedReal = Math.hypot(real.x, real.z);
+    const vm2 = Math.hypot(vx, vz) || 1e-6;
+    if (this.escapeT <= 0 && vm2 > 0.6 && speedReal < 0.15) this.stuckT += dt;
     else this.stuckT = Math.max(0, this.stuckT - dt);
-    if (this.stuckT > 1.0) {
+    // Sin progreso hacia el punto actual (aunque el mando sea ~0: mínimo local entre atracción y
+    // repulsión, p. ej. el objetivo junto a un compañero parado)
+    const key = `${this.path.length}:${wp.x.toFixed(2)},${wp.z.toFixed(2)}`;
+    if (this.prog.key !== key) this.prog = { key, best: d, t: 0 };
+    else if (d < this.prog.best - 0.08) {
+      this.prog.best = d;
+      this.prog.t = 0;
+    } else if (this.escapeT <= 0) this.prog.t += dt;
+    const noProgress = this.prog.t > 1.4 && speedReal < 0.3;
+    if (this.stuckT > 1.0 || noProgress) {
       this.stuckT = 0;
+      this.prog.t = 0;
+      this.prog.best = d;
       this.escapeT = 0.9;
       this.escapes++;
       const s = Math.random() < 0.5 ? -1 : 1;
-      // lejos de lo que toca (normal de los contactos); si no toca nada, al revés de donde iba.
+      // Bloqueado por un robot: lo rodea de lado (hacia donde queda el objetivo), no de frente.
+      // Si no, lejos de lo que toca (normal de los contactos) o al revés de donde iba.
       // Acuñado bajo el TRENCH: derecho hacia afuera, por donde entró (de lado choca otra vez).
-      const b = underTrench ? { x: Math.sign(p.x - trenchX) || 1, z: 0 } : (r.phys.awayFromContacts() ?? { x: -vx / vm2, z: -vz / vm2 });
-      const ex = b.x * 0.85 - s * b.z * 0.5;
-      const ez = b.z * 0.85 + s * b.x * 0.5;
-      const em = Math.hypot(ex, ez);
-      this.escapeDir = { x: ex / em, z: ez / em };
+      let blocker: Robot | null = null;
+      let bd = Infinity;
+      for (const o of others) {
+        if (o === r) continue;
+        const dd = Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) - (o.phys.outerW + r.phys.outerW);
+        if (dd < 0.45 && dd < bd) {
+          bd = dd;
+          blocker = o;
+        }
+      }
+      if (blocker && !underTrench) {
+        const tx = blocker.phys.curPos.x - p.x;
+        const tz = blocker.phys.curPos.z - p.z;
+        const tm = Math.hypot(tx, tz) || 1;
+        // perpendicular hacia el lado del objetivo, y un poco hacia atrás del que estorba
+        let px = -tz / tm;
+        let pz = tx / tm;
+        if (px * dx + pz * dz < 0) {
+          px = -px;
+          pz = -pz;
+        }
+        const ex = px * 0.9 - (tx / tm) * 0.45;
+        const ez = pz * 0.9 - (tz / tm) * 0.45;
+        const em = Math.hypot(ex, ez) || 1;
+        this.escapeDir = { x: ex / em, z: ez / em };
+      } else {
+        const b = underTrench ? { x: Math.sign(p.x - trenchX) || 1, z: 0 } : (r.phys.awayFromContacts() ?? { x: -vx / vm2, z: -vz / vm2 });
+        const ex = b.x * 0.85 - s * b.z * 0.5;
+        const ez = b.z * 0.85 + s * b.x * 0.5;
+        const em = Math.hypot(ex, ez) || 1;
+        this.escapeDir = { x: ex / em, z: ez / em };
+      }
     }
     if (this.escapeT > 0) {
       this.escapeT -= dt;

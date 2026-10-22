@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import * as F from '../config/field';
 import type { RobotSpec } from '../config/robots';
 import type { Settings } from '../config/settings';
-import { formatTimer, robotsEnabled, timerSeconds } from '../core/clock';
+import { formatTimer, robotsEnabled, T, timerSeconds } from '../core/clock';
 import { Match, type MatchEvent } from '../core/match';
 import { scoreAutoTower, scoreTeleopTower, type ClimbSnapshot } from '../core/tower';
 import { Referee } from '../referee/Referee';
@@ -16,7 +16,7 @@ import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
 import { AllianceBrain } from '../ai/AllianceBrain';
 import type { DynRole } from '../ai/Scouting';
-import { assignAutos, routineById } from '../auto/AutoRoutine';
+import { assignAutos, routineById, routineZones } from '../auto/AutoRoutine';
 import type { Difficulty } from '../config/settings';
 import { Rng } from '../core/rng';
 import { defaultStart, separateStarts } from '../core/startRules';
@@ -232,7 +232,9 @@ export class GameSession {
           }),
         );
         mine.forEach((r, k) => {
-          if (r.control.type !== 'none') this.autos.set(r.index, new AutoExecutor(r, routineById(ids[k])));
+          // al terminar su rutina no recoge en las zonas de las rutinas de sus compañeros
+          const avoid = ids.filter((_, j) => j !== k).flatMap((id) => routineZones(routineById(id)));
+          if (r.control.type !== 'none') this.autos.set(r.index, new AutoExecutor(r, routineById(ids[k]), avoid));
         });
       }
       this.match.start();
@@ -533,7 +535,7 @@ export class GameSession {
     for (const r of this.robots) {
       r.enabled = enabled && !r.disabled;
       if (!r.enabled) r.cmd = idleCommand(); // deshabilitado: frena (brake mode)
-      else if (auto) r.cmd = this.autos.get(r.index)?.update(dt, this.fuel, this.robots) ?? idleCommand(); // AUTO: sin piloto
+      else if (auto) r.cmd = this.autos.get(r.index)?.update(dt, this.fuel, this.robots, T.autoEnd - (m?.t ?? 0)) ?? idleCommand(); // AUTO: sin piloto
       else if (this.ais.has(r.index)) r.cmd = this.ais.get(r.index)!.update(dt);
       else if (r.control.type === 'player') {
         const slot = r.control.slot;

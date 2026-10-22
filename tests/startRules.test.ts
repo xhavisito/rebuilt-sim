@@ -74,3 +74,16 @@ describe('AUTO según el orden real de salida', () => {
     expect(ids[1]).toBe('neutral-top');
   });
 });
+
+describe('zonas de AUTO', () => {
+  it('cada punto cae en su zona (marco azul) y el punto donde solo se tira no ocupa zona', async () => {
+    const { pointZone } = await import('../src/auto/AutoRoutine');
+    const dep = F.depotCenter('blue');
+    expect(pointZone(dep.x + 0.5, dep.z)).toBe('depot');
+    expect(pointZone(-1, -2)).toBe('neutral-top');
+    expect(pointZone(-1, 2)).toBe('neutral-bottom');
+    const ds = BUILTIN_ROUTINES.find((r) => r.id === 'default-score')!;
+    expect(ds.mirrorToStart).toBe(true);
+    expect(routineZones(ds).sort()).toEqual(['neutral-bottom', 'neutral-top']);
+  });
+});
