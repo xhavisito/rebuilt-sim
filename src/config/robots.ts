@@ -653,11 +653,11 @@ export const CAD_ROBOTS: RobotSpec[] = [
     deployedHopperIn: [24, 20],
     intake: { widthIn: 26, extensionIn: 11, rate: 8 },
     hopperCapacity: 35,
-    shooter: { type: 'fixed', rate: 6, maxSpeed: 12.5, minAngle: 45, maxAngle: 70, accuracy: 0.78, exitHeightIn: 20, backspin: 25, lanes: 2, yawDeg: 0, posIn: [-3, 0] },
+    shooter: { type: 'fixed', rate: 6, maxSpeed: 12.5, minAngle: 45, maxAngle: 70, accuracy: 0.78, exitHeightIn: 20, backspin: 25, lanes: 2, yawDeg: 180, posIn: [-9, 0] }, // el hood sube hacia atrás en el CAD
     climb: { maxLevel: 1, timeL1: 4.2, timeL2: 99, timeL3: 99 },
     colors: { primary: '#30343b', accent: '#5a7d2a' },
     cad: { file: '7130.glb' },
-    real: cadReal('Team 7130', 'BataBot', 'Nivel medio-bajo: shooter de dos rodillos con pitch, bandeja que sale con la intake y climber; rendimiento estimado.', 'Lower-mid tier: two-roller pitching shooter, a tray that slides out with the intake and a climber; estimated performance.'),
+    real: cadReal('Team 7130', 'BataBot', 'Nivel medio-bajo: shooter de dos rodillos con pitch que tira hacia atrás, bandeja que sale con la intake y climber; rendimiento estimado.', 'Lower-mid tier: two-roller pitching shooter firing backward, a tray that slides out with the intake and a climber; estimated performance.'),
   }),
   base({
     id: 'cad-9410',

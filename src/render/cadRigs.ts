@@ -641,7 +641,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
   /**
    * 2412 (Robototes) "Corner Turret" — asset sin componentes: la turret (c0) y la cabeza de la
    * intake (c1) se separan por nombre (sources.mjs `parts`). La turret gira sobre su anillo
-   * (centro deducido del CAD); la intake se guarda encima del robot y baja hacia atrás
+   * (centro deducido del CAD; en el CAD el hood apunta a −140°, así que se suma 140° para que turret 0 = al frente); la intake se guarda encima del robot y baja hacia atrás
    * (IntakePivot.DEPLOYED_POS = −0.43 rot ≈ 155°; aquí 140° para que quede sobre el piso).
    * La intake está atrás en el CAD: el modelo se gira 180°.
    */
@@ -649,7 +649,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
     yawDeg: 180,
     poses(m) {
       return [
-        rotateAround(IDENTITY, [0.15, 0.2, 0], rot(0, 0, m.turret)),
+        rotateAround(IDENTITY, [0.15, 0.2, 0], rot(0, 0, m.turret + 140 * DEG)),
         rotateAround(IDENTITY, [-0.3, 0, 0.22], rot(0, -lerp(0, 140, m.intake) * DEG, 0)),
       ];
     },
