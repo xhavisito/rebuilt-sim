@@ -14,6 +14,7 @@ import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
 import { RobotEditor } from '../ui/RobotEditor';
 import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
+import { applyPlan, COACH_PLAN_ID, planForMatch } from '../ui/StrategyDashboard';
 import { loadSettings, saveSettings, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
 import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
@@ -62,6 +63,7 @@ export class App {
   private pauseNav: MenuNav | null = null;
   private pausePad = new PadNav();
   private countdown = -1;
+  private coachVoiceT = 0;
   private countdownShown = -1;
   readonly screens: Screens;
   private designer: AutoDesigner;
@@ -285,8 +287,22 @@ export class App {
     if (cfg.mode !== 'local') this.input.slots = [{ type: 'any' }];
     const s = new GameSession(cfg, this.renderer, this.field, this.settings);
     this.session = s;
+    this.hud.clearCoach();
     s.hooks = {
       toast: (k) => this.toast(t(k)),
+      coach: (msg) => {
+        const c = this.settings.coach;
+        if (!c.show && !c.voice) return;
+        const params = Object.fromEntries(Object.entries(msg.params ?? {}).map(([k, v]) => [k, v === 'coach_you' ? t('coach_you') : String(v)]));
+        const text = t(msg.key as TKey, params);
+        if (c.show) this.hud.coach(text, msg.kind);
+        // en voz alta solo lo urgente, y sin encimarse
+        const now = performance.now();
+        if (c.voice && (msg.kind === 'call' || msg.kind === 'warn') && now - this.coachVoiceT > 2500) {
+          this.coachVoiceT = now;
+          this.audio.speak(text, getLang());
+        }
+      },
       matchEvent: (e) => this.onMatchEvent(e),
       fuelScored: (hub, counted) => {
         if (!counted) return;
@@ -377,8 +393,9 @@ export class App {
           control: isPlayer ? { type: 'player', slot: 0 } : { type: 'ai' },
           autoRoutine: isPlayer ? m.autoRoutine : undefined,
           startOffsetZ: isPlayer ? m.startOffset * (a === 'blue' ? 1 : -1) : 0,
-          // Estrategia: la tuya para tu alianza (en espectador, la de azul) y la del rival
-          plan: isPlayer ? undefined : planFor(strategyById(a === (spectate ? 'blue' : m.alliance) ? m.strategy : m.oppStrategy), a, ds),
+          // Estrategia: la tuya para tu alianza (en espectador, la de azul) y la del rival (la de tu
+          // DRIVER STATION es para que el drive coach te la recuerde)
+          plan: planFor(strategyById(a === (spectate ? 'blue' : m.alliance) ? m.strategy : m.oppStrategy), a, ds),
         });
       }
     this.startSession({
@@ -434,6 +451,8 @@ export class App {
    */
   playTournamentMatch(tt: Tournament, match: TMatch, watch?: 'broadcast' | 'stands'): void {
     const m = this.settings.match;
+    // Con el plan del estratega: se rehace para ESTE match (los robots y DRIVER STATIONS cambian)
+    if (!watch && m.strategy === COACH_PLAN_ID) applyPlan(planForMatch(tt, match).plan, this.settings, `${t('dash_title')} ${match.id}`);
     const robots: RobotSlotConfig[] = [];
     for (const [a, ids] of [
       ['red', match.red],
@@ -452,7 +471,7 @@ export class App {
           autoRoutine: team.isPlayer ? m.autoRoutine : undefined,
           startOffsetZ: team.isPlayer ? m.startOffset * (a === 'blue' ? 1 : -1) : 0,
           // Tu estrategia para tu alianza; los demás, en automático
-          plan: team.isPlayer ? undefined : planFor(strategyById(!watch && ids.some((x) => tt.teams[x].isPlayer) ? m.strategy : 'auto'), a, (k + 1) as StationNumber),
+          plan: planFor(strategyById(!watch && ids.some((x) => tt.teams[x].isPlayer) ? m.strategy : 'auto'), a, (k + 1) as StationNumber),
         });
       });
     this.startSession({

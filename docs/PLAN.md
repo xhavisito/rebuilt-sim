@@ -79,6 +79,18 @@ scripts/screenshot.mjs     verificación con Playwright
 - **Paso fijo** 120 Hz (Alto/Ultra) o 60 Hz (Bajo/Medio en móvil) con interpolación.
 - **Base de Vite relativa** (`./`): el mismo build sirve en cualquier subruta de GitHub Pages.
 - **PWA propia**: plugin de Vite de ~30 líneas genera `sw.js` con precache de todo el build.
+- **IA en capas**: `RobotAI` (estados y criterio propio: llenarse antes del active, cargas grandes
+  por viaje, tácticas en los SHIFTS inactivos) ← `AllianceBrain` (scouting y roles por momento) ←
+  `Strategy` (plan de la alianza) ← `DriveCoach` (órdenes en el match). `AiMemory` aprende por
+  prueba y error (UCB1 por diseño de robot y situación, peligros del campo, ritmo real) y lo guarda
+  en localStorage; arranca de `src/ai/playbook.json`, generado con matches de entrenamiento
+  (`?train=1`, matches de solo IA; la memoria exportada se resume por robot y en `*`).
+- **AUTO a prueba de choques**: el navegador detecta falta de progreso (mínimo local atracción /
+  repulsión), el ejecutor tiene vigilante por waypoint y, al terminar, juego libre sin cruzar la
+  CENTER LINE (pared virtual, G403).
+- **Estratega del torneo** (`Strategist.ts`, puro): pros y contras, predicción, roles, AUTO sin
+  choques, si conviene ganar el AUTO (ventana final de 55 s), END GAME / TRAVERSAL y RP. El
+  dashboard aplica el plan como estrategia `coach-plan` (se rehace para cada match).
 
 ## Sistema de coordenadas y layout del campo
 Fuente: Game Manual TU22 §5 + layout oficial WPILib `2026-rebuilt-welded` (AprilTags) +

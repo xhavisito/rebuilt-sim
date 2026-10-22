@@ -15,6 +15,8 @@ export interface Settings {
   showFps: boolean;
   camera: CameraMode;
   cameraShake: boolean;
+  /** Drive coach en los matches: mensajes en pantalla y voz. */
+  coach: { show: boolean; voice: boolean };
   colorblind: boolean;
   drive: {
     fieldRelative: boolean;
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showFps: false,
   camera: 'third',
   cameraShake: true,
+  coach: { show: true, voice: true },
   colorblind: false,
   drive: { fieldRelative: true, mouseAim: false, autoAim: true, shootOnMove: true, aimGuide: true },
   pad: { deadzone: 0.12, curve: 'quadratic', vibration: true },

@@ -2,6 +2,7 @@
  * Pantallas de menú: principal, configuración del match, ajustes (con reasignación de
  * controles) y multijugador local (asignación de dispositivos).
  */
+import { aiMemory } from '../ai/memoryStore';
 import { loadStrategies } from '../ai/Strategy';
 import type { App } from '../app/App';
 import { loadRoutines } from '../auto/AutoRoutine';
@@ -560,6 +561,9 @@ export class Screens {
         <label>${t('language')}</label>${seg('lang', [{ value: 'es', label: 'Español (MX)' }, { value: 'en', label: 'English' }], s.lang)}
         <label>${t('camera')}</label>${seg('camera', cams, s.camera)}
         <label>${t('cameraShake')}</label>${seg('shake', yn, onoff(s.cameraShake))}
+        <label>${t('coachShow')}</label>${seg('coachShow', yn, onoff(s.coach.show))}
+        <label>${t('coachVoice')}</label>${seg('coachVoice', yn, onoff(s.coach.voice))}
+        <label>${t('aiMemory')}</label><div class="row"><span class="msg" style="flex:1">${t('aiMemoryHelp')}</span><button class="chipbtn" data-resetai>${t('aiMemoryReset')}</button></div>
         <label>${t('colorblind')}</label>${seg('cb', yn, onoff(s.colorblind))}
         <h3>${t('graphics')}</h3>
         <label>${t('quality')}</label>${seg('quality', q, s.quality)}
@@ -608,6 +612,12 @@ export class Screens {
           break;
         case 'shake':
           s.cameraShake = b;
+          break;
+        case 'coachShow':
+          s.coach.show = b;
+          break;
+        case 'coachVoice':
+          s.coach.voice = b;
           break;
         case 'cb':
           s.colorblind = b;
@@ -669,6 +679,10 @@ export class Screens {
     r.querySelector('[data-resetlayout]')!.addEventListener('click', () => {
       s.touch.layout = {};
       this.app.save();
+    });
+    r.querySelector('[data-resetai]')?.addEventListener('click', (e) => {
+      aiMemory.reset();
+      (e.currentTarget as HTMLButtonElement).textContent = `✓ ${t('aiMemoryCleared')}`;
     });
     r.querySelector('[data-resetkeys]')!.addEventListener('click', () => {
       s.keys = structuredClone(DEFAULT_SETTINGS.keys);
