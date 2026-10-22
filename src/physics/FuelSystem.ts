@@ -31,8 +31,8 @@ const CD = 0.47;
 const AREA = Math.PI * F.FUEL_RADIUS * F.FUEL_RADIUS;
 const K_DRAG = 0.5 * RHO * CD * AREA;
 const K_MAGNUS = 0.25 * RHO * AREA * F.FUEL_RADIUS;
-/** Desaceleración por rodadura de espuma sobre alfombra (m/s², C_rr ≈ 0.06). Supuesto 8 (PLAN.md). */
-const ROLL_DECEL = 0.6;
+/** Desaceleración por rodadura de espuma sobre alfombra (m/s², C_rr ≈ 0.1: la salida del HUB a 3.4 m/s rueda ~5 m, fig. 5-8). Supuesto 8 (PLAN.md). */
+const ROLL_DECEL = 1.0;
 /**
  * Fricción del FUEL. La regla de combinación de Rapier es el promedio: FUEL–FUEL 0.15 (espuma
  * lisa contra espuma lisa: resbalan y se reparten el golpe), FUEL–alfombra ≈ 0.48 (rueda en vez

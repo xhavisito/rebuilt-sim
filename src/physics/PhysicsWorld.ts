@@ -40,8 +40,13 @@ export const GROUPS = {
    * ni con el FUEL (eso lo hacen el rodillo y `shoveFuel`).
    */
   extension: groups(G.ROBOT, G.FIELD | G.ROBOT),
-  /** Ruedas: solo tocan el campo. El FUEL lo empujan los BUMPERS (no hay forma de "rodar" encima). */
-  wheel: groups(G.ROBOT, G.FIELD | G.GROUND),
+  /**
+   * Ruedas: tocan el campo y el FUEL que quede debajo del robot (al bajar del BUMP sobre un
+   * montón, el robot se puede quedar montado en el FUEL). Al FUEL de enfrente lo empujan los BUMPERS.
+   */
+  wheel: groups(G.ROBOT, G.FIELD | G.GROUND | G.FUEL),
+  /** Rayo bajo cada rueda para la tracción: solo el piso (sobre una pelota la rueda patina). */
+  wheelRay: groups(G.ROBOT, G.FIELD | G.GROUND),
   fuel: groups(G.FUEL, G.FIELD | G.GROUND | G.ROBOT | G.FUEL | G.FUEL_ONLY),
 };
 

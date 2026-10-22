@@ -56,7 +56,8 @@ export interface CadRig {
 }
 
 /**
- * Caja del hopper (marco WPILib del robot, m, con los mecanismos guardados). `maxDeployed`:
+ * Caja del hopper (marco WPILib del robot, m, con los mecanismos guardados; `max[2]` = borde de
+ * las paredes: la capa de arriba asoma media pelota sobre él). `maxDeployed`:
  * esquina máxima con la intake desplegada (el hopper crece hacia el frente, o la intake guardada
  * ocupa esa parte); entonces el FUEL guardado mantiene la intake abierta lo necesario para caber.
  * `comp`: la caja va montada en ese componente y se mueve con él (bandejas de 5000).
@@ -65,6 +66,8 @@ export interface HopperBox {
   min: Vec3;
   max: Vec3;
   maxDeployed?: Vec3;
+  /** Esquina mínima desplegada: el hopper crece hacia −X o −Y del CAD (robots girados 180° o 90°). */
+  minDeployed?: Vec3;
   comp?: number;
   /**
    * Anillo alrededor de un spindexer/rotor (centro x, y y radio del círculo de centros): los
@@ -104,23 +107,39 @@ export function hopperSlots(boxes: HopperBox[], max = 80): HopperSlot[] {
         }
       return;
     }
+    const lo = b.minDeployed ?? b.min;
     const hi = b.maxDeployed ?? b.max;
-    const sx = hi[0] - b.min[0] - d;
-    const sy = hi[1] - b.min[1] - d;
-    const sz = hi[2] - b.min[2] - d;
+    const sx = hi[0] - lo[0] - d;
+    const sy = hi[1] - lo[1] - d;
+    const sz = hi[2] - lo[2] - d;
     if (sx < -0.02 || sy < -0.02 || sz < -0.02) return;
-    const nz = Math.floor(Math.max(0, sz) / (d * 0.82)) + 1;
+    // En las cajas que crecen al desplegar, el FUEL se acomoda desde el lado que no se mueve
+    const fromHi = (k: number) => !!b.minDeployed && b.minDeployed[k] < b.min[k] - 1e-6;
+    const fromLo = (k: number) => !!b.maxDeployed && b.maxDeployed[k] > b.max[k] + 1e-6;
+    // Empaque hexagonal: filas a 0.866·d con media pelota de corrimiento, y cada capa corrida
+    // sobre los huecos de la de abajo (como se acomodan las pelotas de verdad).
+    // La capa de arriba puede asomar media pelota sobre las paredes (hopper lleno "copeteado")
+    const dy = d * 0.866;
+    const nz = Math.floor(Math.max(0, sz + r) / (d * 0.82)) + 1;
+    const place = (k: number, span: number, n: number, step: number, off: number, i: number) => {
+      if (fromHi(k)) return hi[k] - r - off - i * step;
+      if (fromLo(k)) return lo[k] + r + off + i * step;
+      return lo[k] + r + off + (Math.max(0, span - off) - (n - 1) * step) / 2 + i * step;
+    };
     for (let z = 0; z < nz; z++) {
-      const off = z % 2 ? r * 0.5 : 0; // capa corrida: la pelota cae en el hueco
-      const nx = Math.floor(Math.max(0, sx - off) / d) + 1;
-      const ny = Math.floor(Math.max(0, sy - off) / d) + 1;
-      // En las cajas que crecen hacia el frente, el FUEL se acomoda desde el fondo (atrás)
-      const x0 = b.min[0] + r + off + (b.maxDeployed ? 0 : (Math.max(0, sx - off) - (nx - 1) * d) / 2);
-      const y0 = b.min[1] + r + off + (Math.max(0, sy - off) - (ny - 1) * d) / 2;
-      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) out.push({ box, p: [x0 + i * d, y0 + j * d, b.min[2] + r + 0.003 + z * d * 0.82] });
+      const lx = z % 2 ? r * 0.5 : 0;
+      const ly = z % 2 ? dy * 0.5 : 0;
+      const ny = Math.floor(Math.max(0, sy - ly) / dy) + 1;
+      for (let j = 0; j < ny; j++) {
+        const off = lx + (j % 2) * r;
+        const nx = Math.floor(Math.max(0, sx - off) / d) + 1;
+        const y = place(1, sy, ny, dy, ly, j);
+        for (let i = 0; i < nx; i++) out.push({ box, p: [place(0, sx, nx, d, off, i), y, lo[2] + r + 0.003 + z * d * 0.82] });
+      }
     }
   });
-  out.sort((a, b) => a.p[2] - b.p[2] || a.p[0] - b.p[0] || a.box - b.box);
+  // Orden de llenado: capa por capa y, en cada capa, primero lo que cabe con la intake guardada
+  out.sort((a, b) => a.p[2] - b.p[2] || slotNeed(boxes[a.box], a) - slotNeed(boxes[b.box], b) || a.p[0] - b.p[0] || a.box - b.box);
   return out.slice(0, max);
 }
 
@@ -135,16 +154,27 @@ export function shownFuel(n: number, slots: number, capacity: number): number {
   return Math.min(slots, Math.max(1, Math.round((n * slots) / capacity)));
 }
 
-/** ¿El lugar cabe con la intake desplegada `e` (0–1)? (cajas que crecen hacia el frente) */
+/** Despliegue mínimo (0–1) con el que el lugar cabe en su caja (las que crecen al desplegar). */
+export function slotNeed(b: HopperBox, s: HopperSlot): number {
+  const R = FUEL_D / 2;
+  let need = 0;
+  for (let k = 0; k < 2; k++) {
+    if (b.maxDeployed && b.maxDeployed[k] > b.max[k] + 1e-6) need = Math.max(need, (s.p[k] + R - b.max[k] - 0.012) / (b.maxDeployed[k] - b.max[k]));
+    if (b.minDeployed && b.minDeployed[k] < b.min[k] - 1e-6) need = Math.max(need, (b.min[k] - (s.p[k] - R) - 0.012) / (b.min[k] - b.minDeployed[k]));
+  }
+  // hopper que sube al desplegar (8214): la capa de arriba llega al borde (asoma media pelota)
+  if (b.maxDeployed && b.maxDeployed[2] > b.max[2] + 1e-6) need = Math.max(need, (s.p[2] - b.max[2] - 0.012) / (b.maxDeployed[2] - b.max[2]));
+  return Math.min(1, Math.max(0, need));
+}
+
+/** ¿El lugar cabe con la intake desplegada `e` (0–1)? (cajas que crecen al desplegar) */
 export function slotFits(b: HopperBox, s: HopperSlot, e: number): boolean {
-  if (!b.maxDeployed) return true;
-  const maxX = b.max[0] + (b.maxDeployed[0] - b.max[0]) * e;
-  return s.p[0] + FUEL_D / 2 <= maxX + 0.012;
+  return slotNeed(b, s) <= e + 1e-9;
 }
 
 /** Despliegue mínimo de la intake para que quepan `n` FUEL (el FUEL la mantiene abierta). */
 export function openingFor(boxes: HopperBox[], slots: HopperSlot[], n: number): number {
-  if (!boxes.some((b) => b.maxDeployed)) return 0;
+  if (!boxes.some((b) => b.maxDeployed || b.minDeployed)) return 0;
   const want = Math.min(n, slots.length);
   for (let e = 0; e <= 1.0001; e += 0.05) {
     let k = 0;
@@ -266,7 +296,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([0.01, 0, 0.554692]),
       ];
     },
-    hopper: [{ min: [-0.13, -0.29, 0.2], max: [0.07, 0.29, 0.5], maxDeployed: [0.5, 0.29, 0.5] }],
+    hopper: [{ min: [-0.13, -0.29, 0.2], max: [0.07, 0.29, 0.56], maxDeployed: [0.62, 0.29, 0.56] }],
   },
 
   /**
@@ -291,7 +321,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pivot([-0.063648, 0, 0.131363], rot(0, -floor * DEG, 0)),
       ];
     },
-    hopper: [{ min: [-0.12, -0.32, 0.18], max: [0.05, 0.32, 0.52], maxDeployed: [0.49, 0.32, 0.52] }],
+    hopper: [{ min: [-0.12, -0.32, 0.18], max: [0.05, 0.32, 0.55], maxDeployed: [0.49, 0.32, 0.55] }],
   },
 
   /**
@@ -376,7 +406,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([-0.156033, 0, 0.132797], rot(0, lerp(120, 0, m.intake) * DEG, 0)),
       ];
     },
-    hopper: [{ min: [-0.6, -0.36, 0.1], max: [-0.14, 0.36, 0.48] }],
+    hopper: [{ min: [-0.6, -0.36, 0.13], max: [-0.03, 0.36, 0.5] }],
   },
 
   /**
@@ -535,7 +565,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
     },
     // Hopper de todo el robot: alto al frente, bajo atrás (debajo de la turret)
     hopper: [
-      { min: [-0.02, -0.3, 0.12], max: [0.3, 0.3, 0.5], maxDeployed: [0.58, 0.3, 0.5] },
+      { min: [-0.02, -0.3, 0.12], max: [0.3, 0.3, 0.55], maxDeployed: [0.58, 0.3, 0.55] },
       { min: [-0.32, -0.3, 0.12], max: [-0.02, 0.3, 0.3] },
     ],
   },
@@ -568,7 +598,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
       ];
     },
     // Hopper al frente, abajo de las paredes naranjas que sobresalen del chasis
-    hopper: [{ min: [-0.05, -0.3, 0.2], max: [0.5, 0.3, 0.5] }],
+    hopper: [{ min: [-0.05, -0.3, 0.2], max: [0.5, 0.3, 0.6] }],
   },
 
   /**
@@ -592,7 +622,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
       ];
     },
     // Hopper atrás en el CAD, montado en la intake (sus paredes salen con ella)
-    hopper: [{ min: [-0.38, -0.3, 0.26], max: [0.02, 0.3, 0.56], comp: 2 }],
+    hopper: [{ min: [-0.38, -0.3, 0.26], max: [0.02, 0.3, 0.62], comp: 2 }],
   },
 
   /**
@@ -651,7 +681,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         rotateAround(IDENTITY, [-0.3, 0, 0.22], rot(0, -lerp(0, 140, m.intake) * DEG, 0)),
       ];
     },
-    hopper: [{ min: [-0.32, -0.3, 0.12], max: [0.05, 0.3, 0.42] }],
+    hopper: [{ min: [-0.32, -0.3, 0.12], max: [0.05, 0.3, 0.5] }],
   },
 
   /**
@@ -665,7 +695,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
     poses(m) {
       return [pose([lerp(0.3, 0, m.intake), 0, 0]), rotateAround(IDENTITY, [0.106, -0.019, 0], rot(0, 0, m.turret + Math.PI / 2))];
     },
-    hopper: [{ min: [-0.5, -0.3, 0.12], max: [-0.05, 0.3, 0.45], comp: 0 }],
+    hopper: [{ min: [-0.22, -0.28, 0.12], max: [0.22, 0.28, 0.5], comp: 0 }],
   },
 
   /**
@@ -681,23 +711,25 @@ export const CAD_RIGS: Record<string, CadRig> = {
         rotateAround(IDENTITY, [-0.055, -0.13, 0], rot(0, 0, m.turret + Math.PI / 4)),
       ];
     },
-    hopper: [{ min: [-0.3, -0.28, 0.1], max: [0.25, 0.28, 0.45] }],
+    hopper: [{ min: [-0.3, -0.28, 0.1], max: [0.25, 0.28, 0.52] }],
   },
 
   /**
    * 9584 (WCP Competitive Concept, 971) — el asset es una sola malla sin partes, con los colores
    * en una textura de paleta y los BUMPERS fundidos (ver `bumperClip`). Viene girado: los
    * flywheels miran a +Y del CAD y la intake a −Y. Su código apunta el frente al HUB
-   * (AimAndDriveCommand), pero en el simulador la intake va al frente: se gira 90° y el
-   * shooter dispara hacia atrás (yawDeg 180 en la spec). La pared del hopper con la intake (c0,
-   * recortada por triángulo con `clipComp`) sale 0.3 m hacia −Y al desplegar.
+   * (AimAndDriveCommand) y en el simulador la intake va al frente: se gira 90°. Los hoods del
+   * shooter se curvan hacia la intake: tira hacia el frente, por encima del hopper. Partes
+   * recortadas por triángulo (`clipComp`): la pared del hopper (c0) sale 0.3 m hacia −Y al
+   * desplegar y la intake de abajo (c1) sale con ella y baja 8 cm, al nivel del FUEL.
    */
   '9584.glb': {
     yawDeg: 90,
     poses(m) {
-      return [pose([0, -lerp(0, 0.3, m.intake), 0])];
+      const out = -lerp(0, 0.3, Math.min(1, m.intake * 1.4));
+      return [pose([0, out, 0]), pose([0, out, -lerp(0, 0.08, Math.max(0, m.intake * 3.5 - 2.5))])];
     },
-    hopper: [{ min: [-0.28, -0.28, 0.15], max: [0.28, 0.28, 0.5] }],
+    hopper: [{ min: [-0.3, -0.32, 0.14], max: [0.3, 0.15, 0.62], minDeployed: [-0.3, -0.6, 0.14] }],
   },
 
   /**
@@ -736,7 +768,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         compose(swerve, pose([0, 0, lerp(0, 0.3, m.intake)])),
       ];
     },
-    hopper: [{ min: [-0.25, -0.28, 0.12], max: [0.2, 0.28, 0.45] }],
+    hopper: [{ min: [-0.05, -0.3, 0.14], max: [0.33, 0.3, 0.32], maxDeployed: [0.33, 0.3, 0.6] }],
   },
 
   /**
@@ -761,7 +793,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
       ];
     },
     // MechanismSimConstants: HOPPER_BACK_X_M −5.4 in, frente 14 → 27.2 in, ±11.6 in
-    hopper: [{ min: [inch(-5.4), inch(-11.6), 0.15], max: [inch(14), inch(11.6), 0.58], maxDeployed: [inch(27.2), inch(11.6), 0.58] }],
+    hopper: [{ min: [inch(-5.4), inch(-11.6), 0.15], max: [inch(14), inch(11.6), 0.68], maxDeployed: [inch(27.2), inch(11.6), 0.68] }],
   },
 
   /**
@@ -784,7 +816,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([-0.317817 - m.intake * 0.301625, 0, 0.427038]),
       ];
     },
-    hopper: [{ min: [-0.3, -0.28, 0.12], max: [0.05, 0.28, 0.45] }],
+    hopper: [{ min: [-0.3, -0.28, 0.12], max: [0.05, 0.28, 0.52], minDeployed: [-0.6, -0.28, 0.12] }],
   },
 
   /**
@@ -804,7 +836,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([inch(-9) * stow, 0, 0]),
       ];
     },
-    hopper: [{ min: [-0.3, -0.28, 0.15], max: [0.1, 0.28, 0.45], maxDeployed: [0.33, 0.28, 0.45] }],
+    hopper: [{ min: [-0.3, -0.28, 0.15], max: [0.1, 0.28, 0.52], maxDeployed: [0.58, 0.28, 0.52] }],
   },
 
   /**
@@ -882,7 +914,7 @@ export const CAD_RIGS: Record<string, CadRig> = {
         wheel(-10.875, -10.875),
       ];
     },
-    hopper: [{ min: [-0.3, -0.28, 0.12], max: [0.05, 0.28, 0.45] }],
+    hopper: [{ min: [-0.3, -0.28, 0.12], max: [0.05, 0.28, 0.52], minDeployed: [-0.6, -0.28, 0.12] }],
   },
 
   /**
@@ -900,6 +932,6 @@ export const CAD_RIGS: Record<string, CadRig> = {
         pose([0.252, 0, 0.184], rot(0, -pivot, 0)),
       ];
     },
-    hopper: [{ min: [-0.28, -0.28, 0.12], max: [0.25, 0.28, 0.42], maxDeployed: [0.5, 0.28, 0.42] }],
+    hopper: [{ min: [-0.28, -0.28, 0.12], max: [0.25, 0.28, 0.55], maxDeployed: [0.5, 0.28, 0.55] }],
   },
 };

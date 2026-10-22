@@ -129,7 +129,7 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
    HUMAN PLAYER tiene > 2 FUEL en la mano.
 7. **Masa del robot**: ≤ 52.16 kg (R103) + BUMPERS ≈ 6.8 kg + batería ≈ 5.9 kg ≈ 65 kg máximo.
 8. **Coeficientes**: FUEL (espuma) restitución 0.55 y alfombra 0.45 (promedio ≈ 0.5: rebota
-   ~25 % de la altura), rodado sobre alfombra −0.6 m/s² (C_rr ≈ 0.06), Cd = 0.47,
+   ~25 % de la altura), rodado sobre alfombra −1.0 m/s² (C_rr ≈ 0.1), Cd = 0.47,
    ρ = 1.2 kg/m³; Magnus suave (coef. 0.5·S). Fricción del FUEL 0.15 (Rapier promedia):
    FUEL–FUEL 0.15, FUEL–alfombra ≈ 0.48, FUEL–BUMPER ≈ 0.28. Con 0.7 entre pelotas, la que
    llegaba girando "aplastaba" contra la alfombra a la que golpeaba y esta apenas salía (se

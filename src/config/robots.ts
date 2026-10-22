@@ -147,10 +147,10 @@ const base = (o: Partial<RobotSpec> & Pick<RobotSpec, 'id' | 'name'>): RobotSpec
   massKg: 62,
   drivetrain: 'swerve',
   maxSpeed: 4.8,
-  maxAccel: 9,
+  maxAccel: 12, // swerve con 4 motores: la tracción (μ·g ≈ 10.8 m/s²) es la que limita
   traction: 1.1,
-  maxOmega: 9,
-  intake: { widthIn: 24, extensionIn: 10, rate: 8 },
+  maxOmega: 11,
+  intake: { widthIn: 24, extensionIn: 10, rate: 13 },
   hopperCapacity: 40,
   shooter: {
     type: 'fixed',
@@ -191,7 +191,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 63,
     maxSpeed: 4.8,
     traction: 1.25,
-    intake: { widthIn: 27, extensionIn: 11.2, rate: 18 },
+    intake: { widthIn: 27, extensionIn: 11.2, rate: 29 },
     hopperCapacity: 70,
     deployedHopperIn: [19.3, 20.5],
     // Dumper de 4 FUEL de ancho (hood de lado a lado en el CAD) que tira hacia atrás desde 11.28 in
@@ -212,7 +212,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 21.7,
     massKg: 62,
     maxSpeed: 4.8,
-    intake: { widthIn: 27.5, extensionIn: 10.6, rate: 14 }, // cremallera en diagonal
+    intake: { widthIn: 27.5, extensionIn: 10.6, rate: 22 }, // cremallera en diagonal
     hopperCapacity: 50,
     shooter: { type: 'turret', rate: 14, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 21, backspin: 20, lanes: 1 },
     climb: NO_CLIMB,
@@ -229,7 +229,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 28.8, // turret arriba de la torre del serializer (27.5 in, Constants.Turret)
     massKg: 62,
     maxSpeed: 4.8,
-    intake: { widthIn: 26, extensionIn: 10.5, rate: 15 },
+    intake: { widthIn: 26, extensionIn: 10.5, rate: 24 },
     hopperCapacity: 50,
     shooter: { type: 'turret', rate: 15, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 28, backspin: 20, lanes: 1, posIn: [0, -1] },
     climb: NO_CLIMB,
@@ -246,8 +246,8 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 21.8,
     massKg: 62,
     maxSpeed: 4.9,
-    intake: { widthIn: 25.5, extensionIn: 11.6, rate: 12 },
-    hopperCapacity: 40,
+    intake: { widthIn: 25.5, extensionIn: 11.6, rate: 19 },
+    hopperCapacity: 44, // lo que cabe a escala en su hopper (cadRigs)
     deployedHopperIn: [19.7, 19.7], // la slamtake empuja el frente del hopper
     // Launcher fijo hacia atrás (LauncherConstants.robotToLauncher: x −0.151 m, yaw π): el chasis
     // apunta. Dumper: flywheel y hood de lado a lado (0.63 m en el CAD, 4 Kraken) → 4 FUEL de ancho.
@@ -267,7 +267,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 63,
     maxSpeed: 4.8,
     // El modelo va girado 180°: la intake (atrás en el CAD) es el frente del simulador
-    intake: { widthIn: 28, extensionIn: 10.8, rate: 16 },
+    intake: { widthIn: 28, extensionIn: 10.8, rate: 26 },
     overhangIn: 11, // el hopper sobresale del chasis sobre la intake
     hopperCapacity: 45,
     // Dos turrets separadas 16.5 in (Visualization.robotToLeft/RightTurret): un FUEL por turret
@@ -286,7 +286,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 24.6, // con la intake levantada
     massKg: 64,
     maxSpeed: 4.8,
-    intake: { widthIn: 26.4, extensionIn: 5.5, rate: 12 }, // 4 FUEL de ancho
+    intake: { widthIn: 26.4, extensionIn: 5.5, rate: 19 }, // 4 FUEL de ancho
     hopperCapacity: 10, // sin hopper: camino directo 4-2-1 (~8 en tránsito)
     shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.93, exitHeightIn: 21, backspin: 20, lanes: 1, posIn: [-3.9, 3] },
     climb: { maxLevel: 1, timeL1: 3, timeL2: 99, timeL3: 99 },
@@ -303,7 +303,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 21.7,
     massKg: 61,
     maxSpeed: 4.9,
-    intake: { widthIn: 30, extensionIn: 11.6, rate: 14 }, // cuatro barras
+    intake: { widthIn: 30, extensionIn: 11.6, rate: 22 }, // cuatro barras
     hopperCapacity: 40,
     // Doomspiral: shooter fijo de un solo chorro (flywheel y hood de ~1 FUEL de ancho en el CAD)
     // hacia la derecha (V1_DoomSpiralShooterConstants.SHOOTER_POSE: yaw −90°)
@@ -322,7 +322,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 25.6,
     massKg: 63,
     maxSpeed: 4.6,
-    intake: { widthIn: 26.8, extensionIn: 10.9, rate: 12 }, // pivote de −2° a 132° (PivotConstants)
+    intake: { widthIn: 26.8, extensionIn: 10.9, rate: 19 }, // pivote de −2° a 132° (PivotConstants)
     hopperCapacity: 45,
     shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 24, backspin: 20, lanes: 1, posIn: [-4.7, -6.2] },
     climb: { maxLevel: 1, timeL1: 3.2, timeL2: 99, timeL3: 99 },
@@ -342,7 +342,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 27.5,
     massKg: 63,
     maxSpeed: 4.6,
-    intake: { widthIn: 27.2, extensionIn: 10, rate: 12 },
+    intake: { widthIn: 27.2, extensionIn: 10, rate: 19 },
     hopperCapacity: 75, // dato del equipo
     // La intake empuja el frente del hopper 0.275 m (cadRigs, HOPPER_EXT_3478): 0.619 m del
     // centro; alto como el robot (también pasa bajo los soportes de la TOWER)
@@ -366,7 +366,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 21,
     massKg: 62,
     maxSpeed: 4.7,
-    intake: { widthIn: 25, extensionIn: 10.5, rate: 11 }, // pivote −8°…90° (IntakeConstants.json)
+    intake: { widthIn: 25, extensionIn: 10.5, rate: 18 }, // pivote −8°…90° (IntakeConstants.json)
     hopperCapacity: 45,
     // Turret con hood (RobotInfo.json robotToShooter: −0.099, 0.138, 0.379 m)
     shooter: { type: 'turret', rate: 11, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.91, exitHeightIn: 15, backspin: 20, lanes: 1, posIn: [-3.9, 5.4] },
@@ -384,7 +384,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 29.8, // hopper alto: no pasa bajo el TRENCH
     massKg: 63,
     maxSpeed: 4.6,
-    intake: { widthIn: 28, extensionIn: 11, rate: 12 }, // pivote 0°…105° (INTAKE.PIVOT)
+    intake: { widthIn: 28, extensionIn: 11, rate: 19 }, // pivote 0°…105° (INTAKE.PIVOT)
     hopperCapacity: 60, // SIM.MAX_FUEL
     deployedHopperIn: [24, 29.8], // el hopper sale 12 in con la intake (Robot2d)
     // Tres flywheels arriba del hopper que tiran hacia el frente (launchFuel con yaw 0)
@@ -403,7 +403,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 21.4,
     massKg: 62,
     maxSpeed: 4.5,
-    intake: { widthIn: 26, extensionIn: 11.4, rate: 10 }, // cremallera a −19° (Intake.RACK_ANGLE)
+    intake: { widthIn: 26, extensionIn: 11.4, rate: 16 }, // cremallera a −19° (Intake.RACK_ANGLE)
     hopperCapacity: 50,
     // Turret en ROBOT_TO_TURRET (−5, 0, 17 in)
     shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.87, exitHeightIn: 19, backspin: 20, lanes: 1, posIn: [-5, 0] },
@@ -422,7 +422,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 62,
     maxSpeed: 4.5,
     // El modelo va girado 180°: la intake (atrás en el CAD) es el frente del simulador
-    intake: { widthIn: 26, extensionIn: 11.5, rate: 9 }, // cremallera 0–12.375 in (IntakeConstants)
+    intake: { widthIn: 26, extensionIn: 11.5, rate: 14 }, // cremallera 0–12.375 in (IntakeConstants)
     hopperCapacity: 45,
     // Turret en TURRET_CENTER (0.118, −0.106, 0.511 m del CAD; girado 180°)
     shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.86, exitHeightIn: 21, backspin: 20, lanes: 1, posIn: [-4.7, 4.2] },
@@ -442,7 +442,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 60,
     maxSpeed: 4.2,
     traction: 1.0,
-    intake: { widthIn: 22, extensionIn: 6, rate: 7 },
+    intake: { widthIn: 22, extensionIn: 6, rate: 11 },
     overhangIn: 10, // el hopper sobresale al frente arriba de los BUMPERS
     hopperCapacity: 35,
     // Turret de ±170° que gira alrededor de (−7.05, 7.05 in) (SK26Turret)
@@ -465,7 +465,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 62,
     maxSpeed: 4.8,
     // Turret en ROBOT_TO_TURRET (−3.91, 6.03 in), intake de cremallera (IntakeExtensionSubsystem)
-    intake: { widthIn: 26, extensionIn: 8, rate: 12 },
+    intake: { widthIn: 26, extensionIn: 8, rate: 19 },
     hopperCapacity: 50,
     shooter: { type: 'turret', rate: 11, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.9, exitHeightIn: 18, backspin: 20, lanes: 1, posIn: [-3.9, 6] },
     climb: NO_CLIMB,
@@ -483,7 +483,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 62,
     maxSpeed: 4.6,
     // Turret sobre el dye rotor (LauncherConstants: 0.5, 0.5 in), intake de 0–11.5 in (IntakeConstants)
-    intake: { widthIn: 28, extensionIn: 11.5, rate: 11 },
+    intake: { widthIn: 28, extensionIn: 11.5, rate: 18 },
     hopperCapacity: 55,
     shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 50, maxAngle: 80, accuracy: 0.88, exitHeightIn: 21, backspin: 20, lanes: 1, posIn: [0.5, 0.5] },
     climb: NO_CLIMB,
@@ -502,7 +502,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.6,
     // Turret en kTurretLocation (−0.102, 0.178 m), pared del hopper que sale 0.298 m (robotmechanism.py)
     deployedHopperIn: [23.7, 16.5],
-    intake: { widthIn: 28, extensionIn: 11.7, rate: 11 },
+    intake: { widthIn: 28, extensionIn: 11.7, rate: 18 },
     hopperCapacity: 50,
     shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.89, exitHeightIn: 19, backspin: 20, lanes: 1, posIn: [-4, 7] },
     climb: NO_CLIMB,
@@ -520,7 +520,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 62,
     maxSpeed: 4.7,
     // Asset de una pieza: la intake y la turret se separan por nombre (sources.mjs `parts`)
-    intake: { widthIn: 25, extensionIn: 12, rate: 11 },
+    intake: { widthIn: 25, extensionIn: 12, rate: 18 },
     hopperCapacity: 45,
     shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 45, maxAngle: 76, accuracy: 0.87, exitHeightIn: 20, backspin: 25, lanes: 1, posIn: [-2.2, -5.1] },
     climb: NO_CLIMB,
@@ -538,7 +538,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 62,
     maxSpeed: 4.5,
     // Girado 180°: la intake (atrás en el CAD) al frente; turret en la esquina (LauncherConstants)
-    intake: { widthIn: 28, extensionIn: 12, rate: 10 },
+    intake: { widthIn: 28, extensionIn: 12, rate: 16 },
     hopperCapacity: 40,
     shooter: { type: 'turret', rate: 9, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.86, exitHeightIn: 20, backspin: 20, lanes: 1, posIn: [-5.9, -7.9] },
     climb: { maxLevel: 1, timeL1: 3.6, timeL2: 99, timeL3: 99 },
@@ -557,7 +557,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.5,
     // Girado 180°: turretBasePose (0.159, 0.159 m) y hopper hasta 0.301625 m (Constants)
     deployedHopperIn: [25.6, 19],
-    intake: { widthIn: 26, extensionIn: 11.9, rate: 9 },
+    intake: { widthIn: 26, extensionIn: 11.9, rate: 14 },
     hopperCapacity: 45,
     shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 30, maxAngle: 64, accuracy: 0.85, exitHeightIn: 20, backspin: 20, lanes: 1, posIn: [-6.25, -6.25] },
     climb: NO_CLIMB,
@@ -575,7 +575,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 62,
     maxSpeed: 4.5,
     // Turret en (−0.15, 0.16 m) (MechanismVisualizer)
-    intake: { widthIn: 26, extensionIn: 11, rate: 9 },
+    intake: { widthIn: 26, extensionIn: 11, rate: 14 },
     hopperCapacity: 40,
     shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.84, exitHeightIn: 22, backspin: 20, lanes: 1, posIn: [-5.9, 6.3] },
     climb: { maxLevel: 1, timeL1: 3.8, timeL2: 99, timeL3: 99 },
@@ -594,7 +594,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.6,
     // Shooter atrás (Visualizer: centro (0, 0.43, −0.275) del marco del swerve)
     deployedHopperIn: [25, 20],
-    intake: { widthIn: 26, extensionIn: 10, rate: 9 },
+    intake: { widthIn: 26, extensionIn: 10, rate: 14 },
     hopperCapacity: 45,
     shooter: { type: 'fixed', rate: 8, maxSpeed: 13, minAngle: 45, maxAngle: 75, accuracy: 0.85, exitHeightIn: 20, backspin: 25, lanes: 2, yawDeg: 180, posIn: [-8, 0] },
     climb: NO_CLIMB,
@@ -613,7 +613,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.4,
     // Girado 180°: el hopper con la intake (desplegado atrás en el CAD) sale 0.3 m
     deployedHopperIn: [24, 18],
-    intake: { widthIn: 28, extensionIn: 11.8, rate: 9 },
+    intake: { widthIn: 28, extensionIn: 11.8, rate: 14 },
     hopperCapacity: 50,
     shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 45, maxAngle: 75, accuracy: 0.84, exitHeightIn: 22, backspin: 25, lanes: 1, posIn: [-4.2, 0.75] },
     climb: NO_CLIMB,
@@ -632,7 +632,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.5,
     // Shooter fijo de rodillos a lo ancho (eje en x = −0.103 m del CAD)
     deployedHopperIn: [22.4, 22.2],
-    intake: { widthIn: 26, extensionIn: 11.8, rate: 9 },
+    intake: { widthIn: 26, extensionIn: 11.8, rate: 14 },
     hopperCapacity: 54,
     shooter: { type: 'fixed', rate: 8, maxSpeed: 12.5, minAngle: 45, maxAngle: 73, accuracy: 0.8, exitHeightIn: 20, backspin: 25, lanes: 4, yawDeg: 0, posIn: [-4.1, 0] },
     climb: { maxLevel: 1, timeL1: 4, timeL2: 99, timeL3: 99 },
@@ -651,7 +651,7 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.3,
     // Shooter en (−0.075, 0, 0.472 m) con pitch (Telemetry.telemeterizeShooterAngle)
     deployedHopperIn: [24, 20],
-    intake: { widthIn: 26, extensionIn: 11, rate: 8 },
+    intake: { widthIn: 26, extensionIn: 11, rate: 13 },
     hopperCapacity: 35,
     shooter: { type: 'fixed', rate: 6, maxSpeed: 12.5, minAngle: 45, maxAngle: 70, accuracy: 0.78, exitHeightIn: 20, backspin: 25, lanes: 2, yawDeg: 180, posIn: [-9, 0] }, // el hood sube hacia atrás en el CAD
     climb: { maxLevel: 1, timeL1: 4.2, timeL2: 99, timeL3: 99 },
@@ -670,8 +670,8 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.3,
     // Hood en HOOD_PIVOT (−0.272 m), hopper hasta 27.2 in (MechanismSimConstants)
     deployedHopperIn: [27.2, 23],
-    intake: { widthIn: 24, extensionIn: 11, rate: 8 },
-    hopperCapacity: 45,
+    intake: { widthIn: 24, extensionIn: 11, rate: 13 },
+    hopperCapacity: 68, // lo que cabe a escala en su hopper (cadRigs)
     shooter: { type: 'fixed', rate: 7, maxSpeed: 12.5, minAngle: 45, maxAngle: 70, accuracy: 0.8, exitHeightIn: 27, backspin: 25, lanes: 1, yawDeg: 180, posIn: [-10.7, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#3d5a80' },
@@ -687,13 +687,13 @@ export const CAD_ROBOTS: RobotSpec[] = [
     heightIn: 29.9,
     massKg: 58,
     maxSpeed: 4.2,
-    intake: { widthIn: 24, extensionIn: 8, rate: 7 },
-    hopperCapacity: 35,
-    shooter: { type: 'fixed', rate: 8, maxSpeed: 12, minAngle: 45, maxAngle: 70, accuracy: 0.84, exitHeightIn: 25, backspin: 25, lanes: 3, yawDeg: 180, posIn: [-7, 0] }, // 3 flywheels (Shooter.java) atrás; hood de servos
+    intake: { widthIn: 24, extensionIn: 8, rate: 11 },
+    hopperCapacity: 60, // lo que cabe a escala en su hopper (cadRigs)
+    shooter: { type: 'fixed', rate: 8, maxSpeed: 12, minAngle: 45, maxAngle: 70, accuracy: 0.84, exitHeightIn: 25, backspin: 25, lanes: 3, posIn: [-7, 0] }, // 3 flywheels (Shooter.java) atrás; sus hoods tiran hacia el frente sobre el hopper
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#7a7a7a' },
     cad: { file: '9584.glb' },
-    real: cadReal('Team 9584 (WCP, con 971)', 'Competitive Concept', 'Nivel medio: el robot de concepto de WCP, intake al frente y tres flywheels que disparan hacia atrás (asset de una sola malla, sin partes que se muevan); rendimiento estimado.', 'Mid tier: the WCP concept robot, intake at the front and three flywheels firing backward (single-mesh asset, no moving parts); estimated performance.'),
+    real: cadReal('Team 9584 (WCP, con 971)', 'Competitive Concept', 'Nivel medio: el robot de concepto de WCP, intake al frente que sale con el hopper y tres flywheels atrás que tiran por encima del hopper; rendimiento estimado.', 'Mid tier: the WCP concept robot, front intake that slides out with the hopper and three rear flywheels shooting over the hopper; estimated performance.'),
   }),
   base({
     id: 'cad-339',
@@ -706,8 +706,8 @@ export const CAD_ROBOTS: RobotSpec[] = [
     maxSpeed: 4.2,
     // Girado 180°: el flywheel (FlywheelConstants, x = 0.266 m) queda atrás
     deployedHopperIn: [25.8, 18],
-    intake: { widthIn: 25, extensionIn: 12, rate: 7 },
-    hopperCapacity: 35,
+    intake: { widthIn: 25, extensionIn: 12, rate: 11 },
+    hopperCapacity: 39, // lo que cabe a escala en su hopper (cadRigs)
     shooter: { type: 'fixed', rate: 5, maxSpeed: 12, minAngle: 50, maxAngle: 70, accuracy: 0.75, exitHeightIn: 15, backspin: 30, lanes: 1, yawDeg: 180, posIn: [-10.5, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#2e8b57' },
@@ -724,8 +724,8 @@ export const CAD_ROBOTS: RobotSpec[] = [
     massKg: 58,
     maxSpeed: 4.1,
     // Shooter en SHOOTER_AXIS_POSITION (−0.2762, 0, 0.415 m) (RobotModelVisualizer)
-    intake: { widthIn: 25, extensionIn: 10, rate: 7 },
-    hopperCapacity: 35,
+    intake: { widthIn: 25, extensionIn: 10, rate: 11 },
+    hopperCapacity: 55, // lo que cabe a escala en su hopper (cadRigs)
     shooter: { type: 'fixed', rate: 5, maxSpeed: 12, minAngle: 40, maxAngle: 62, accuracy: 0.74, exitHeightIn: 17, backspin: 30, lanes: 2, yawDeg: 180, posIn: [-10.9, 0] },
     climb: NO_CLIMB,
     colors: { primary: '#30343b', accent: '#8b1e3f' },

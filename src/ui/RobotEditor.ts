@@ -57,7 +57,7 @@ export class RobotEditor {
           <h3>INTAKE / HOPPER</h3>
           <label>${t('intakeWidth')} (in)</label>${num('iwidth', s.intake.widthIn, 0.5, 8, 40)}
           <label>${t('extension')} (in)</label>${num('iext', s.intake.extensionIn, 0.5, 0, 16)}
-          <label>${t('rate')} (FUEL/s)</label>${num('irate', s.intake.rate, 0.5, 1, 20)}
+          <label>${t('rate')} (FUEL/s)</label>${num('irate', s.intake.rate, 0.5, 1, 32)}
           <label>${t('hopper')}</label>${num('hopper', s.hopperCapacity, 1, 8, 100)}
           <label>${t('preload')}</label>${num('preload', s.preload, 1, 0, 8)}
           <h3>SHOOTER</h3>

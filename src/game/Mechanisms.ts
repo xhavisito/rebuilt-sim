@@ -118,7 +118,9 @@ export function shoveFuel(r: Robot, fuel: FuelSystem): void {
   fuel.forEachNear(p.x, p.z, reach, (i) => {
     const b = fuel.bodies[i];
     const t = b.translation();
-    if (t.y > maxY || t.y < p.y - 0.05) return;
+    // Debajo del robot (montado en el FUEL al bajar del BUMP): lo resuelve la física, el robot
+    // se queda atorado hasta que el FUEL se escurre o lo empujan
+    if (t.y > maxY || t.y < p.y + R * 0.3) return;
     const dx = t.x - p.x;
     const dz = t.z - p.z;
     // marco local: x adelante, z derecha
@@ -172,36 +174,35 @@ export function runIntake(r: Robot, ctx: MechContext, dt: number): void {
     return;
   }
   const s = r.spec;
-  r.intakeAcc = Math.min(2, r.intakeAcc + s.intake.rate * dt);
+  // Una intake de ancho completo traga varios FUEL a la vez (4 lado a lado en 27 in): el ritmo
+  // acumula hasta un "trago" de ~0.15 s, que se gasta en todos los que toca el rodillo
+  r.intakeAcc = Math.min(Math.max(2, s.intake.rate * 0.15), r.intakeAcc + s.intake.rate * dt);
   if (r.intakeAcc < 1) return;
   const f = ctx.fuel;
-  if (f.robotCount(r.index) >= s.hopperCapacity) return;
-  const h = r.phys.heading();
   // Zona de captura: pegada al frente del rodillo (donde el FUEL lo toca)
   const face = r.phys.intakeFront;
   const x0 = face - 0.05;
-  const x1 = face + F.FUEL_RADIUS * 2 + 0.03;
+  const x1 = face + F.FUEL_RADIUS * 2 + 0.05;
   const hw = r.phys.intakeHalfW;
   const p = r.phys.curPos;
+  const h = r.phys.heading();
   const c = Math.cos(h);
   const sn = Math.sin(h);
-  let best = -1;
-  let bestX = Infinity;
+  const hits: Array<[number, number]> = [];
   f.forEachNear(p.x, p.z, x1 + 0.3, (i, px, py, pz) => {
     if (py > p.y + 0.24) return;
     const dx = px - p.x;
     const dz = pz - p.z;
     const lx = dx * c - dz * sn;
     const lz = dx * sn + dz * c;
-    if (lx >= x0 && lx <= x1 && Math.abs(lz) <= hw && lx < bestX) {
-      best = i;
-      bestX = lx;
-    }
+    if (lx >= x0 && lx <= x1 && Math.abs(lz) <= hw) hits.push([lx, i]);
   });
-  if (best >= 0) {
+  hits.sort((a, b) => a[0] - b[0]);
+  for (const [, i] of hits) {
+    if (r.intakeAcc < 1 || f.robotCount(r.index) >= s.hopperCapacity) break;
     r.intakeAcc -= 1;
-    ctx.onIntake?.(r, best);
-    f.toRobot(best, r.index);
+    ctx.onIntake?.(r, i);
+    f.toRobot(i, r.index);
     r.stats.intaked++;
   }
 }
