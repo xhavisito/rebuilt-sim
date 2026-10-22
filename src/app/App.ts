@@ -387,6 +387,7 @@ export class App {
       humanPlayers: { [m.alliance]: m.humanPlayer },
       aiAccuracy: { easy: 0.6, normal: 0.78, hard: 0.88, einstein: 0.95 }[m.difficulty],
       aiDifficulty: m.difficulty,
+      training: new URLSearchParams(location.search).has('train'),
       fuelTotal: m.fuel,
       eventType: m.eventType,
       fouls: m.fouls,

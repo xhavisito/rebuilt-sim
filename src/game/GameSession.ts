@@ -14,6 +14,7 @@ import { Referee } from '../referee/Referee';
 import { RobotAI, type AiContext } from '../ai/RobotAI';
 import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
+import { aiMemory } from '../ai/memoryStore';
 import { AllianceBrain } from '../ai/AllianceBrain';
 import type { DynRole } from '../ai/Scouting';
 import { assignAutos, routineById, routineZones } from '../auto/AutoRoutine';
@@ -65,6 +66,8 @@ export interface SessionConfig {
   /** Precisión de la IA (0–1) según dificultad. */
   aiAccuracy?: number;
   aiDifficulty?: Difficulty;
+  /** Entrenamiento de la IA: explora más tácticas (matches de solo IA para el playbook). */
+  training?: boolean;
 }
 
 /** Notificaciones hacia la App (audio, HUD, efectos). */
@@ -101,6 +104,8 @@ export class GameSession {
   hooks: SessionHooks = {};
   readonly ais = new Map<number, RobotAI>();
   brain!: AllianceBrain;
+  /** Segundos con el HUB activo por alianza (ritmo de anotación para la memoria de la IA). */
+  private activeSeconds: Record<Alliance, number> = { red: 0, blue: 0 };
   readonly autos = new Map<number, AutoExecutor>();
   /** Tiempo simulado total (s). */
   simTime = 0;
@@ -196,6 +201,10 @@ export class GameSession {
       pinSeconds: (i) => this.referee?.activePins().find((p) => p.pinner === i)?.seconds ?? 0,
       claims: new Map(),
       profile: (i) => this.brain.profile(i),
+      // Memoria de prueba y error (en Fácil no: juegan como principiantes)
+      memory: (cfg.aiDifficulty ?? 'normal') === 'easy' ? undefined : aiMemory,
+      tactics: new Map(),
+      training: cfg.training,
     };
     for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
     // Cerebro de alianza (fuera de Fácil reparte roles): scouting de los 6 robots y, en cada
@@ -359,6 +368,11 @@ export class GameSession {
   /** Reacciona a eventos del reloj del match. */
   private onMatchEvent(e: MatchEvent): void {
     if (e.type === 'phase' && (e.phase === 'POST' || e.phase === 'DONE')) this.field.setLeds(false);
+    // Fin del match: cada IA cierra su episodio y la memoria guarda lo aprendido
+    if (e.type === 'phase' && e.phase === 'POST' && this.match) {
+      for (const [i, ai] of this.ais) ai.finishMatch(this.activeSeconds[this.robots[i].alliance]);
+      aiMemory.save();
+    }
     if (e.type === 'evalAutoTower') this.evaluateTower('auto');
     if (e.type === 'evalTeleopTower') this.evaluateTower('teleop');
     this.hooks.matchEvent?.(e);
@@ -532,6 +546,7 @@ export class GameSession {
     const enabled = m ? robotsEnabled(m.phase) : true;
     const auto = m?.phase === 'AUTO';
     this.brain.update(dt, m);
+    if (m?.running) for (const a of ALLIANCES) if (m.isHubActive(a)) this.activeSeconds[a] += dt;
     for (const r of this.robots) {
       r.enabled = enabled && !r.disabled;
       if (!r.enabled) r.cmd = idleCommand(); // deshabilitado: frena (brake mode)
