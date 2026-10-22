@@ -662,6 +662,14 @@ export class RobotView {
           if (rig.hopper) this.buildCadHopper(wpi, rig);
           if (rig.walls) this.buildCadWalls(wpi, rig.walls);
         }
+        // Algunos assets traen las ruedas 4.4 cm bajo el piso (971, 401, 180, 2826, 10021): con los
+        // BUMPERS en su zona fija (R405) el robot se veía hundido y los BUMPERS más arriba que en
+        // los demás. El modelo (con los mecanismos guardados) se apoya en el piso.
+        this.applyMech();
+        root.updateMatrixWorld(true);
+        const box = new THREE.Box3();
+        for (const [name, o] of nodes) if (/^(main|c\d+)$/.test(name)) box.expandByObject(o);
+        if (!box.isEmpty() && Math.abs(box.min.y) > 0.005) root.position.y = -box.min.y;
         this.group.add(root);
         this.cadLoaded = true;
         this.applyMech();

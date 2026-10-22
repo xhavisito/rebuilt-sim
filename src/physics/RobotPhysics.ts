@@ -1,15 +1,19 @@
 /**
  * Cuerpo físico de un robot.
  *
- * Colisionadores: 4 esferas-rueda SIN fricción (la tracción la decide nuestro
- * controlador; solo tocan el campo, no el FUEL), caja de BUMPERS (zona 2.5–5.75 in, R405)
+ * Colisionadores: 4 esferas-rueda SIN fricción (la tracción la decide nuestro controlador; tocan
+ * el campo y el FUEL que quede debajo, pero solo el piso da tracción), caja de BUMPERS (zona 2.5–5.75 in, R405)
  * y caja de la superestructura hasta la altura del robot (decide si cabe bajo el TRENCH
  * de 22.25 in). Un FUEL (5.91 in) tiene su centro apenas 0.45 in arriba del borde inferior
  * del BUMPER: con una inclinación mínima se metería abajo y levantaría al robot. Por eso:
  *  - un "faldón" que solo toca FUEL baja la cara vertical hasta 0.5 in del piso (en un robot
  *    real ese hueco lo cierran el chasis y la espuma de la pelota, que se comprime), y
- *  - el robot domina al FUEL (grupo de dominancia): 0.2 kg de espuma no levantan ni inclinan
- *    a un robot de 55 kg. La resistencia de empujar FUEL la modela `plow`.
+ *  - sin grupo de dominancia: en Rapier 0.21 el cuerpo dominante cuenta como estático (velocidad
+ *    cero) en el contacto, así que el BUMPER no empujaba al FUEL: lo atravesaba y la corrección de
+ *    penetración lo escupía volando. 0.2 kg de espuma contra 55 kg casi no mueven al robot; la
+ *    resistencia de empujar FUEL la modela `plow`.
+ *  - el BUMPER (tela sobre espuma) absorbe el golpe: restitución 0.2 con la regla Min, así que el
+ *    FUEL sale apenas un poco más rápido que el robot que lo empuja.
  *
  * Manejo: controlador de velocidad cuyo cambio de velocidad por paso está limitado por
  * min(aceleración del motor, μ·g)·(fracción de ruedas en el piso). Con eso los empujones
@@ -30,6 +34,8 @@ export interface DriveCommand {
 
 const WHEEL_R = inch(2.0);
 const BUMPER_TOP = inch(7.0);
+/** Restitución FUEL–robot (BUMPER de tela y espuma; superestructura). */
+const BUMPER_E = 0.2;
 
 export class RobotPhysics {
   readonly body: RAPIER.RigidBody;
@@ -86,7 +92,6 @@ export class RobotPhysics {
         .setRotation(q)
         .setLinearDamping(0.2)
         .setAngularDamping(1.5)
-        .setDominanceGroup(1)
         .setCanSleep(false),
     );
     this.body.userData = { robot: index };
@@ -103,7 +108,8 @@ export class RobotPhysics {
         .setTranslation(0, by0 + bhy, 0)
         .setMass(bumperMass)
         .setFriction(0.4)
-        .setRestitution(0.08)
+        .setRestitution(BUMPER_E)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
         .setCollisionGroups(GROUPS.robot)
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS | RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
         .setContactForceEventThreshold(400),
@@ -116,7 +122,8 @@ export class RobotPhysics {
         .setTranslation(0, (skirtY0 + by0 + 0.01) / 2, 0)
         .setMass(0)
         .setFriction(0.4)
-        .setRestitution(0.08)
+        .setRestitution(BUMPER_E)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
         .setCollisionGroups(GROUPS.skirt),
       this.body,
     );
@@ -132,6 +139,7 @@ export class RobotPhysics {
         .setMass(0)
         .setFriction(0.2)
         .setRestitution(0.05)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
         .setCollisionGroups(GROUPS.skirt)
         .setEnabled(false),
       this.body,
@@ -170,7 +178,8 @@ export class RobotPhysics {
         .setTranslation((fx0 + fx1) / 2, fy0 + fhy, 0)
         .setMass(superMass)
         .setFriction(0.3)
-        .setRestitution(0.1)
+        .setRestitution(BUMPER_E)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
         .setCollisionGroups(GROUPS.robot)
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS),
       this.body,
@@ -331,7 +340,7 @@ export class RobotPhysics {
     for (const [lx, lz] of this.wheelLocal) {
       const wp = rotate(r, lx, WHEEL_R, lz);
       this.ray.origin = { x: p.x + wp.x, y: p.y + wp.y, z: p.z + wp.z };
-      if (this.pw.world.castRay(this.ray, WHEEL_R + 0.03, true, undefined, GROUPS.wheel, undefined, this.body)) g++;
+      if (this.pw.world.castRay(this.ray, WHEEL_R + 0.03, true, undefined, GROUPS.wheelRay, undefined, this.body)) g++;
     }
     this.grounded = g / 4;
   }

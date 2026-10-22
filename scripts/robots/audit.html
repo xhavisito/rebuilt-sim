@@ -48,6 +48,23 @@
       const only = q.get('only')?.split(',');
       if (only) view.group.traverse((o) => { if (/^(main|c\d+)$/.test(o.name)) o.visible = only.includes(o.name); });
 
+      // boxes=1: cajas del hopper (marco WPILib del CAD; verde guardada, cian desplegada)
+      if (q.get('boxes') === '1') {
+        const { CAD_RIGS } = await import('/src/render/cadRigs.ts');
+        let wpi = null;
+        view.group.traverse((o) => { if (o.name === 'cad') wpi = o.children[0]; });
+        for (const b of CAD_RIGS[spec.cad.file].hopper ?? []) {
+          if (b.ring) continue;
+          const add = (hi, color) => {
+            const h = new THREE.Box3Helper(new THREE.Box3(new THREE.Vector3(...b.min), new THREE.Vector3(...hi)), color);
+            h.material.depthTest = false;
+            h.renderOrder = 10;
+            wpi.add(h);
+          };
+          add(b.max, 0x30ff60);
+          if (b.maxDeployed) add(b.maxDeployed, 0xff40ff);
+        }
+      }
       // Marco del robot en three: x adelante, −z a la izquierda
       const sh = spec.shooter;
       const yaw = sh.type === 'fixed' ? ((sh.yawDeg ?? 0) * Math.PI) / 180 : (turretDeg * Math.PI) / 180;
@@ -57,10 +74,19 @@
       scene.add(new THREE.ArrowHelper(new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), o, 0.9, 0xffd400, 0.12, 0.08));
       scene.add(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.02, 0), 0.9, 0xff2020, 0.12, 0.08));
 
-      const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
+      // ortho=1: cámara ortográfica de 1.8 m de alto (para medir contra la cuadrícula de 10 cm)
+      const cam = q.get('ortho') === '1' ? new THREE.OrthographicCamera((-0.9 * innerWidth) / innerHeight, (0.9 * innerWidth) / innerHeight, 0.9, -0.9, 0.01, 50) : new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
       const views = { iso: [-1.6, 2.0, 2.2], top: [0, 4.2, 0.001], front: [3.4, 0.6, 0], back: [-3.4, 0.6, 0], side: [0, 0.6, 3.4] };
       cam.position.set(...(views[q.get('view') ?? 'iso'] ?? views.iso));
       cam.lookAt(0, 0.3, 0);
+      if (q.get('ortho') === '1') {
+        // la cuadrícula también en el plano vertical que se mira (lateral: x–y; frente: z–y)
+        const g = new THREE.GridHelper(3, 30, 0x555555, 0x333333);
+        g.rotation.x = Math.PI / 2;
+        if (q.get('view') === 'front' || q.get('view') === 'back') g.rotation.set(0, 0, Math.PI / 2);
+        g.position.y = 0;
+        if (q.get('view') !== 'top') scene.add(g);
+      }
       if (q.get('zoom') === '1') {
         // De cerca al shooter (para ver hacia dónde abre el hood de una turret)
         const v = cam.position.clone().sub(new THREE.Vector3(0, 0.3, 0)).setLength(1.3);

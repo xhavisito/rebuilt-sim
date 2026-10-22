@@ -321,7 +321,7 @@ export class Screens {
             ${bar(t('statSpeed'), sp.maxSpeed / 5.5, `${sp.maxSpeed.toFixed(1)} m/s`)}
             ${bar(t('statShot'), sp.shooter.rate / 30, `${sp.shooter.rate} FUEL/s`)}
             ${bar(t('statHopper'), sp.hopperCapacity / 115, `${sp.hopperCapacity}`)}
-            ${bar(t('statIntake'), sp.intake.rate / 24, `${sp.intake.rate}/s`)}
+            ${bar(t('statIntake'), sp.intake.rate / 30, `${sp.intake.rate}/s`)}
             ${bar(t('statAccuracy'), (sp.shooter.accuracy - 0.7) / 0.27, `${Math.round(sp.shooter.accuracy * 100)}%`)}
           </div>
           <div class="rc-chips">${chips(sp)}</div>

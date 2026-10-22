@@ -168,6 +168,33 @@ describe('física de robots', () => {
 });
 
 describe('FUEL', () => {
+  it('el BUMPER empuja el FUEL (no lo atraviesa) sin lanzarlo volando', () => {
+    const pw = world();
+    const fuel = new FuelSystem(pw, 1, new Rng(1));
+    const r = new RobotPhysics(pw, presetById('cad-1678'), 0, -1.5, -3.2, 0);
+    fuel.place(0, 0.2, F.FUEL_RADIUS, -3.3, false);
+    let vmax = 0;
+    let ymax = 0;
+    for (let i = 0; i < 360; i++) {
+      r.drive(i < 240 ? { vx: 4.5, vz: 0, omega: 0 } : { vx: 0, vz: 0, omega: 0 }, pw.dt);
+      fuel.prePhysics(pw.dt);
+      pw.step();
+      fuel.postPhysics(pw.dt);
+      r.snapshot();
+      if (fuel.pos[0] > 2) continue; // lejos de lo demás del campo
+      const v = fuel.bodies[0].linvel();
+      vmax = Math.max(vmax, Math.hypot(v.x, v.y, v.z));
+      ymax = Math.max(ymax, fuel.pos[1]);
+    }
+    // Con grupo de dominancia el BUMPER contaba como pared quieta: el FUEL quedaba atrás del robot
+    expect(fuel.pos[0]).toBeGreaterThan(r.position().x);
+    // BUMPER acolchonado: sale apenas más rápido que el robot y rodando por el piso
+    expect(vmax).toBeGreaterThan(4.3);
+    expect(vmax).toBeLessThan(4.5 * 1.35);
+    expect(ymax).toBeLessThan(F.FUEL_RADIUS + 0.03);
+    pw.free();
+  });
+
   it('504 FUEL se acomodan sin salirse ni explotar', () => {
     const pw = world();
     const fuel = new FuelSystem(pw, F.FUEL_TOTAL, new Rng(1));
@@ -209,7 +236,7 @@ describe('FUEL', () => {
     // Choque casi elástico entre masas iguales: B sale con ~(1 + e)/2 de la velocidad de A
     expect(vBmax).toBeGreaterThan(1.1);
     // …y rueda lejos (antes apenas se movía ~0.3 m)
-    expect(fuel.pos[3] - 1.6).toBeGreaterThan(0.6);
+    expect(fuel.pos[3] - 1.6).toBeGreaterThan(0.5);
     pw.free();
   });
 

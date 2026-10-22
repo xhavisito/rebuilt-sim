@@ -86,8 +86,11 @@ export class HopperFuelSim {
       return [cx + rr * Math.cos(a), cy + rr * Math.sin(a), top];
     }
     const hi = this.hi(box);
-    const y = box.min[1] + R + this.rand() * Math.max(0, hi[1] - box.min[1] - FUEL_D);
-    return [Math.max(box.min[0] + R, hi[0] - R - this.rand() * 0.05), y, top];
+    const lo = this.lo(box);
+    // entra por el lado de la intake: el que crece al desplegar (o +X)
+    const y = box.minDeployed && box.minDeployed[1] < box.min[1] ? lo[1] + R + this.rand() * 0.05 : lo[1] + R + this.rand() * Math.max(0, hi[1] - lo[1] - FUEL_D);
+    const x = box.minDeployed && box.minDeployed[0] < box.min[0] ? Math.min(hi[0] - R, lo[0] + R + this.rand() * 0.05) : Math.max(lo[0] + R, hi[0] - R - this.rand() * 0.05);
+    return [x, y, top];
   }
 
   /** Esquina máxima de la caja con la intake desplegada `e` (crece hacia el frente). */
@@ -95,6 +98,13 @@ export class HopperFuelSim {
     if (!box.maxDeployed) return box.max;
     const t = this.e;
     return [box.max[0] + (box.maxDeployed[0] - box.max[0]) * t, box.max[1] + (box.maxDeployed[1] - box.max[1]) * t, box.max[2] + (box.maxDeployed[2] - box.max[2]) * t];
+  }
+
+  /** Esquina mínima con la intake desplegada `e` (cajas que crecen hacia −X/−Y). */
+  private lo(box: HopperBox): [number, number, number] {
+    if (!box.minDeployed) return box.min;
+    const t = this.e;
+    return [box.min[0] + (box.minDeployed[0] - box.min[0]) * t, box.min[1] + (box.minDeployed[1] - box.min[1]) * t, box.min[2] + (box.minDeployed[2] - box.min[2]) * t];
   }
 
   /**
@@ -201,6 +211,7 @@ export class HopperFuelSim {
     const hi = this.hi(box);
     bounce(0, box.min[0] + R, Math.max(box.min[0] + R, hi[0] - R));
     bounce(1, box.min[1] + R, Math.max(box.min[1] + R, hi[1] - R));
-    bounce(2, box.min[2] + R, Math.max(box.min[2] + R, hi[2] - R));
+    // arriba: el centro llega al borde de las paredes (la capa de arriba asoma, como en un hopper lleno)
+    bounce(2, box.min[2] + R, Math.max(box.min[2] + R, hi[2]));
   }
 }
