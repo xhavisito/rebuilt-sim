@@ -15,6 +15,7 @@ import { RobotAI, type AiContext } from '../ai/RobotAI';
 import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
 import { aiMemory } from '../ai/memoryStore';
+import { DriveCoach, type CoachMsg } from './DriveCoach';
 import { AllianceBrain } from '../ai/AllianceBrain';
 import type { DynRole } from '../ai/Scouting';
 import { assignAutos, routineById, routineZones } from '../auto/AutoRoutine';
@@ -77,6 +78,8 @@ export interface SessionHooks {
   cameraChange?(mode: string): void;
   /** Un FUEL cruzó el sensor del HUB (counted = dio punto). */
   fuelScored?(hub: Alliance, counted: boolean, x: number, y: number, z: number): void;
+  /** El drive coach dice algo (la App lo traduce, lo muestra y quizá lo dice en voz alta). */
+  coach?(m: CoachMsg): void;
   /** Un robot lanzó FUEL (sonido / efectos). */
   launch?(robot: Robot, kind: 'shot' | 'pass' | 'corral', isPlayer: boolean): void;
   /** El HUMAN PLAYER lanzó o abrió la CHUTE. */
@@ -104,6 +107,7 @@ export class GameSession {
   hooks: SessionHooks = {};
   readonly ais = new Map<number, RobotAI>();
   brain!: AllianceBrain;
+  coach: DriveCoach | null = null;
   /** Segundos con el HUB activo por alianza (ritmo de anotación para la memoria de la IA). */
   private activeSeconds: Record<Alliance, number> = { red: 0, blue: 0 };
   readonly autos = new Map<number, AutoExecutor>();
@@ -129,7 +133,8 @@ export class GameSession {
     // Robots: salida elegida (estrategia o desplazamiento del jugador) sin encimarse con su alianza
     const startZ = cfg.robots.map((rc) => {
       const st = defaultStart(rc.alliance, rc.station, F.inch(rc.spec.lengthIn / 2 + rc.spec.bumperIn));
-      return rc.plan?.startZ ?? st.z + (rc.startOffsetZ ?? 0);
+      // la salida de la estrategia es para la IA; el jugador usa la suya
+      return (rc.control.type === 'ai' ? rc.plan?.startZ : null) ?? st.z + (rc.startOffsetZ ?? 0);
     });
     for (const a of ALLIANCES) {
       const ids = cfg.robots.map((rc, i) => (rc.alliance === a ? i : -1)).filter((i) => i >= 0);
@@ -219,6 +224,14 @@ export class GameSession {
     cfg.robots.forEach((rc, i) => {
       if (rc.plan) this.ais.get(i)?.setPlan(rc.plan);
     });
+    // Drive coach del jugador (matches con un solo jugador)
+    const player = this.playerRobot(0);
+    if (this.match && player && this.players().length === 1)
+      this.coach = new DriveCoach(
+        { robots: this.robots, match: this.match, fuel: this.fuel, ais: this.ais, plans: cfg.robots.map((rc) => rc.plan), profile: (i) => this.brain.profile(i), eventType: cfg.eventType },
+        player,
+        (msg) => this.hooks.coach?.(msg),
+      );
   }
 
   /** Fase actual del match ('AUTO'… o null en práctica). */
@@ -546,6 +559,7 @@ export class GameSession {
     const enabled = m ? robotsEnabled(m.phase) : true;
     const auto = m?.phase === 'AUTO';
     this.brain.update(dt, m);
+    this.coach?.update(dt);
     if (m?.running) for (const a of ALLIANCES) if (m.isHubActive(a)) this.activeSeconds[a] += dt;
     for (const r of this.robots) {
       r.enabled = enabled && !r.disabled;

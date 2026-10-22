@@ -39,6 +39,8 @@ export interface RobotPlan {
   startZ: number | null;
   /** Rutina de AUTO (id); null = automática (sin choques con su alianza, `assignAutos`). */
   auto: string | null;
+  /** Defensor: número de equipo rival que marca (null = el más peligroso según el scouting). */
+  defendTeam?: number | null;
 }
 
 export interface Strategy {

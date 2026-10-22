@@ -134,15 +134,16 @@ export function simulateMatch(teams: TeamEntry[], m: TMatch, ev: EventType, rng:
     for (const i of idx) {
       const s = teams[i].strength;
       const tr = teams[i].traits ?? { scoring: s, defense: 0.5, passing: 0.5, driving: 0.5 };
-      const f = Math.max(0, 25 + 95 * s + rng.gauss() * 14);
+      // misma escala que un match jugado en el simulador (~150–250 FUEL por robot)
+      const f = Math.max(0, 50 + 190 * s * (0.8 + 0.4 * tr.scoring) + rng.gauss() * 25);
       fuel += f;
       perf[i] = {
-        fuel: Math.round(f * (0.75 + 0.5 * tr.scoring) * 0.8),
+        fuel: Math.round(f),
         passes: Math.max(0, Math.round((tr.passing > 0.6 ? 26 : 8) * tr.passing * (0.5 + s) + rng.gauss() * 4)),
         defense: Math.max(0, Math.round(45 * tr.defense * (1 - tr.scoring) + rng.gauss() * 5)),
         driving: Math.round(Math.max(0, Math.min(100, 100 * (0.55 * tr.driving + 0.45 * s) + rng.gauss() * 6))),
       };
-      auto += Math.max(0, 3 + 12 * s + rng.gauss() * 3);
+      auto += Math.max(0, 6 + 22 * s + rng.gauss() * 4);
       tower += rng.next() < 0.3 + 0.6 * s ? (s > 0.75 ? 30 : s > 0.5 ? 20 : 10) : 0;
     }
     const fouls = Math.max(0, Math.round(rng.gauss() * 8 + 6));
@@ -157,6 +158,19 @@ export function simulateMatch(teams: TeamEntry[], m: TMatch, ev: EventType, rng:
     return { score, noFoul, autoFuel: me.auto, tower: me.tower, rp: rankingPoints({ fuel: me.fuel, towerPoints: me.tower, score, opponentScore: opScore }, ev).total };
   };
   return { red: mk(r, b), blue: mk(b, r), perf };
+}
+
+/** Promedios por match de un equipo en todas las categorías (y cuántos matches con datos). */
+export function teamAverages(t: Tournament, team: number): TeamPerf & { played: number } {
+  const out = { fuel: 0, passes: 0, defense: 0, driving: 0, played: 0 };
+  for (const m of [...t.quals, ...t.playoffs]) {
+    const p = m.result?.perf?.[team];
+    if (!p) continue;
+    out.played++;
+    for (const c of CATEGORIES) out[c] += p[c];
+  }
+  if (out.played) for (const c of CATEGORIES) out[c] /= out.played;
+  return out;
 }
 
 /** Fila del ranking por categoría: promedio por match. */

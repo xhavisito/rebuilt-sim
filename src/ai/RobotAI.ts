@@ -104,6 +104,10 @@ export class RobotAI {
   defender = false;
   /** Rol que le da su alianza en este momento (solo si su plan es automático). */
   dynRole: DynRole | null = null;
+  /** Rival (número de equipo) que el drive coach le pidió marcar. */
+  coachVictim: number | null = null;
+  /** Orden del drive coach (rol hasta cierto momento del match). */
+  coachOrder: { role: DynRole; until: number } | null = null;
   private climbLevel = 0;
   /** Plan de la estrategia de su alianza (rol, carril, línea, punto de tiro, climb). */
   private plan: RobotPlan | null = null;
@@ -147,9 +151,11 @@ export class RobotAI {
     return role && this.ctx.match?.phase !== 'END_GAME';
   }
 
-  /** ¿Le toca defender (estrategia o rol del momento)? */
+  /** ¿Le toca defender (estrategia, orden del drive coach o rol del momento)? */
   private get defending(): boolean {
-    return this.defender || (this.roleFree && this.dynRole === 'defender');
+    const m = this.ctx.match;
+    const coach = this.coachOrder && m && m.t < this.coachOrder.until ? this.coachOrder.role : null;
+    return this.defender || coach === 'defender' || (this.roleFree && this.dynRole === 'defender');
   }
 
   /** Segundos hasta que su HUB vuelve a contar FUEL (0 si ya cuenta; 99 si no vuelve). */
@@ -460,6 +466,10 @@ export class RobotAI {
     const threat = (o: Robot) => (this.ctx.profile?.(o.index).scoring ?? 0.5) * (0.3 + this.ctx.fuel.robotCount(o.index) / o.spec.hopperCapacity);
     const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
     victims.sort((a, b) => threat(b) - threat(a));
+    // el rival que le asignó la estrategia (o el drive coach), si está en la cancha
+    const assigned = this.coachVictim ?? this.plan?.defendTeam ?? null;
+    const marked = assigned !== null ? victims.find((o) => o.spec.teamNumber === assigned) : undefined;
+    if (marked) victims.unshift(marked);
     if (!victims[0]) return false;
     this.defendTarget = victims[0].index;
     return true;

@@ -90,6 +90,7 @@ export class Hud {
         <button class="pause-btn" data-k="pause" aria-label="${t('paused')}">${ICON_PAUSE}</button>
       </div>
       <div class="pin-layer" data-k="pins"></div>
+      <div class="coach" data-k="coach"></div>
     `;
     parent.appendChild(r);
     this.root = r;
@@ -102,6 +103,23 @@ export class Hud {
       onCamera();
       (e.currentTarget as HTMLElement).blur();
     });
+  }
+
+  /** Mensaje del drive coach (se quedan los últimos 4; se borran solos a los 12 s). */
+  coach(text: string, kind: 'call' | 'tip' | 'team' | 'warn'): void {
+    const box = this.els.coach;
+    box.querySelectorAll('.cm').forEach((e) => e.classList.add('old'));
+    const el = document.createElement('div');
+    el.className = `cm cm-${kind}`;
+    el.innerHTML = `<b>${kind === 'team' ? '📻' : 'COACH'}</b>`;
+    el.appendChild(document.createTextNode(text));
+    box.appendChild(el);
+    while (box.children.length > 4) box.firstElementChild?.remove();
+    setTimeout(() => el.remove(), 12000);
+  }
+
+  clearCoach(): void {
+    this.els.coach.innerHTML = '';
   }
 
   setVisible(v: boolean): void {
