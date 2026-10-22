@@ -32,6 +32,7 @@ import { hubFuelNear } from './fuelSense';
 import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
 import { inLane, inNeutral, routeDistance, type RobotPlan } from './Strategy';
 import { passTarget, PASS_LANE_MIN } from '../game/Mechanisms';
+import type { AiMemory } from './Memory';
 import type { DynRole, RobotProfile } from './Scouting';
 
 export interface AiContext {
@@ -46,9 +47,32 @@ export interface AiContext {
   claims: Map<number, number>;
   /** Ficha de scouting de cada robot (la alianza la aprende en el match). */
   profile?(robot: number): RobotProfile;
+  /** Memoria de prueba y error (persistente). */
+  memory?: AiMemory;
+  /** Táctica actual de cada robot de la IA (para no ir dos a defender a la vez). */
+  tactics?: Map<number, Tactic>;
+  /** Entrenamiento: explora más tácticas. */
+  training?: boolean;
 }
 
-type State = 'pass' | 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'descend' | 'idle';
+/**
+ * Tácticas cuando ya está lleno y a su HUB le falta para activarse (en vez de solo esperar):
+ * - hold: espera en su punto de tiro.
+ * - stockpile: en la NEUTRAL ZONE sigue recogiendo y pasa lo que le sobra a su ALLIANCE ZONE
+ *   (sus compañeros recargan más rápido y al rival le queda menos FUEL).
+ * - defend: estorba al anotador rival más peligroso mientras su HUB está activo.
+ */
+export type Tactic = 'hold' | 'stockpile' | 'defend';
+
+interface Episode {
+  ctx: string;
+  tactic: Tactic;
+  opp0: number;
+  own1: number | null;
+  opp1: number;
+}
+
+type State = 'pass' | 'collect' | 'score' | 'stage' | 'defend' | 'stockpile' | 'climb' | 'descend' | 'idle';
 
 export const DIFFICULTY: Record<Difficulty, { speed: number; think: number; accuracy: number; climbMargin: number; mistakes: number }> = {
   easy: { speed: 0.68, think: 0.9, accuracy: 0.82, climbMargin: 7, mistakes: 0.25 },
@@ -85,6 +109,11 @@ export class RobotAI {
   private plan: RobotPlan | null = null;
   /** Siguiente punto de la línea de recolección que recorre cuando no hay FUEL. */
   private routeIdx = 0;
+  /** Táctica de esta ventana inactiva y su "episodio" (para medir qué tal le fue). */
+  tactic: Tactic | null = null;
+  private episode: Episode | null = null;
+  private lastEta = 3;
+  private hazardEscapes = 0;
   private readonly d: (typeof DIFFICULTY)[Difficulty];
 
   constructor(
@@ -194,6 +223,11 @@ export class RobotAI {
     const tw = F.towerInfo(this.r.alliance);
     const dist = Math.hypot(this.r.phys.curPos.x - tw.uprightX, this.r.phys.curPos.z - tw.cz) + (zoneOf(this.r.phys.curPos.x) !== zoneOf(tw.uprightX) ? 2 : 0);
     const travel = dist / (this.r.spec.maxSpeed * this.d.speed * 0.6);
+    // ¿Vale más trepar o seguir anotando? Con su ritmo real (memoria): si en lo que tarda en
+    // trepar anota claramente más que los puntos del nivel, se queda anotando
+    const rate = this.ctx.memory?.rate(this.r.spec.id);
+    const pts = [0, 10, 20, 30][this.climbLevel];
+    if (rate && rate * (need + travel) > pts * 1.5) return false;
     return T.teleopEnd - m.t <= need + travel + this.d.climbMargin;
   }
 
@@ -209,6 +243,14 @@ export class RobotAI {
     const others = this.ctx.robots;
     const speed = this.d.speed;
     const n = f.robotCount(r.index);
+    // Aprende de sus errores: donde se tuvo que desatorar queda marcado como peligro (si no lo
+    // estaba empujando otro robot: eso no es culpa del lugar)
+    if (this.nav.escapes !== this.hazardEscapes) {
+      this.hazardEscapes = this.nav.escapes;
+      const p = r.phys.curPos;
+      const pushed = others.some((o) => o !== r && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < o.phys.outerW + r.phys.outerW + 0.3);
+      if (!pushed) this.ctx.memory?.addHazard(r.spec.id, p.x, p.z);
+    }
     switch (this.state) {
       case 'collect': {
         r.intakeOn = true;
@@ -271,6 +313,31 @@ export class RobotAI {
         cmd.pass = n > 0;
         cmd.aim = { x: goal.x, z: goal.z };
         if (r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x)), 0.03);
+        break;
+      }
+      case 'stockpile': {
+        // Acaparar: en la NEUTRAL ZONE sigue recogiendo y pasa el excedente a su ALLIANCE ZONE
+        // (se queda casi lleno); deja de pasar a tiempo para llegar lleno cuando se active
+        r.intakeOn = n < r.spec.hopperCapacity;
+        this.targetAge += dt;
+        if (this.targetBall >= 0 && f.state[this.targetBall] !== FuelState.Field) this.targetBall = -1;
+        if (this.targetBall < 0 || this.targetAge > 1.5) this.pickBall();
+        const p = r.phys.curPos;
+        const goal = this.passGoal();
+        const passing = n >= r.spec.hopperCapacity - 2 && inNeutral(p.x) && this.timeUntilCounts() > this.lastEta + 4;
+        // chasis hacia el pase si el shooter es fijo (swerve: se traslada igual)
+        const passYaw = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x));
+        const heading = passing && r.spec.shooter.type === 'fixed' ? passYaw : null;
+        if (this.targetBall >= 0) {
+          const o = this.targetBall * 3;
+          this.nav.plan({ x: f.pos[o], z: f.pos[o + 2] });
+        } else this.nav.plan({ x: this.sgn * 1.6, z: p.z > 0 ? 1.8 : -1.8 }); // su mitad de la NEUTRAL ZONE
+        const res = this.nav.follow(dt, others, { speed: speed * (passing && r.spec.shooter.type === 'fixed' ? 0.5 : 0.85), heading, tol: 0.15 });
+        cmd.drive = res.cmd;
+        if (res.arrived) this.targetBall = -1;
+        cmd.pass = passing;
+        cmd.aim = { x: goal.x, z: goal.z };
+        if (passing && r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(passYaw, 0.03);
         break;
       }
       case 'score':
@@ -382,6 +449,93 @@ export class RobotAI {
     return { x: wall - F.allianceSign(r.alliance) * depth, z };
   }
 
+  /**
+   * Rival a defender: el más peligroso según el scouting (qué tan bien anota por qué tan lleno
+   * viene), solo si su HUB está activo. false si no hay a quién.
+   */
+  private pickVictim(): boolean {
+    const m = this.ctx.match;
+    const opp = opponent(this.r.alliance);
+    if (!m || !m.isHubActive(opp)) return false;
+    const threat = (o: Robot) => (this.ctx.profile?.(o.index).scoring ?? 0.5) * (0.3 + this.ctx.fuel.robotCount(o.index) / o.spec.hopperCapacity);
+    const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
+    victims.sort((a, b) => threat(b) - threat(a));
+    if (!victims[0]) return false;
+    this.defendTarget = victims[0].index;
+    return true;
+  }
+
+  /** Duración (s) de la ventana activa que empieza en `until` segundos. */
+  private windowAfter(until: number): number {
+    let t = until;
+    while (t < until + 70 && this.hubCountsIn(t)) t += 0.5;
+    return t - until;
+  }
+
+  /**
+   * Elige la táctica para esta ventana inactiva (prueba y error con memoria; ver `AiMemory`).
+   * Criterio experto de arranque: acaparar vale más antes de una ventana larga (SHIFT 4 + END
+   * GAME = 55 s seguidos para quien ganó el AUTO); defender, si empuja bien y nadie más defiende.
+   */
+  private chooseTactic(until: number): Tactic {
+    const m = this.ctx.match!;
+    const r = this.r;
+    const long = this.windowAfter(until) >= 45;
+    const ctxKey = `inactive-${long ? 'L' : 'S'}`;
+    const options: Tactic[] = ['hold', 'stockpile'];
+    const mates = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance);
+    const someoneDefends = mates.some((o) => this.ctx.tactics?.get(o.index) === 'defend');
+    if (!someoneDefends && m.isHubActive(opponent(r.alliance))) options.push('defend');
+    const prof = this.ctx.profile?.(r.index);
+    const heuristic: Record<string, number> = {
+      hold: 0,
+      stockpile: 3 + (long ? 3 : 0) + ((prof?.passing ?? 0.5) - 0.5) * 6,
+      defend: 1 + ((prof?.defense ?? 0.5) - 0.5) * 12,
+    };
+    const mem = this.ctx.memory;
+    let t: Tactic;
+    if (mem) t = mem.choose(r.spec.id, ctxKey, options, this.ctx.rng, heuristic, this.ctx.training ? 0.3 : 0.05) as Tactic;
+    else t = options.reduce((a, b) => (heuristic[b] > heuristic[a] ? b : a));
+    this.tactic = t;
+    const opp = opponent(r.alliance);
+    this.episode = { ctx: ctxKey, tactic: t, opp0: m.score(opp), own1: null, opp1: m.score(opp) };
+    return t;
+  }
+
+  /**
+   * Lleva la cuenta del episodio de la táctica: lo que anotó el rival mientras su HUB estaba
+   * apagado y lo que anotó su alianza en la ventana activa siguiente. Recompensa (por robot) =
+   * (propios − rivales) / 3.
+   */
+  private trackEpisode(final = false): void {
+    const m = this.ctx.match;
+    const ep = this.episode;
+    if (!m || !ep) return;
+    const own = this.r.alliance;
+    const opp = opponent(own);
+    const counting = this.hubCountsIn(0);
+    if (ep.own1 === null) {
+      if (counting) {
+        ep.own1 = m.score(own);
+        ep.opp1 = m.score(opp);
+      } else if (final) this.episode = null;
+      return;
+    }
+    if (!counting || final) {
+      const reward = (m.score(own) - ep.own1) / 3 - (ep.opp1 - ep.opp0) / 3;
+      this.ctx.memory?.record(this.r.spec.id, ep.ctx, ep.tactic, reward);
+      this.episode = null;
+    }
+  }
+
+  /** Fin del match: cierra el episodio pendiente y guarda lo aprendido. */
+  finishMatch(activeSeconds: number): void {
+    this.trackEpisode(true);
+    const mem = this.ctx.memory;
+    if (!mem) return;
+    mem.endMatch(this.r.spec.id, activeSeconds > 20 ? this.r.stats.fuelScored / activeSeconds : null);
+  }
+
   private freeSlot() {
     const occ = this.ctx.towerOcc[this.r.alliance];
     const p = this.r.phys.curPos;
@@ -438,12 +592,23 @@ export class RobotAI {
       return;
     }
     const endgame = m !== null && m.phase === 'END_GAME';
+    this.lastEta = eta;
+    this.trackEpisode();
+    if (this.hubCountsIn(0)) this.tactic = null; // la táctica dura una ventana inactiva
+    this.ctx.tactics?.set(r.index, this.state === 'defend' ? 'defend' : (this.tactic ?? 'hold'));
     if (countsNow) {
       // HUB activo: tira lo que trae si alcanza a llegar antes de que se apague; si no, junta
       // para el siguiente
+      // Viajes con carga grande (cada viaje cuesta ~7 s ida y vuelta): junta casi lleno y sale
+      // cuando el tiempo de la ventana alcanza justo para llegar y vaciar el hopper
       const left = this.timeLeftCounting();
-      const worth = left > eta + (r.lastSolution?.tof ?? 1.0) + 0.3;
-      if (n > 0 && worth && (n >= Math.min(cap, 8) || this.state === 'score' || endgame || this.inShootZone())) {
+      const tof = r.lastSolution?.tof ?? 1.0;
+      const worth = left > eta + tof + 0.3;
+      const empty = n / Math.max(1, r.spec.shooter.rate * (r.spec.shooter.lanes ?? 1));
+      const mustGo = left <= eta + empty + tof + 2.0;
+      const load = Math.min(cap - 1, Math.max(8, Math.round(cap * 0.85)));
+      const nothingNear = this.state === 'collect' && this.targetBall < 0 && !(this.plan?.route.length);
+      if (n > 0 && worth && (n >= load || mustGo || nothingNear || this.state === 'score' || this.inShootZone())) {
         this.state = 'score';
         this.target = spot;
         return;
@@ -452,8 +617,27 @@ export class RobotAI {
       // HUB apagado: se llena por completo y sale a su punto de tiro justo a tiempo para estar
       // ahí cuando se active (no a medio llenar)
       const until = this.timeUntilCounts();
-      if (n > 0 && (full || until <= eta + 1.2)) {
-        this.state = full && until > eta + 1.2 ? 'stage' : 'score';
+      if (n > 0 && until <= eta + 1.2) {
+        this.state = 'score';
+        this.target = spot;
+        return;
+      }
+      // Lleno y con tiempo de sobra: no se queda esperando; usa una táctica (la que mejor le ha
+      // funcionado en esta situación, según su memoria)
+      if ((n >= cap - 2 || this.tactic) && !endgame && until > eta + 4 && !this.defending && !this.feeding) {
+        const t = this.tactic ?? this.chooseTactic(until);
+        if (t === 'defend' && this.pickVictim()) {
+          this.state = 'defend';
+          return;
+        }
+        if (t === 'stockpile') {
+          if (this.state !== 'stockpile') this.targetBall = -1;
+          this.state = 'stockpile';
+          return;
+        }
+      }
+      if (n > 0 && full) {
+        this.state = 'stage';
         this.target = spot;
         return;
       }
@@ -461,15 +645,9 @@ export class RobotAI {
     // Defensor: con su HUB inactivo y el rival activo; marca al rival más peligroso (scouting:
     // qué tan bien anota por qué tan lleno viene)
     const opp = opponent(r.alliance);
-    if (this.defending && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && !endgame) {
-      const threat = (o: Robot) => (this.ctx.profile?.(o.index).scoring ?? 0.5) * (0.3 + this.ctx.fuel.robotCount(o.index) / o.spec.hopperCapacity);
-      const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
-      victims.sort((a, b) => threat(b) - threat(a));
-      if (victims[0]) {
-        this.defendTarget = victims[0].index;
-        this.state = 'defend';
-        return;
-      }
+    if (this.defending && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && !endgame && this.pickVictim()) {
+      this.state = 'defend';
+      return;
     }
     if (full) {
       this.state = 'stage';
@@ -503,6 +681,15 @@ export class RobotAI {
     const allies = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance);
     const tall = r.phys.height > F.TRENCH_CLEAR_HEIGHT;
     const cycling = r.spec.shooter.type === 'turret' && this.hubCountsIn(1.0);
+    // Montones: celdas de 0.6 m con varios FUEL valen más (la intake se lleva varios de una pasada)
+    const dens = new Map<number, number>();
+    const cellOf = (x: number, z: number) => Math.floor(x / 0.6) * 1000 + Math.floor(z / 0.6);
+    for (let i = 0; i < f.count; i++) {
+      if (f.state[i] !== FuelState.Field || f.pos[i * 3 + 1] > 0.2) continue;
+      const k = cellOf(f.pos[i * 3], f.pos[i * 3 + 2]);
+      dens.set(k, (dens.get(k) ?? 0) + 1);
+    }
+    const mem = this.ctx.memory;
     // Poco antes de que se active su HUB: el FUEL camino a su punto de tiro vale más
     const until = this.timeUntilCounts();
     const spot = until > 0 && until < 10 && !this.feeding ? this.shootSpot() : null;
@@ -534,8 +721,10 @@ export class RobotAI {
         const tw = F.towerInfo(opponent(r.alliance));
         if (Math.hypot(x - tw.cx, z - tw.cz) < 2.2) continue;
       }
-      if (this.feeding && !inNeutral(x)) continue;
+      if ((this.feeding || this.state === 'stockpile') && !inNeutral(x)) continue;
       let c = Math.hypot(x - p.x, z - p.z);
+      c -= Math.min(1.2, 0.3 * ((dens.get(cellOf(x, z)) ?? 1) - 1));
+      if (mem) c += mem.hazardCost(r.spec.id, x, z);
       // Plan: su carril y su línea de recolección
       if (this.plan) {
         if (!inLane(this.plan.lane, z, r.alliance)) c += 3;
