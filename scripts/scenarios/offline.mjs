@@ -16,8 +16,8 @@ const cached = await page.evaluate(async () => { const keys = await caches.keys(
 console.log('SW activo · archivos en caché:', cached);
 await ctx.setOffline(true);
 await page.reload();
-await page.waitForFunction(() => !document.getElementById('loading') && !!document.querySelector('.mm-item'), null, { timeout: 30000 });
-console.log('offline OK: menú cargado sin red =', await page.evaluate(() => !!document.querySelector('.mm-item')));
+await page.waitForFunction(() => !document.getElementById('loading') && !!document.querySelector('.mm-hero'), null, { timeout: 30000 });
+console.log('offline OK: menú cargado sin red =', await page.evaluate(() => !!document.querySelector('.mm-hero')));
 await page.click('[data-go="spectate"]');
 await page.waitForTimeout(5000);
 console.log('offline match t =', await page.evaluate(() => window.app.session?.match?.t.toFixed(1)));
