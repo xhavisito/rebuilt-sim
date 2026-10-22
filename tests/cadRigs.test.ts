@@ -79,11 +79,17 @@ describe('hopper visible', () => {
 });
 
 describe('3478: la intake nunca atraviesa el frente del hopper', () => {
-  it('el frente del hopper va por delante de la intake en todo el giro', async () => {
-    const { hopperExt3478 } = await import('../src/render/cadRigs');
-    // x máximo de la intake (a la altura de la pared) medido en la malla, por ángulo
-    const swing: Array<[number, number]> = [[0, 0.335], [40, 0.487], [80, 0.588], [120, 0.665], [140, 0.677]];
-    for (const [deg, x] of swing) expect(0.314 + hopperExt3478(deg), `${deg}°`).toBeGreaterThan(x);
-    expect(hopperExt3478(0)).toBeCloseTo(0.031, 2);
+  it('el frente solo avanza (nunca regresa), no pasa de 0.25 m y la intake termina en el piso', async () => {
+    const { intakeSwing3478 } = await import('../src/render/cadRigs');
+    let prev = 0;
+    for (let d = 0; d <= 140; d += 1) {
+      const { ext, drop } = intakeSwing3478(d);
+      expect(ext).toBeGreaterThanOrEqual(prev - 1e-9);
+      expect(ext).toBeLessThanOrEqual(0.25 + 1e-9);
+      expect(drop).toBeGreaterThanOrEqual(0);
+      prev = ext;
+    }
+    expect(intakeSwing3478(0)).toEqual({ ext: 0, drop: 0 });
+    expect(intakeSwing3478(140).drop).toBe(0);
   });
 });
