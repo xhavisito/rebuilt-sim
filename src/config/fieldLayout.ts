@@ -289,8 +289,11 @@ function buildBlueSide(): FieldPart[] {
   // ---------- TOWER
   {
     const zc = zOf(F.TOWER_CENTER_Y_IN);
+    // La base (0.3 in, bordes biselados) solo choca con el FUEL: con los robots, sus ruedas
+    // esféricas brincaban en el escalón, el robot se ladeaba ~4° y se trababa contra los soportes
+    // (un robot de 27.5 in cabe bajo ellos con 0.6 in de sobra, como en el campo real).
     out.push(
-      box('tower-base', WALL_X, WALL_X + F.TOWER_BASE_DEPTH, 0, F.TOWER_BASE_THICK, zc - F.TOWER_BASE_WIDTH / 2, zc + F.TOWER_BASE_WIDTH / 2, 'baseplate', 'all', false),
+      box('tower-base', WALL_X, WALL_X + F.TOWER_BASE_DEPTH, 0, F.TOWER_BASE_THICK, zc - F.TOWER_BASE_WIDTH / 2, zc + F.TOWER_BASE_WIDTH / 2, 'baseplate', 'fuel', false),
     );
     const ux = WALL_X + F.UPRIGHT_X_FROM_WALL;
     for (const s of [-1, 1]) {

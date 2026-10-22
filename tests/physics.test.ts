@@ -233,4 +233,24 @@ describe('FUEL', () => {
     expect(fuel.pos[0]).toBeGreaterThan(hub.x + F.HUB_SIZE / 2);
     pw.free();
   });
+
+  it('3478 (27.5 in) pasa bajo los soportes de la TOWER (§5.8: desde 28.40 in), en los dos sentidos', () => {
+    const tw = F.towerInfo('blue');
+    // en el paso entre la TOWER WALL y el UPRIGHT (a la mitad o cargado hacia la pared)
+    const mid = (-F.HALF_L + tw.uprightX - F.UPRIGHT_DEEP / 2) / 2;
+    for (const x of [mid - 0.08, mid, mid + 0.05])
+      for (const dir of [1, -1]) {
+        for (const deployed of [false, true]) {
+          for (const heading of [0, 0.1, Math.PI / 2]) {
+            const pw = world();
+            const r = new RobotPhysics(pw, presetById('cad-3478'), 0, x, tw.cz - dir * 1.6, heading);
+            r.setIntakeDeployed(deployed);
+            run(pw, [r], 2.2, () => ({ vx: 0, vz: dir * 1.5, omega: 0 }));
+            // cruzó el soporte del otro lado de la TOWER
+            expect(dir * (r.position().z - tw.cz)).toBeGreaterThan(1.0);
+            pw.free();
+          }
+        }
+      }
+  });
 });
