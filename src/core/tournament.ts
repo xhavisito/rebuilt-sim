@@ -88,6 +88,11 @@ export interface Tournament {
   selection?: Selection | null;
   /** Matches de otros equipos: preguntar si verlos u omitirlos siempre. */
   others?: 'ask' | 'skip';
+  /**
+   * Plan por fases que editó el jugador para cada uno de sus matches (id del match → filas del
+   * dashboard; ver src/ai/PhasePlan.ts). Sin entrada = la sugerencia del drive coach.
+   */
+  matchPlans?: Record<string, unknown[]>;
 }
 
 /** Calendario: cada equipo juega `perTeam` matches; se evita repetir compañeros cuando se puede. */

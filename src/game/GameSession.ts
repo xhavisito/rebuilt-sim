@@ -228,7 +228,16 @@ export class GameSession {
     const player = this.playerRobot(0);
     if (this.match && player && this.players().length === 1)
       this.coach = new DriveCoach(
-        { robots: this.robots, match: this.match, fuel: this.fuel, ais: this.ais, plans: cfg.robots.map((rc) => rc.plan), profile: (i) => this.brain.profile(i), eventType: cfg.eventType },
+        {
+          robots: this.robots,
+          match: this.match,
+          fuel: this.fuel,
+          ais: this.ais,
+          plans: cfg.robots.map((rc) => rc.plan),
+          profile: (i) => this.brain.profile(i),
+          eventType: cfg.eventType,
+          autoName: (i) => this.autos.get(i)?.routine.name ?? '—',
+        },
         player,
         (msg) => this.hooks.coach?.(msg),
       );

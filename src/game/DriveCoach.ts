@@ -33,6 +33,17 @@ export interface CoachContext {
   plans: Array<RobotPlan | undefined>;
   profile(i: number): RobotProfile;
   eventType: EventType;
+  /** Nombre de la rutina de AUTO de cada robot (para anunciar el plan). */
+  autoName?(i: number): string;
+}
+
+/** Tarea de un robot en cada fase según su plan (o su rol). Los textos van con '@' (clave de i18n). */
+function phaseTasks(p: RobotPlan | undefined, maxLevel: number): { act: 'score' | 'feed'; inact: 'stockpile' | 'defend' | 'feed'; climb: number } {
+  const role = p?.role ?? 'auto';
+  const act = p?.active ?? (role === 'feeder' ? 'feed' : 'score');
+  const inact = p?.inactive ?? (role === 'defender' ? 'defend' : role === 'feeder' ? 'feed' : 'stockpile');
+  const climb = p && p.climb !== 'auto' ? Math.min(p.climb, maxLevel) : maxLevel;
+  return { act, inact, climb };
 }
 
 export class DriveCoach {
@@ -102,24 +113,27 @@ export class DriveCoach {
     return this.ctx.robots.filter((o) => o !== this.player && o.alliance === this.player.alliance);
   }
 
-  /** Al arrancar: el plan del match para cada quien. */
+  /** Al arrancar: el plan del match de cada quien (AUTO, SHIFT activo, inactivo y END GAME). */
   private announcePlan(): void {
     this.announced = true;
     this.say('coach_plan', 'tip');
     const threat = this.threat();
-    const line = (r: Robot): { key: string; params: Record<string, string | number> } => {
-      const p = this.ctx.plans[r.index];
-      const ai = this.ctx.ais.get(r.index);
-      const who = r === this.player ? 'coach_you' : String(r.spec.teamNumber);
-      const role = p && p.role !== 'auto' ? p.role : (ai?.dynRole ?? 'scorer');
-      const target = p?.defendTeam ?? threat?.spec.teamNumber ?? '';
-      if (role === 'defender') return { key: 'coach_orderDefend', params: { who, target } };
-      if (role === 'feeder') return { key: 'coach_orderFeed', params: { who } };
-      return { key: 'coach_orderScore', params: { who } };
-    };
     for (const r of [this.player, ...this.mates()]) {
-      const l = line(r);
-      this.emit({ key: l.key, params: l.params, kind: r === this.player ? 'tip' : 'team' });
+      const p = this.ctx.plans[r.index];
+      const tk = phaseTasks(p, r.spec.climb.maxLevel);
+      const target = tk.inact === 'defend' ? ` ${p?.defendTeam ?? threat?.spec.teamNumber ?? ''}` : '';
+      this.emit({
+        key: 'coach_orderFull',
+        params: {
+          who: r === this.player ? '@coach_you' : String(r.spec.teamNumber),
+          auto: this.ctx.autoName?.(r.index) ?? '—',
+          act: `@task_${tk.act}`,
+          inact: `@task_${tk.inact}`,
+          target,
+          eg: tk.climb > 0 ? `L${tk.climb}` : '@task_noClimb',
+        },
+        kind: r === this.player ? 'tip' : 'team',
+      });
     }
   }
 
@@ -153,10 +167,19 @@ export class DriveCoach {
       if (!active && until <= 5 && until > 3.5) this.sayOnce('coach_activeSoon', 'call', { s: 5 }, `aS:${shiftKey}`);
       if (active && until <= 5 && until > 3.5 && m.phase !== 'TRANSITION') this.sayOnce('coach_inactiveSoon', 'call', { s: 5 }, `iS:${shiftKey}`);
       if (this.lastActive !== null && active !== this.lastActive) {
-        if (active) this.say('coach_activeNow', 'call');
-        else {
+        if (active) {
+          this.say('coach_activeNow', 'call');
+          // quién alimenta en este SHIFT (según el plan)
+          for (const o of this.mates())
+            if (phaseTasks(this.ctx.plans[o.index], o.spec.climb.maxLevel).act === 'feed') this.emit({ key: 'coach_partnerFeed', params: { who: o.spec.teamNumber }, kind: 'team' });
+        } else {
           const threat = this.threat();
-          if (n >= cap - 2) this.say('coach_inactiveFull', 'tip', { target: threat?.spec.teamNumber ?? '' });
+          const mine = phaseTasks(this.ctx.plans[p.index], p.spec.climb.maxLevel);
+          // tu tarea del plan para el SHIFT inactivo
+          if (this.ctx.plans[p.index]?.inactive) {
+            const target = this.ctx.plans[p.index]?.defendTeam ?? threat?.spec.teamNumber ?? '';
+            this.say('coach_youInactive', 'tip', { task: `@task_${mine.inact}`, target: mine.inact === 'defend' ? ` ${target}` : '' });
+          } else if (n >= cap - 2) this.say('coach_inactiveFull', 'tip', { target: threat?.spec.teamNumber ?? '' });
           else this.say('coach_inactiveFill', 'tip', { s: Math.round(until) });
           // A los compañeros de la IA: quién marca a quién y quién acapara
           this.orderMates(threat, m);
@@ -170,7 +193,7 @@ export class DriveCoach {
           const d = Math.hypot(th.phys.curPos.x - hub.x, th.phys.curPos.z - hub.z);
           if (d < 4.5) {
             const defender = this.mates().find((o) => this.ctx.ais.get(o.index)?.state === 'defend');
-            this.say('coach_threat', 'warn', { target: th.spec.teamNumber, who: defender ? String(defender.spec.teamNumber) : 'coach_you' }, 12);
+            this.say('coach_threat', 'warn', { target: th.spec.teamNumber, who: defender ? String(defender.spec.teamNumber) : '@coach_you' }, 12);
           }
         }
       }
@@ -193,16 +216,19 @@ export class DriveCoach {
     if (teleop && shots >= 12 && scored / shots < 0.6) this.say('coach_accuracy', 'tip', { p: Math.round((scored / shots) * 100) }, 35);
     // ---- END GAME: cuándo salir a trepar; RP
     if (endgame) {
-      const lvl = p.spec.climb.maxLevel;
+      // el nivel que dice el plan (o el máximo de su robot)
+      const lvl = phaseTasks(this.ctx.plans[p.index], p.spec.climb.maxLevel).climb;
       const need = lvl ? [0, p.spec.climb.timeL1, p.spec.climb.timeL2, p.spec.climb.timeL3][lvl] + 4 : 0;
       const left = T.teleopEnd - m.t;
+      if (lvl === 0 && p.spec.climb.maxLevel > 0) this.sayOnce('coach_youNoClimb', 'tip');
       if (lvl > 0) {
         this.sayOnce('coach_climbPlan', 'tip', { l: lvl, s: Math.round(need), t: Math.round(need + 2) });
         if (!p.climbing && left <= need + 2 && left > need - 1) this.sayOnce('coach_climbNow', 'call', { s: Math.round(left) });
       }
       const climbers = this.mates()
-        .filter((o) => o.spec.climb.maxLevel > 0)
-        .map((o) => String(o.spec.teamNumber));
+        .map((o) => ({ o, l: phaseTasks(this.ctx.plans[o.index], o.spec.climb.maxLevel).climb }))
+        .filter((x) => x.l > 0)
+        .map((x) => `${x.o.spec.teamNumber} L${x.l}`);
       if (climbers.length) this.sayOnce('coach_partnersClimb', 'team', { list: climbers.join(', ') });
       const th = RP_THRESHOLDS[this.ctx.eventType];
       const counted = m.fuel[own].auto + m.fuel[own].teleop;
@@ -233,10 +259,12 @@ export class DriveCoach {
     const until = m.t + this.untilChange() - 0.5;
     let defender = mates.find((o) => {
       const plan = this.ctx.plans[o.index];
+      if (plan?.inactive) return plan.inactive === 'defend';
       return plan?.role === 'defender' || (plan?.role !== 'scorer' && this.ctx.ais.get(o.index)?.dynRole === 'defender');
     });
     if (!defender && behind && threat) {
-      const cands = mates.filter((o) => this.ctx.plans[o.index]?.role !== 'feeder');
+      // solo entre los que no tienen tarea fija en el plan (lo que tú decidiste se respeta)
+      const cands = mates.filter((o) => this.ctx.plans[o.index]?.role !== 'feeder' && !this.ctx.plans[o.index]?.inactive);
       cands.sort((a, b) => this.ctx.profile(a.index).scoring - this.ctx.profile(a.index).defense - (this.ctx.profile(b.index).scoring - this.ctx.profile(b.index).defense));
       defender = cands[0];
     }
@@ -247,6 +275,9 @@ export class DriveCoach {
         ai.coachOrder = { task: 'defend', until };
         ai.coachVictim = target;
         this.emit({ key: 'coach_partnerDefend', params: { who: o.spec.teamNumber, target }, kind: 'team' });
+      } else if (phaseTasks(this.ctx.plans[o.index], o.spec.climb.maxLevel).inact === 'feed') {
+        ai.coachOrder = null; // alimentador: pasa todo a la zona (su propia lógica)
+        this.emit({ key: 'coach_partnerFeed', params: { who: o.spec.teamNumber }, kind: 'team' });
       } else {
         ai.coachOrder = { task: 'stockpile', until };
         this.emit({ key: 'coach_partnerStock', params: { who: o.spec.teamNumber }, kind: 'team' });
