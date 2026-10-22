@@ -265,6 +265,14 @@ for (const src of SOURCES) {
     scene.addChild(g);
     groups.push(g);
   }
+  // `clipComp`: asset de una sola malla (9584). Los triángulos de `main` cuyo centro (marco WPILib)
+  // cumple el predicado pasan a un componente más, para que esa parte se mueva ('copy': a los dos).
+  const clipGroup = src.clipComp ? doc.createNode(`c${groups.length - 1}`) : null;
+  if (clipGroup) {
+    scene.addChild(clipGroup);
+    groups.push(clipGroup);
+  }
+  const clipByMat = new Map();
   bakePalettes(doc);
   // ---- Quita tornillería, piezas diminutas y BUMPERS
   const drop = src.drop ? new RegExp(src.drop, 'i') : null;
@@ -312,7 +320,7 @@ for (const src of SOURCES) {
   const clip = !!src.bumperClip;
   for (const g of groups) {
     const inv = mat4(g.getWorldMatrix()).invert();
-    const byMat = new Map();
+    const byMat = g === clipGroup ? clipByMat : new Map();
     g.traverse((n) => {
       const mesh = n.getMesh();
       if (!mesh || n === g) return;
@@ -335,7 +343,7 @@ for (const src of SOURCES) {
         const ia = prim.getIndices();
         const at = (k) => (ia ? ia.getScalar(k) : k);
         const nIdx = ia ? ia.getCount() : pa.getCount();
-        if (clip && g === main) {
+        if ((clip || clipGroup) && g === main) {
           // `bumperClip`: BUMPERS fundidos en la misma malla que el robot. Se quitan los triángulos
           // bajos (z < 0.2 m) con el centro fuera del perímetro del FRAME (marco WPILib).
           const w = new THREE.Matrix4().fromArray(n.getWorldMatrix());
@@ -351,7 +359,19 @@ for (const src of SOURCES) {
               zMax = Math.max(zMax, q.z);
             }
             c.divideScalar(3);
-            if (zMax < 0.2 && (Math.abs(c.x) > hl + 0.005 || Math.abs(c.y) > hw + 0.005)) continue;
+            if (clip && zMax < 0.2 && (Math.abs(c.x) > hl + 0.005 || Math.abs(c.y) > hw + 0.005)) continue;
+            const to = clipGroup ? src.clipComp(c.x, c.y, c.z) : false;
+            if (to) {
+              let cc = clipByMat.get(mat);
+              if (!cc) clipByMat.set(mat, (cc = { pos: [], idx: [] }));
+              for (let k = 0; k < 3; k++) {
+                pa.getElement(at(t + k), el);
+                q.fromArray(el).applyMatrix4(w);
+                cc.idx.push(cc.pos.length / 3);
+                cc.pos.push(q.x, q.y, q.z);
+              }
+              if (to !== 'copy') continue;
+            }
             for (let k = 0; k < 3; k++) ch.idx.push(base + at(t + k));
           }
         } else for (let k = 0; k < nIdx; k++) ch.idx.push(base + at(k));
