@@ -106,8 +106,8 @@ export class RobotAI {
   dynRole: DynRole | null = null;
   /** Rival (número de equipo) que el drive coach le pidió marcar. */
   coachVictim: number | null = null;
-  /** Orden del drive coach (rol hasta cierto momento del match). */
-  coachOrder: { role: DynRole; until: number } | null = null;
+  /** Orden del drive coach para este SHIFT (defender o acaparar) hasta cierto momento del match. */
+  coachOrder: { task: 'defend' | 'stockpile'; until: number } | null = null;
   private climbLevel = 0;
   /** Plan de la estrategia de su alianza (rol, carril, línea, punto de tiro, climb). */
   private plan: RobotPlan | null = null;
@@ -151,11 +151,17 @@ export class RobotAI {
     return role && this.ctx.match?.phase !== 'END_GAME';
   }
 
+  /** Orden vigente del drive coach (o null). */
+  private coachTask(): 'defend' | 'stockpile' | null {
+    const m = this.ctx.match;
+    return this.coachOrder && m && m.t < this.coachOrder.until ? this.coachOrder.task : null;
+  }
+
   /** ¿Le toca defender (estrategia, orden del drive coach o rol del momento)? */
   private get defending(): boolean {
-    const m = this.ctx.match;
-    const coach = this.coachOrder && m && m.t < this.coachOrder.until ? this.coachOrder.role : null;
-    return this.defender || coach === 'defender' || (this.roleFree && this.dynRole === 'defender');
+    const coach = this.coachTask();
+    if (coach === 'stockpile') return false;
+    return this.defender || coach === 'defend' || (this.roleFree && this.dynRole === 'defender');
   }
 
   /** Segundos hasta que su HUB vuelve a contar FUEL (0 si ya cuenta; 99 si no vuelve). */
@@ -492,7 +498,8 @@ export class RobotAI {
     const r = this.r;
     const long = this.windowAfter(until) >= 45;
     const ctxKey = `inactive-${long ? 'L' : 'S'}`;
-    const options: Tactic[] = ['hold', 'stockpile'];
+    // esperar solo es opción si la espera es corta (si no, se pierde un robot todo el SHIFT)
+    const options: Tactic[] = until - this.lastEta <= 8 ? ['hold', 'stockpile'] : ['stockpile'];
     const mates = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance);
     const someoneDefends = mates.some((o) => this.ctx.tactics?.get(o.index) === 'defend');
     if (!someoneDefends && m.isHubActive(opponent(r.alliance))) options.push('defend');
@@ -506,10 +513,16 @@ export class RobotAI {
     let t: Tactic;
     if (mem) t = mem.choose(r.spec.id, ctxKey, options, this.ctx.rng, heuristic, this.ctx.training ? 0.3 : 0.05) as Tactic;
     else t = options.reduce((a, b) => (heuristic[b] > heuristic[a] ? b : a));
-    this.tactic = t;
-    const opp = opponent(r.alliance);
-    this.episode = { ctx: ctxKey, tactic: t, opp0: m.score(opp), own1: null, opp1: m.score(opp) };
+    this.startEpisode(t, until, ctxKey);
     return t;
+  }
+
+  /** Empieza a medir cómo le va a la táctica de esta ventana inactiva. */
+  private startEpisode(t: Tactic, until: number, ctxKey = `inactive-${this.windowAfter(until) >= 45 ? 'L' : 'S'}`): void {
+    const m = this.ctx.match!;
+    const opp = opponent(this.r.alliance);
+    this.tactic = t;
+    this.episode = { ctx: ctxKey, tactic: t, opp0: m.score(opp), own1: null, opp1: m.score(opp) };
   }
 
   /**
@@ -632,18 +645,34 @@ export class RobotAI {
         this.target = spot;
         return;
       }
-      // Lleno y con tiempo de sobra: no se queda esperando; usa una táctica (la que mejor le ha
-      // funcionado en esta situación, según su memoria)
-      if ((n >= cap - 2 || this.tactic) && !endgame && until > eta + 4 && !this.defending && !this.feeding) {
-        const t = this.tactic ?? this.chooseTactic(until);
-        if (t === 'defend' && this.pickVictim()) {
+      // Con tiempo de sobra nunca se queda esperando todo el SHIFT en su zona: el defensor
+      // defiende (aunque ya esté lleno) y los demás, ya llenos o por orden del drive coach,
+      // acaparan (pasan FUEL a su ALLIANCE ZONE) o defienden. Esperar solo si falta poco.
+      const slack = until - eta;
+      if (!endgame && slack > 4 && !this.feeding) {
+        if (this.defending && this.pickVictim()) {
           this.state = 'defend';
           return;
         }
-        if (t === 'stockpile') {
-          if (this.state !== 'stockpile') this.targetBall = -1;
-          this.state = 'stockpile';
-          return;
+        const coach = this.coachTask();
+        if (coach === 'stockpile' || n >= cap - 2 || this.tactic) {
+          let t: Tactic;
+          if (coach === 'stockpile') {
+            if (this.tactic !== 'stockpile') this.startEpisode('stockpile', until);
+            t = 'stockpile';
+          } else t = this.tactic ?? this.chooseTactic(until);
+          if (t === 'defend' && !this.pickVictim()) t = 'stockpile';
+          if (t === 'hold' && slack > 8) t = 'stockpile';
+          this.tactic = t;
+          if (t === 'defend') {
+            this.state = 'defend';
+            return;
+          }
+          if (t === 'stockpile') {
+            if (this.state !== 'stockpile') this.targetBall = -1;
+            this.state = 'stockpile';
+            return;
+          }
         }
       }
       if (n > 0 && full) {
