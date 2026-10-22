@@ -41,6 +41,7 @@ describe('cadRigs', () => {
   it('la intake se mueve entre guardada y desplegada', () => {
     for (const spec of CAD_ROBOTS) {
       const rig = CAD_RIGS[spec.cad!.file];
+      if (rig.static) continue; // CAD de una sola malla (9584)
       const a = rig.poses({ ...states[0], intake: 0 });
       const b = rig.poses({ ...states[0], intake: 1 });
       const moved = a.some((p, i) => p && b[i] && (Math.hypot(p.t[0] - b[i]!.t[0], p.t[1] - b[i]!.t[1], p.t[2] - b[i]!.t[2]) > 0.01 || Math.abs(p.q[0] * b[i]!.q[0] + p.q[1] * b[i]!.q[1] + p.q[2] * b[i]!.q[2] + p.q[3] * b[i]!.q[3]) < 0.999));

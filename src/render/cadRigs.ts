@@ -45,6 +45,8 @@ export interface CadRig {
    * entre `a` y `b` en el marco de la POSE del componente `comp`.
    */
   extras?: Array<{ comp: number; a: Vec3; b: Vec3; r: number; color: number }>;
+  /** CAD publicado como una sola malla (9584): nada se mueve. */
+  static?: boolean;
   /** Componentes que se dibujan opacos aunque el CAD los marque translúcidos. */
   opaque?: number[];
   /**
@@ -591,5 +593,301 @@ export const CAD_RIGS: Record<string, CadRig> = {
     },
     // Hopper atrás en el CAD, montado en la intake (sus paredes salen con ella)
     hopper: [{ min: [-0.38, -0.3, 0.26], max: [0.02, 0.3, 0.56], comp: 2 }],
+  },
+
+  /**
+   * 7130 "BataBot" — Telemetry.telemeterizeIntake/ShooterAngle/Climber (poses absolutas de
+   * componente). c0 intake: pitch (−0.05 + p) rot, p entre los límites de IntakeConstants (en
+   * este asset −0.347 la deja guardada y −0.01 desplegada); c1 indexer que sale con ella hasta 0.28 m; c2 shooter (hood): pitch
+   * (−0.0675 + s) rot, s 0–0.055 (ShooterConstants); c3 climber que sube.
+   */
+  '7130.glb': {
+    poses(m) {
+      const p = lerp(-0.347412, -0.01, m.intake);
+      const s = lerp(0, 0.055, m.hood);
+      const R = 2 * Math.PI;
+      return [
+        pose([0.312, 0, 0.222], rot(0, (-0.05 + p) * R, 0)),
+        pose([0.35 + Math.min((p + 0.39) * 1.4, 0.28), 0, 0.37]),
+        pose([-0.075, 0, 0.472], rot(0, (-0.0675 + s) * R, 0)),
+        pose([-0.1, 0.282, 0.17 + m.climb * 0.3]),
+      ];
+    },
+    // Bandeja (verde) que sale al frente con la intake
+    hopper: [{ min: [-0.15, -0.27, 0.33], max: [0.22, 0.27, 0.56], maxDeployed: [0.55, 0.27, 0.56] }],
+  },
+
+  /**
+   * 2713 (Red Hawk Robotics) — KinematicsManager: poses locales encadenadas (padre ∘
+   * initialTransform ∘ movimiento). c0 intake que sale 0–11.5 in en +X (IntakeConstants), c1
+   * dye rotor (spindexer) en (0.5, 0.5, 0) in, c2 turret en (0.5, 0.5, 18.48) in con offset de
+   * 180° (manualOffset), c3 hood montado en la turret (2.45, 0, 1.03 in), 0°–30°.
+   */
+  '2713.glb': {
+    poses(m) {
+      const turret = pose([inch(0.5), inch(0.5), inch(18.484119)], rot(0, 0, m.turret + Math.PI));
+      return [
+        pose([lerp(0, inch(11.5), m.intake), 0, 0]),
+        pose([inch(0.5), inch(0.5), 0], rot(0, 0, m.spin)),
+        turret,
+        compose(turret, pose([inch(2.452807), 0, inch(1.026032)], rot(0, lerp(0, 30, m.hood) * DEG, 0))),
+      ];
+    },
+    hopper: [{ min: [-0.25, -0.3, 0.12], max: [0.25, 0.3, 0.42], maxDeployed: [0.5, 0.3, 0.42] }],
+  },
+
+  /**
+   * 2412 (Robototes) "Corner Turret" — asset sin componentes: la turret (c0) y la cabeza de la
+   * intake (c1) se separan por nombre (sources.mjs `parts`). La turret gira sobre su anillo
+   * (centro deducido del CAD); la intake se guarda encima del robot y baja hacia atrás
+   * (IntakePivot.DEPLOYED_POS = −0.43 rot ≈ 155°; aquí 140° para que quede sobre el piso).
+   * La intake está atrás en el CAD: el modelo se gira 180°.
+   */
+  '2412.glb': {
+    yawDeg: 180,
+    poses(m) {
+      return [
+        rotateAround(IDENTITY, [0.15, 0.2, 0], rot(0, 0, m.turret)),
+        rotateAround(IDENTITY, [-0.3, 0, 0.22], rot(0, -lerp(0, 140, m.intake) * DEG, 0)),
+      ];
+    },
+    hopper: [{ min: [-0.32, -0.3, 0.12], max: [0.05, 0.3, 0.42] }],
+  },
+
+  /**
+   * 2826 (Wave Robotics) — asset sin componentes: el hopper extensible con la intake (c0) se
+   * separa por nombre (sources.mjs `parts`). En el CAD está desplegado hacia atrás; guardado
+   * entra 0.3 m (deducido del CAD). El modelo se gira 180°.
+   */
+  '2826.glb': {
+    yawDeg: 180,
+    poses(m) {
+      return [pose([lerp(0.3, 0, m.intake), 0, 0])];
+    },
+    hopper: [{ min: [-0.5, -0.3, 0.12], max: [-0.05, 0.3, 0.45], comp: 0 }],
+  },
+
+  /**
+   * 2363 (Triple Helix) "Rho" — asset de una pieza: la intake de cuatro barras (c0) se separa
+   * por nombre (sources.mjs `parts`, NAUO… del STEP). Desplegada en el CAD; guardada sube 100°
+   * sobre su pivote (deducido del CAD).
+   */
+  '2363.glb': {
+    poses(m) {
+      return [rotateAround(IDENTITY, [0.345, 0, 0.195], rot(0, -lerp(100, 0, m.intake) * DEG, 0))];
+    },
+    hopper: [{ min: [-0.3, -0.28, 0.1], max: [0.25, 0.28, 0.45] }],
+  },
+
+  /** 9584 (WCP Competitive Concept, 971) — el asset es una sola malla sin partes. */
+  '9584.glb': {
+    static: true,
+    poses() {
+      return [];
+    },
+    hopper: [{ min: [-0.28, -0.28, 0.15], max: [0.28, 0.28, 0.5] }],
+  },
+
+  /**
+   * 180 (S.P.A.M.) "Batman" — TurretSubsystem.getVisPose (VIS_TRANSFORM: ROBOT_TO_TURRET
+   * (−3.91, 6.03 in) a 0.32 m, yaw −ángulo − 90°) e IntakeExtensionSubsystem.getVisPose (la
+   * intake sale 0.2 m en +X; desplegada en el CAD).
+   */
+  '180.glb': {
+    poses(m) {
+      return [pose([inch(-3.9119), inch(6.0301), 0.32], rot(0, 0, m.turret - Math.PI / 2)), pose([lerp(-0.2, 0, m.intake), 0, 0])];
+    },
+    hopper: [{ min: [-0.3, -0.28, 0.1], max: [0.25, 0.28, 0.4], maxDeployed: [0.42, 0.28, 0.4] }],
+  },
+
+  /**
+   * 8214 (Next Innovation) — Visualizer (TransformTree): todo cuelga de "swerve" = raíz a
+   * 0.047 m con Rotation3d(90°, 0, 90°) (Swerve.getRobotToSwerveTransform; el asset viene sin
+   * rotaciones). c1 shooter: pitch alrededor de (0, 0.43, −0.275) con giro inicial de −80°;
+   * c2 intake: −pivote alrededor de (0, 0.14, 0.28), 0° desplegada y 100° guardada
+   * (IntakeGoal SAFE_IDLE); c3 hopper que sube 0.3 m cuando no lo cubre la intake
+   * (HOPPER_UNCOVERED_METERS). Visualizer.applyRotationCenter: t + c − R·c.
+   */
+  '8214.glb': {
+    poses(m) {
+      const swerve = pose([0, 0, 0.047], rot(Math.PI / 2, 0, Math.PI / 2));
+      const around = (c: Vec3, q: Quat): Pose => {
+        const r = qrot(q, c);
+        return pose([c[0] - r[0], c[1] - r[1], c[2] - r[2]], q);
+      };
+      const shooter = qmul(rot(lerp(0, 25, m.hood) * DEG, 0, 0), rot(-80 * DEG, 0, 0));
+      const intake = rot(-lerp(100, 0, m.intake) * DEG, 0, 0);
+      return [
+        swerve,
+        compose(swerve, around([0, 0.43, -0.275], shooter)),
+        compose(swerve, around([0, 0.14, 0.28], intake)),
+        compose(swerve, pose([0, 0, lerp(0, 0.3, m.intake)])),
+      ];
+    },
+    hopper: [{ min: [-0.25, -0.28, 0.12], max: [0.2, 0.28, 0.45] }],
+  },
+
+  /**
+   * 9410 — MechanismSimManager.publishComponentPoses: rotateAboutPivot(pivote, Δ desde el CAD) =
+   * Pose3d(pivote, pitch −Δ) ∘ −pivote. c0 intake en INTAKE_PIVOT (12.866, 0, 9.101 in): −7.5°
+   * abajo (INTAKE_MAX) a ≈122.5° arriba (INTAKE_MIN, 0.362 rot más), CAD a −2°; c1 hood en
+   * (−0.272, 0, 0.517) desde 22.1° hasta 0.11 rot × 24/46 más; c2 hopper cuyo frente va de 14 a
+   * 27.2 in (en el CAD a 37.2 in); c3–c6 ruedas del swerve.
+   */
+  '9410.glb': {
+    poses(m) {
+      const intake = (lerp(-7.5 + 0.362 * 360, -7.5, m.intake) + 2) * DEG;
+      const hood = lerp(0, 0.11 * 360 * (24 / 46), m.hood) * DEG;
+      return [
+        rotateAround(IDENTITY, [inch(12.866), 0, inch(9.101)], rot(0, -intake, 0)),
+        rotateAround(IDENTITY, [-0.272, 0, 0.517], rot(0, -hood, 0)),
+        pose([inch(27.2 - 37.2) - (1 - m.intake) * inch(27.2 - 14), 0, 0]),
+        IDENTITY,
+        IDENTITY,
+        IDENTITY,
+        IDENTITY,
+      ];
+    },
+    // MechanismSimConstants: HOPPER_BACK_X_M −5.4 in, frente 14 → 27.2 in, ±11.6 in
+    hopper: [{ min: [inch(-5.4), inch(-11.6), 0.15], max: [inch(14), inch(11.6), 0.58], maxDeployed: [inch(27.2), inch(11.6), 0.58] }],
+  },
+
+  /**
+   * 7419 — Robot.robotPeriodic (ComponentPoses) y Constants: c0 turret en turretBasePose con su
+   * yaw, c1 hood en turretToHood con pitch π/2 − hood − 0.3054 (hood 30°–64°, HoodConstants),
+   * c2 intake con pitch −muñeca (0°–120°, 120° desplegada: IntakeConstants.kMaxWristAngle),
+   * c3 hopper que sale hasta 0.301625 m hacia −X con la intake. La intake está atrás en el CAD:
+   * el modelo se gira 180°.
+   */
+  '7419.glb': {
+    yawDeg: 180,
+    poses(m) {
+      const turret = pose([0.15875, 0.15875, 0.298454], rot(0, 0, m.turret));
+      const hood = lerp(30, 64, m.hood) * DEG;
+      const wrist = lerp(0, 120, m.intake) * DEG;
+      return [
+        turret,
+        compose(compose(turret, pose([0.252158 - 0.15875, 0.1546565 - 0.15875, 0.4318 - 0.298454])), pose([0, 0, 0], rot(0, Math.PI / 2 - hood - 0.3054325, 0))),
+        pose([-0.29464, 0, 0.193312], rot(0, -wrist, 0)),
+        pose([-0.317817 - m.intake * 0.301625, 0, 0.427038]),
+      ];
+    },
+    hopper: [{ min: [-0.3, -0.28, 0.12], max: [0.05, 0.28, 0.45] }],
+  },
+
+  /**
+   * 10021 (Guerin Catholic) "Omega" — RobotModelVisualizer: c0 intake con pitch −ángulo en
+   * INTAKE_PIVOT (0.2858, 0, 0.1429), 0 desplegada y 0.4 rot guardada
+   * (softwareUpperRotationLimit); c1 hood y c2 tambor en el eje del shooter (−0.2762, 0, 0.415);
+   * c3 hopper que entra 9 in al guardar la intake (HOPPER_STOWED_TRAVEL).
+   */
+  '10021.glb': {
+    poses(m) {
+      const axis: Vec3 = [-0.2762, 0, 0.415];
+      const stow = 1 - m.intake;
+      return [
+        pose([0.2858, 0, 0.1429], rot(0, -stow * 0.4 * 2 * Math.PI, 0)),
+        pose(axis, rot(0, lerp(0, 62, m.hood) * DEG, 0)),
+        pose(axis, rot(0, m.spin, 0)),
+        pose([inch(-9) * stow, 0, 0]),
+      ];
+    },
+    hopper: [{ min: [-0.3, -0.28, 0.15], max: [0.1, 0.28, 0.45], maxDeployed: [0.33, 0.28, 0.45] }],
+  },
+
+  /**
+   * 5024 (Raider Robotics) — MechanismVisualizer: c0 intake en (0.29, 0, 0.21) con pitch
+   * (brazo − 105°) (brazo 0° al arrancar: guardada), c1 climber, c2 turret en (−0.15, 0.16,
+   * 0.37) con yaw −ángulo, c3 spindexer, c4 feeder, c5–c8 módulos del swerve.
+   */
+  '5024.glb': {
+    poses(m) {
+      const wheel = (x: number, y: number) => pose([x, y, 0.02]);
+      return [
+        pose([0.29, 0, 0.21], rot(0, lerp(-105, 0, m.intake) * DEG, 0)),
+        pose([-0.29, -0.05, 0.11 + m.climb * 0.25]),
+        pose([-0.15, 0.16, 0.37], rot(0, 0, m.turret)),
+        pose([0.09, 0, 0.055], rot(0, 0, m.spin)),
+        pose([-0.09, 0, 0.275]),
+        wheel(0.27, 0.27),
+        wheel(-0.27, 0.27),
+        wheel(-0.27, -0.27),
+        wheel(0.27, -0.27),
+      ];
+    },
+    hopper: [{ min: [-0.28, -0.28, 0.1], max: [0.25, 0.28, 0.42] }],
+  },
+
+  /**
+   * 8324 (MECO) "Remy" — sin código de poses: deducido del CAD. c0 rodillos del shooter que giran
+   * y c1 hood (0°–28°) sobre el eje del shooter; c2 intake que sale 0.3 m (baja 7.5°), c3 y c4
+   * piezas del hopper extensible que salen con ella; c5 climber que gira atrás.
+   */
+  '8324.glb': {
+    poses(m) {
+      const so: Vec3 = [-0.10331, 0, 0.423];
+      const e = lerp(0, 0.3, m.intake);
+      const ex = e * Math.cos(7.5 * DEG);
+      return [
+        rotateAround(IDENTITY, so, rot(0, m.spin * 4, 0)),
+        rotateAround(IDENTITY, so, rot(0, -lerp(0, 28, m.hood) * DEG, 0)),
+        pose([ex, 0, -e * Math.sin(7.5 * DEG)]),
+        pose([ex, 0, 0]),
+        pose([ex, 0, 0]),
+        rotateAround(IDENTITY, [-0.29, 0, 0.512], rot(0, -m.climb * 1.6, 0)),
+      ];
+    },
+    hopper: [{ min: [-0.33, -0.34, 0.18], max: [0, 0.34, 0.6], maxDeployed: [0.29, 0.34, 0.6] }],
+  },
+
+  /**
+   * 339 (Kilroy Robotics) "Kilroy26" — Actuator, Roller, Serializer, Kicker, Flywheel y Drive
+   * (Components/…): c0 hopper que sale −sin(θ)·0.311658 m, c1 paredes de la intake con pitch −θ
+   * en (−0.193, 0, 0.2) (θ 0° guardada – 115° desplegada: ActuatorConstants.kExtendedDegs),
+   * c2 rodillo en la punta del brazo, c3–c4 serializer, c5–c7 kickers, c8 flywheel (giran) y
+   * c9–c12 ruedas del swerve (±10.875 in). La intake está atrás en el CAD: el modelo se gira 180°.
+   */
+  '339.glb': {
+    yawDeg: 180,
+    poses(m) {
+      const th = lerp(0, 115, m.intake) * DEG;
+      const walls: Vec3 = [-0.193, 0, 0.2];
+      const spinAt = (t: Vec3, k = 1) => pose(t, rot(0, m.spin * k, 0));
+      const wheel = (x: number, y: number) => pose([inch(x), inch(y), 0.09]);
+      return [
+        pose([-Math.sin(th) * 0.311658, 0, 0]),
+        pose(walls, rot(0, -th, 0)),
+        pose([walls[0] + 0.031 * Math.cos(th) - 0.393 * Math.sin(th), 0, walls[2] + 0.031 * Math.sin(th) + 0.393 * Math.cos(th)], rot(0, -th, 0)),
+        spinAt([0.0545, 0, 0.111]),
+        spinAt([0.08, 0, 0.297], -1),
+        spinAt([0.1195, 0, 0.1295]),
+        spinAt([0.207, 0, 0.181]),
+        spinAt([0.2505, 0, 0.2735]),
+        spinAt([0.2657602, 0, 0.3731006], 3),
+        wheel(10.875, 10.875),
+        wheel(10.875, -10.875),
+        wheel(-10.875, 10.875),
+        wheel(-10.875, -10.875),
+      ];
+    },
+    hopper: [{ min: [-0.3, -0.28, 0.12], max: [0.05, 0.28, 0.45] }],
+  },
+
+  /**
+   * 1757 (Westwood Robotics) "Orion" — robotmechanism.py RobotMechanism.getPoses: c0 turret en
+   * kTurretLocation (−0.102, 0.178, 0.368) con yaw turret − π/2, c1 pared del hopper que sale
+   * 0.298 m con la intake desplegada, c2 intake con pitch −pivote en (0.252, 0, 0.184)
+   * (0° desplegada – 125.5° guardada).
+   */
+  '1757.glb': {
+    poses(m) {
+      const pivot = lerp(125.5, 0, m.intake) * DEG;
+      return [
+        pose([-0.102, 0.178, 0.368], rot(0, 0, m.turret - Math.PI / 2)),
+        pose([lerp(0, 0.298, m.intake), 0, 0]),
+        pose([0.252, 0, 0.184], rot(0, -pivot, 0)),
+      ];
+    },
+    hopper: [{ min: [-0.28, -0.28, 0.12], max: [0.25, 0.28, 0.42], maxDeployed: [0.5, 0.28, 0.42] }],
   },
 };

@@ -42,7 +42,9 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   `CAD_ROBOTS` en `src/config/robots.ts`; `RobotView` los carga con GLTFLoader + meshopt y mueve
   sus componentes (intake, hopper, turret, hood…) con `src/render/cadRigs.ts`, como AdvantageScope.
   Para armar un rig: `npm run dev` y `scripts/robots/preview.html?file=401.glb&tint=1&intake=1`
-  (capturas con `node scripts/robots/preview-shots.mjs 401.glb`).
+  (capturas con `node scripts/robots/preview-shots.mjs 401.glb`; `fuel=1` dibuja el hopper).
+  Asset de una sola pieza: `node scripts/robots/tree.mjs <cad>/<equipo>/model.glb` para elegir
+  los `parts` (subensambles que se mueven) en `scripts/robots/sources.mjs`.
 
 ## Convenciones
 - Unidades internas: metros, kg, segundos. `inch(x)` convierte; deja la medida original en comentario.

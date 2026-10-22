@@ -4,7 +4,7 @@
   Con `npm run dev`: http://localhost:5173/scripts/robots/preview.html?file=401.glb
   Parámetros: view=iso|front|side|top|back · intake/hood/turret/climb/spin (estado del rig) ·
   rig=0 (componentes sin pose, como vienen en el GLB) · tint=1 (cada componente de un color) ·
-  only=main,c0 (solo esas partes). Marco WPILib: X adelante (flecha roja), Y izquierda (verde).
+  only=main,c0 (solo esas partes) · fuel=1 (FUEL en cada lugar del hopper, mecanismos guardados). Marco WPILib: X adelante (flecha roja), Y izquierda (verde).
   El cuadro gris es un chasis de 27 × 27 in.
 -->
 <html lang="es">
@@ -22,7 +22,7 @@
       import * as THREE from 'three';
       import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
       import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-      import { CAD_RIGS } from '/src/render/cadRigs.ts';
+      import { CAD_RIGS, hopperSlots, FUEL_D } from '/src/render/cadRigs.ts';
 
       const q = new URLSearchParams(location.search);
       const file = q.get('file') ?? '6328.glb';
@@ -88,6 +88,17 @@
         wpi.add(holder);
         const box = new THREE.Box3().setFromObject(node);
         lines.push(`${name}${i >= 0 ? ` (${['rojo', 'verde', 'azul', 'amarillo', 'magenta', 'cian', 'naranja', 'morado'][i % 8]})` : ''}`);
+      }
+      if (q.get('fuel') === '1' && CAD_RIGS[file]?.hopper) {
+        const slots = hopperSlots(CAD_RIGS[file].hopper);
+        const ball = new THREE.SphereGeometry(FUEL_D / 2, 16, 12);
+        const yellow = new THREE.MeshStandardMaterial({ color: 0xffd400, transparent: true, opacity: 0.85 });
+        for (const s of slots) {
+          const b = new THREE.Mesh(ball, yellow);
+          b.position.set(...s.p);
+          wpi.add(b);
+        }
+        lines.push(`hopper: ${slots.length} FUEL`);
       }
       document.getElementById('info').textContent = lines.join('\n');
 

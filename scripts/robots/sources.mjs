@@ -8,6 +8,8 @@
 //  - `budget`: triángulos máximos del modelo completo (el simplificador busca el error).
 //  - `local`: sin repo público; el equipo mandó el CAD (no se versiona). fetch-sources.mjs copia
 //    el config.json escrito a mano (scripts/robots/local/<equipo>/) y el model.glb va a mano.
+//  - `lfs`: los GLB están en Git LFS · `zip`: el asset viene en ese .zip dentro de `path`.
+//  - `lift`: metros que se sube el modelo (el asset de 9584 queda bajo el piso).
 //  - `parts`: regex de los subensambles que se mueven → componentes c0, c1… (sin model_N.glb;
 //    si el asset ya trae componentes, van después de ellos: 6357 → c1 la intake).
 // Frente del hopper de 3478 (lo empuja la intake al salir): pared del frente, paredes laterales
@@ -30,4 +32,19 @@ export const SOURCES = [
   { team: 4201, repo: '4201VitruvianBots/Rebuilt2026', path: 'resources/Robot_Threepeater_v1', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true },
   { team: 6357, repo: 'frc6357/robot-code-2026', path: 'advantagescope/assets/Robot_2026bot', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true, parts: ['^four slaps'] },
   { team: 6657, repo: 'FRC6657/Rebuilt', path: 'AdvantageScopeAssets/Robot_Arbor26', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: '^Bumper$' },
+  { team: 2363, repo: 'TripleHelixProgramming/Rebuilt', path: 'ascope-assets/Robot_Rho', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true, parts: ['^NAUO(21|22|28|33|34|35|36|38|39|41)$'] },
+  { team: 8324, repo: 'MECO-Robotics/2026-Rebuilt', path: 'sim/Robot_Remy', license: 'GPL-3.0', frameIn: [27, 27], drop: '^Bumper (Right|Front|Left)' },
+  { team: 180, repo: 'frc180/2026-public', path: 'assets', zip: 'Robot_Batman.zip', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: '^bumpers$' },
+  { team: 8214, repo: 'nirobotics/ni-8214-2026-public', path: '.ascope/Robot_OFFSEASON2026', lfs: true, license: 'MIT', frameIn: [27, 27], bumperGeom: true },
+  { team: 9410, repo: 'aydenterranella/2026-ROBOT-SIM-TESTING', path: 'advantagescope/Robot_9410_2026', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 7130, repo: 'cheng990119-sys/2026-Rebuilt-Robot-Code', path: 'ascope_assets/Robot_BataBot', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 2412, repo: 'robototes/REBUILT2026', path: 'AdvantageScope/Robot_2026CornerTurret', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true, parts: ['^Turret <1>$', '^Intake Head <1>$'] },
+  { team: 2826, repo: 'wave-2826/Rebuilt2026', path: 'misc/advantageScope/customAssets/Robot_WaveRobotics', license: 'GPL-3.0', frameIn: [27, 27], drop: 'bumper', bumperGeom: true, parts: ['^(Intake L <1>|Intake R <2>|Hopper <1>)$'] },
+  { team: 2713, repo: 'FRC2713/Robot2026', path: 'advantagescope/assets/Robot_frc2713-2026', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 9584, repo: 'frc971/9584-wcp-code-2026', path: 'ascope_assets/Robot_9584', license: 'MIT', frameIn: [27, 27], drop: 'bumper', bumperGeom: true, lift: 0.1 },
+  { team: 7419, repo: 'frc-7419/Rebuilt2026', path: 'assets/Robot_7419', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 339, repo: 'FIRST-Team-339/Rebuilt', path: 'ascope_assets/Robot_Kilroy26', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 1757, repo: '1757WestwoodRobotics/2026-Rebuilt', path: 'advantagescopeassets/Robot_Orion', license: 'MIT', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 10021, repo: 'guerin-robotics/Rebuilt2026', path: 'Advantage Scope Assets/Robot_Omega', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 5024, repo: 'frc5024/Rebuilt', path: 'userAssets/Robot_Rebuilt', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
 ];

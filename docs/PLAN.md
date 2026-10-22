@@ -230,6 +230,13 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     y vuelve a entrar alineado. Atrás de una TOWER (entre UPRIGHTS y pared; el hueco entre
     UPRIGHTS es más angosto que un robot) sale de lado, y no va por FUEL ahí ni en la esquina
     junto a la TOWER.
+27. **Todos los robots 2026 con asset público** (29 en total): además de los de AdvantageScope con
+    componentes, los que se publicaron de una sola pieza se articulan separando por nombre el
+    subensamble que se mueve (`parts` en sources.mjs: 2363, 2412, 2826). 9584 es una sola malla
+    sin nombres: queda estático (`static` en su rig, exento de la prueba de la intake). Sin EPA
+    verificable para la mayoría, el nivel (rate/precisión) se estima por diseño para tener
+    variedad, de alto (180, 2713, 1757) a bajo (9584, 339, 10021). Rigs revisados con
+    `scripts/robots/preview.html` (`fuel=1` dibuja los lugares del hopper).
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
