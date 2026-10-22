@@ -14,6 +14,8 @@ import { Referee } from '../referee/Referee';
 import { RobotAI, type AiContext } from '../ai/RobotAI';
 import type { RobotPlan } from '../ai/Strategy';
 import { AutoExecutor } from '../auto/AutoExecutor';
+import { AllianceBrain } from '../ai/AllianceBrain';
+import type { DynRole } from '../ai/Scouting';
 import { assignAutos, routineById } from '../auto/AutoRoutine';
 import type { Difficulty } from '../config/settings';
 import { Rng } from '../core/rng';
@@ -98,6 +100,7 @@ export class GameSession {
   };
   hooks: SessionHooks = {};
   readonly ais = new Map<number, RobotAI>();
+  brain!: AllianceBrain;
   readonly autos = new Map<number, AutoExecutor>();
   /** Tiempo simulado total (s). */
   simTime = 0;
@@ -192,17 +195,17 @@ export class GameSession {
       towerOcc: this.towerOcc,
       pinSeconds: (i) => this.referee?.activePins().find((p) => p.pinner === i)?.seconds ?? 0,
       claims: new Map(),
+      profile: (i) => this.brain.profile(i),
     };
     for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
-    // Una alianza de solo IA (fuera de Fácil) pone a defender, en sus SHIFTS inactivos, al robot
-    // con el hopper más chico: con el HUB propio apagado, estorbar al rival vale más que anotar.
-    if ((cfg.aiDifficulty ?? 'normal') !== 'easy')
-      for (const a of ALLIANCES) {
-        const mine = this.robots.filter((r) => r.alliance === a);
-        if (mine.length < 3 || mine.some((r) => !this.ais.has(r.index))) continue;
-        const d = mine.reduce((x, y) => (y.spec.hopperCapacity < x.spec.hopperCapacity ? y : x));
-        this.ais.get(d.index)!.defender = true;
-      }
+    // Cerebro de alianza (fuera de Fácil reparte roles): scouting de los 6 robots y, en cada
+    // momento, quién anota, quién alimenta y quién defiende
+    const fixedRole = (r: Robot): DynRole | undefined => {
+      if (!this.ais.has(r.index)) return 'scorer';
+      const role = cfg.robots[r.index].plan?.role;
+      return role && role !== 'auto' ? role : undefined;
+    };
+    this.brain = new AllianceBrain(this.robots, this.ais, this.fuel, fixedRole, (cfg.aiDifficulty ?? 'normal') === 'easy' ? [] : ALLIANCES);
     // Estrategia de alianza: el plan de cada DRIVER STATION manda sobre lo automático
     cfg.robots.forEach((rc, i) => {
       if (rc.plan) this.ais.get(i)?.setPlan(rc.plan);
@@ -526,6 +529,7 @@ export class GameSession {
     if (m) for (const e of m.tick(dt)) this.onMatchEvent(e);
     const enabled = m ? robotsEnabled(m.phase) : true;
     const auto = m?.phase === 'AUTO';
+    this.brain.update(dt, m);
     for (const r of this.robots) {
       r.enabled = enabled && !r.disabled;
       if (!r.enabled) r.cmd = idleCommand(); // deshabilitado: frena (brake mode)

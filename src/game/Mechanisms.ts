@@ -448,13 +448,14 @@ function launchOne(r: Robot, ctx: MechContext, kind: 'shot' | 'pass' | 'corral',
   ctx.fuel.lastTouch[i] = r.index;
   ctx.fuel.lastTouchTime[i] = ctx.time;
   r.stats.fuelShot++;
+  if (kind !== 'shot') r.stats.passes++;
   ctx.onLaunch?.(r, i, kind);
 }
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Distancia mínima (m) del carril de pase al centro de los HUBS (mitad del HUB + ~1 m). */
-const PASS_LANE_MIN = F.HUB_SIZE / 2 + 1.0;
+export const PASS_LANE_MIN = F.HUB_SIZE / 2 + 1.0;
 
 /**
  * Punto de caída de un pase: dentro de la ALLIANCE ZONE propia (2.4 m de la pared) y en un

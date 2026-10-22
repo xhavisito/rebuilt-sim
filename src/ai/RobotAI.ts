@@ -10,6 +10,12 @@
  * - CLIMB: en END GAME sube a su TOWER si le alcanza el tiempo.
  * - DESCEND: si quedó colgado desde AUTO, en TELEOP baja para seguir jugando.
  * Evita G420 (no se acerca a rivales en su TOWER en los últimos 30 s) y G419.
+ *
+ * Criterio propio: con su HUB apagado se llena por completo y llega a su punto de tiro justo
+ * cuando se activa (no sale a tirar a medio llenar); al tirar sigue con la intake prendida
+ * (tira mientras se mueve y se alimenta); el alimentador pasa hacia el compañero que más lo
+ * necesita; el defensor marca al rival más peligroso según el scouting (`Scouting.ts`). La
+ * alianza le cambia el rol (anotar / alimentar / defender) según el momento (`AllianceBrain`).
  */
 import * as F from '../config/field';
 import type { Difficulty } from '../config/settings';
@@ -24,7 +30,8 @@ import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
 import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
 import { inLane, inNeutral, routeDistance, type RobotPlan } from './Strategy';
-import { passTarget } from '../game/Mechanisms';
+import { passTarget, PASS_LANE_MIN } from '../game/Mechanisms';
+import type { DynRole, RobotProfile } from './Scouting';
 
 export interface AiContext {
   robots: Robot[];
@@ -36,6 +43,8 @@ export interface AiContext {
   pinSeconds(robot: number): number;
   /** FUEL "apartado" por cada robot de la IA (índice de FUEL → robot): no persiguen el mismo. */
   claims: Map<number, number>;
+  /** Ficha de scouting de cada robot (la alianza la aprende en el match). */
+  profile?(robot: number): RobotProfile;
 }
 
 type State = 'pass' | 'collect' | 'score' | 'stage' | 'defend' | 'climb' | 'descend' | 'idle';
@@ -66,8 +75,10 @@ export class RobotAI {
   private skip = new Map<number, number>();
   private seenEscapes = 0;
   private defendTarget = -1;
-  /** Juega defensa cuando su HUB está inactivo y el del rival activo (lo asigna la sesión). */
+  /** Juega defensa cuando su HUB está inactivo y el del rival activo (rol de la estrategia). */
   defender = false;
+  /** Rol que le da su alianza en este momento (solo si su plan es automático). */
+  dynRole: DynRole | null = null;
   private climbLevel = 0;
   /** Plan de la estrategia de su alianza (rol, carril, línea, punto de tiro, climb). */
   private plan: RobotPlan | null = null;
@@ -95,9 +106,35 @@ export class RobotAI {
     if (p.climb !== 'auto') this.climbLevel = Math.min(p.climb, this.r.spec.climb.maxLevel);
   }
 
+  /** ¿Su plan deja que la alianza le cambie el rol? */
+  private get roleFree(): boolean {
+    return !this.plan || this.plan.role === 'auto';
+  }
+
   /** Alimentador: recoge en la NEUTRAL ZONE y pasa (en END GAME juega normal). */
   private get feeding(): boolean {
-    return this.plan?.role === 'feeder' && this.ctx.match?.phase !== 'END_GAME';
+    const role = this.plan?.role === 'feeder' || (this.roleFree && this.dynRole === 'feeder');
+    return role && this.ctx.match?.phase !== 'END_GAME';
+  }
+
+  /** ¿Le toca defender (estrategia o rol del momento)? */
+  private get defending(): boolean {
+    return this.defender || (this.roleFree && this.dynRole === 'defender');
+  }
+
+  /** Segundos hasta que su HUB vuelve a contar FUEL (0 si ya cuenta; 99 si no vuelve). */
+  private timeUntilCounts(): number {
+    const m = this.ctx.match;
+    if (!m || this.hubCountsIn(0)) return 0;
+    for (let dt = 0.25; dt < 60; dt += 0.25) if (this.hubCountsIn(dt)) return dt;
+    return 99;
+  }
+
+  /** Segundos que le quedan a su HUB contando FUEL (99 si no se apaga). */
+  private timeLeftCounting(): number {
+    if (!this.ctx.match) return 99;
+    for (let dt = 0; dt < 40; dt += 0.25) if (!this.hubCountsIn(dt)) return dt;
+    return 99;
   }
 
   private get sgn(): number {
@@ -216,18 +253,29 @@ export class RobotAI {
         // Alimentador: pasa a su ALLIANCE ZONE desde la NEUTRAL ZONE (sigue recogiendo)
         r.intakeOn = n < r.spec.hopperCapacity;
         const p = r.phys.curPos;
-        const goal = passTarget(r.alliance, p.z);
+        const goal = this.passGoal();
         if (!inNeutral(p.x)) {
           this.nav.plan({ x: -this.sgn * 0.5, z: p.z });
           cmd.drive = this.nav.follow(dt, others, { speed, heading: null, tol: 0.4 }).cmd;
+        } else if (r.spec.shooter.type === 'turret') {
+          // Con turret pasa mientras sigue recogiendo en la NEUTRAL ZONE
+          if (this.targetBall < 0 || this.targetAge > 1.5 || f.state[this.targetBall] !== FuelState.Field) this.pickBall();
+          this.targetAge += dt;
+          if (this.targetBall >= 0) {
+            const o = this.targetBall * 3;
+            this.nav.plan({ x: f.pos[o], z: f.pos[o + 2] });
+            cmd.drive = this.nav.follow(dt, others, { speed: speed * 0.8, heading: null, tol: 0.1 }).cmd;
+          }
         }
         cmd.pass = n > 0;
+        cmd.aim = { x: goal.x, z: goal.z };
         if (r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x)), 0.03);
         break;
       }
       case 'score':
       case 'stage': {
-        r.intakeOn = n < r.spec.hopperCapacity && this.state === 'stage';
+        // La intake sigue prendida: recoge lo que encuentra en el camino mientras tira
+        r.intakeOn = n < r.spec.hopperCapacity;
         const spot = this.target ?? this.shootSpot();
         this.nav.plan(spot);
         const hub = F.hubCenter(r.alliance);
@@ -302,6 +350,35 @@ export class RobotAI {
     return cmd;
   }
 
+  /**
+   * Dónde caen sus pases: cerca del compañero que más FUEL necesita (el menos lleno que anda en
+   * su ALLIANCE ZONE o va para allá), en un carril a un lado del HUB (no derecho a la red), a
+   * 2–3.5 m de la pared. Sin compañeros, el punto de siempre.
+   */
+  private passGoal(): { x: number; z: number } {
+    const r = this.r;
+    const f = this.ctx.fuel;
+    const mates = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance && !o.climbing);
+    let best: Robot | null = null;
+    let need = -1;
+    for (const o of mates) {
+      const fill = f.robotCount(o.index) / o.spec.hopperCapacity;
+      const sc = this.ctx.profile?.(o.index).scoring ?? 0.5;
+      const v = (1 - fill) * (0.5 + sc);
+      if (v > need) {
+        need = v;
+        best = o;
+      }
+    }
+    if (!best) return passTarget(r.alliance, r.phys.curPos.z);
+    const q = best.phys.curPos;
+    const wall = F.allianceSign(r.alliance) * F.HALF_L;
+    const depth = Math.min(3.5, Math.max(2.0, Math.abs(wall - q.x)));
+    const side = Math.sign(q.z) || (r.phys.curPos.z >= 0 ? 1 : -1);
+    const z = side * Math.min(F.HALF_W - 0.8, Math.max(PASS_LANE_MIN, Math.abs(q.z)));
+    return { x: wall - F.allianceSign(r.alliance) * depth, z };
+  }
+
   private freeSlot() {
     const occ = this.ctx.towerOcc[this.r.alliance];
     const p = this.r.phys.curPos;
@@ -357,17 +434,34 @@ export class RobotAI {
       this.state = 'collect';
       return;
     }
-    const enough = n >= Math.min(cap, 10) || (n > 0 && m !== null && m.phase === 'END_GAME');
-    if ((countsNow || willCount) && (enough || (countsNow && n > 0 && this.state === 'score'))) {
-      this.state = 'score';
-      this.target = spot;
-      return;
+    const endgame = m !== null && m.phase === 'END_GAME';
+    if (countsNow) {
+      // HUB activo: tira lo que trae si alcanza a llegar antes de que se apague; si no, junta
+      // para el siguiente
+      const left = this.timeLeftCounting();
+      const worth = left > eta + (r.lastSolution?.tof ?? 1.0) + 0.3;
+      if (n > 0 && worth && (n >= Math.min(cap, 8) || this.state === 'score' || endgame || this.inShootZone())) {
+        this.state = 'score';
+        this.target = spot;
+        return;
+      }
+    } else if (willCount || n > 0) {
+      // HUB apagado: se llena por completo y sale a su punto de tiro justo a tiempo para estar
+      // ahí cuando se active (no a medio llenar)
+      const until = this.timeUntilCounts();
+      if (n > 0 && (full || until <= eta + 1.2)) {
+        this.state = full && until > eta + 1.2 ? 'stage' : 'score';
+        this.target = spot;
+        return;
+      }
     }
-    // Defensor: con su HUB inactivo y el rival activo
+    // Defensor: con su HUB inactivo y el rival activo; marca al rival más peligroso (scouting:
+    // qué tan bien anota por qué tan lleno viene)
     const opp = opponent(r.alliance);
-    if (this.defender && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && m.phase !== 'END_GAME') {
+    if (this.defending && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && !endgame) {
+      const threat = (o: Robot) => (this.ctx.profile?.(o.index).scoring ?? 0.5) * (0.3 + this.ctx.fuel.robotCount(o.index) / o.spec.hopperCapacity);
       const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
-      victims.sort((a, b) => this.ctx.fuel.robotCount(b.index) - this.ctx.fuel.robotCount(a.index));
+      victims.sort((a, b) => threat(b) - threat(a));
       if (victims[0]) {
         this.defendTarget = victims[0].index;
         this.state = 'defend';
@@ -406,6 +500,9 @@ export class RobotAI {
     const allies = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance);
     const tall = r.phys.height > F.TRENCH_CLEAR_HEIGHT;
     const cycling = r.spec.shooter.type === 'turret' && this.hubCountsIn(1.0);
+    // Poco antes de que se active su HUB: el FUEL camino a su punto de tiro vale más
+    const until = this.timeUntilCounts();
+    const spot = until > 0 && until < 10 && !this.feeding ? this.shootSpot() : null;
     let best = -1;
     let bestC = Infinity;
     for (let i = 0; i < f.count; i++) {
@@ -443,6 +540,7 @@ export class RobotAI {
       }
       // Ciclo continuo: se queda recogiendo en su ALLIANCE ZONE, donde puede seguir tirando
       if (cycling) c += this.inOwnZone(x) ? -1.5 : 3;
+      if (spot) c += Math.hypot(x - spot.x, z - spot.z) * 0.35;
       // girar cuesta: ~0.5 m por cada radián de giro hacia la pelota
       const turn = Math.abs(Math.atan2(Math.sin(Math.atan2(-(z - p.z), x - p.x) - h0), Math.cos(Math.atan2(-(z - p.z), x - p.x) - h0)));
       c += turn * 0.5;
