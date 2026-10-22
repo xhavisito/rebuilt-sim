@@ -233,9 +233,18 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
         <button class="btn primary" data-save>✓ ${t('dash_save')}</button>
         <button class="btn" data-reset ${edited || dirty ? '' : 'disabled'}>↺ ${t('dash_reset')}</button>
         <button class="btn" data-play>▶ ${t('play')} ${m.id}</button></div>
+      <nav class="strat-nav">${(['auto', 'active', 'inactive', 'endgame'] as const).map((ph, k) => `<button class="chipbtn" data-goto="${ph}"><b>${k + 1}</b> ${t(`phase_${ph}_short` as TKey)}</button>`).join('')}</nav>
+      <div class="dlabel" style="margin-top:4px">${t('dash_summary')}</div>
+      <table class="ranktable psum"><tr><th>DS</th><th>${t('team')}</th><th>1 · ${t('phase_auto_short')}</th><th>2 · ${t('phase_active_short')}</th><th>3 · ${t('phase_inactive_short')}</th><th>4 · ${t('phase_endgame_short')}</th></tr>
+      ${ordered
+        .map(
+          (r) =>
+            `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${esc(routines.find((x) => x.id === r.auto)?.name ?? r.auto)}${r.startZ === null ? '' : ` · z ${zs[idx(r)].toFixed(2)} m`}</td><td>${t(`act_${r.active}` as TKey)}</td><td>${t(`inact_${r.inactive}` as TKey)}${r.inactive === 'defend' ? ` → ${r.defendTeam ?? t('dash_threat')}` : ''}</td><td>${r.climb ? `L${r.climb}` : t('eg_none')}</td></tr>`,
+        )
+        .join('')}</table>
       <div class="phase-grid">
-        <section class="phase ph-auto"><h3>${t('phase_auto')} <small>0:20</small></h3>
-          <div class="automap"><canvas></canvas><div class="msg">${t('dash_dragHint')}</div></div>
+        <section class="phase ph-auto" data-phase="auto"><h3><span class="pn">1</span>${t('phase_auto')} <small>0:20</small></h3>
+          <div class="auto-body"><div class="automap"><canvas></canvas><div class="msg">${t('dash_dragHint')}</div></div>
           <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_start')}</th><th>${t('dash_routine')}</th></tr>
           ${ordered
             .map((r) => {
@@ -244,32 +253,36 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
               const start = r.startZ === null ? t('dash_startDefault', { ds: r.station }) : `${t('dash_startCustom', { z: zs[i].toFixed(2) })} <button class="chipbtn tiny" data-resetstart="${i}" title="${t('dash_startReset')}">↺</button>`;
               return `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${start}</td><td>${sel(i, 'auto', routines.map((x) => [x.id, x.name]), r.auto)}${c ? `<div class="pwarn">${t('dash_conflict', { list: c.join(', ') })}</div>` : ''}</td></tr>`;
             })
-            .join('')}</table>
+            .join('')}</table></div>
         </section>
-        <section class="phase ph-active"><h3>${t('phase_active')}</h3>
+        <section class="phase ph-active" data-phase="active"><h3><span class="pn">2</span>${t('phase_active')}</h3>
           <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_task')}</th></tr>
           ${ordered
             .map((r) => `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'active', ACTIVE_TASKS.map((x) => [x, t(`act_${x}` as TKey)]), r.active)}<div class="pnote">${t(`note_act_${r.active}` as TKey)}</div></td></tr>`)
             .join('')}</table>
         </section>
-        <section class="phase ph-inactive"><h3>${t('phase_inactive')}</h3>
-          <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_task')}</th><th>${t('dash_marks2')}</th></tr>
+        <section class="phase ph-inactive" data-phase="inactive"><h3><span class="pn">3</span>${t('phase_inactive')}</h3>
+          <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_task')}</th></tr>
           ${ordered
             .map(
               (r) =>
-                `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'inactive', INACTIVE_TASKS.map((x) => [x, t(`inact_${x}` as TKey)]), r.inactive)}<div class="pnote">${t(`note_inact_${r.inactive}` as TKey)}</div></td><td>${sel(idx(r), 'defendTeam', [['', t('dash_threat')], ...theirTeams.map((x): [number, string] => [x, String(x)])], r.defendTeam ?? '', r.inactive !== 'defend')}</td></tr>`,
+                `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'inactive', INACTIVE_TASKS.map((x) => [x, t(`inact_${x}` as TKey)]), r.inactive)}${
+                  // a quién marca: solo si defiende
+                  r.inactive === 'defend' ? `<div class="pmark"><span>${t('dash_marks2')}</span>${sel(idx(r), 'defendTeam', [['', t('dash_threat')], ...theirTeams.map((x): [number, string] => [x, String(x)])], r.defendTeam ?? '')}</div>` : ''
+                }<div class="pnote">${t(`note_inact_${r.inactive}` as TKey)}</div></td></tr>`,
             )
             .join('')}</table>
         </section>
-        <section class="phase ph-endgame"><h3>${t('phase_endgame')} <small>0:30</small></h3>
-          <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_tower')}</th><th></th></tr>
+        <section class="phase ph-endgame" data-phase="endgame"><h3><span class="pn">4</span>${t('phase_endgame')} <small>0:30</small></h3>
+          <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_tower')}</th></tr>
           ${ordered
             .map((r) => {
               const spec = specOf(r.team);
               const opts: Array<[number, string]> = [[0, t('eg_none')]];
               for (let l = 1; l <= r.maxClimb; l++) opts.push([l, t('eg_level', { l, p: [0, 10, 20, 30][l] })]);
               const secs = r.climb ? [0, spec.climb.timeL1, spec.climb.timeL2, spec.climb.timeL3][r.climb] : 0;
-              return `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'climb', opts, r.climb, r.maxClimb === 0)}</td><td class="pnote">${r.maxClimb === 0 ? t('con_noClimb') : r.climb ? t('dash_climbTime', { s: secs }) : ''}</td></tr>`;
+              const noteTxt = r.maxClimb === 0 ? t('con_noClimb') : r.climb ? t('dash_climbTime', { s: secs }) : '';
+              return `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'climb', opts, r.climb, r.maxClimb === 0)}${noteTxt ? `<div class="pnote">${noteTxt}</div>` : ''}</td></tr>`;
             })
             .join('')}</table>
           <div class="ptotal ${tower >= th ? 'ok' : ''}">${t('dash_towerTotal', { pts: tower, th })} ${tower >= th ? '✓ TRAVERSAL' : ''}</div>
@@ -329,6 +342,9 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
         savedNow = false;
         drawStrat();
       }),
+    );
+    box.querySelectorAll<HTMLElement>('[data-goto]').forEach((el) =>
+      el.addEventListener('click', () => box.querySelector(`[data-phase="${el.dataset.goto}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })),
     );
     box.querySelectorAll<HTMLElement>('[data-resetstart]').forEach((el) =>
       el.addEventListener('click', () => {
