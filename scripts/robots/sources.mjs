@@ -11,11 +11,24 @@
 //    el config.json escrito a mano (scripts/robots/local/<equipo>/) y el model.glb va a mano.
 //  - `lfs`: los GLB están en Git LFS · `zip`: el asset viene en ese .zip dentro de `path`.
 //  - `lift`: metros que se sube el modelo (el asset de 9584 queda bajo el piso).
+//  - `clipComp(x, y, z)`: asset de una sola malla; los triángulos con centro (marco WPILib) que cumplen
+//    el predicado van a un componente que se mueve (9584: la pared del hopper con la intake);
+//    con 'copy' quedan en los dos.
 //  - `parts`: regex de los subensambles que se mueven → componentes c0, c1… (sin model_N.glb;
 //    si el asset ya trae componentes, van después de ellos: 6357 → c1 la intake).
 // Frente del hopper de 3478 (lo empuja la intake al salir): pared del frente, paredes laterales
 // internas que se deslizan en las placas fijas, el separador de arriba y las guías ("monedas")
 const HOPPER_3478 = '^LB26-02-306-frente|^(Mirror)?LB26-02-308-pared lateral|^LB26-02-307-spacer sup hopper-1$|^(Mirror)?LB26-02-31[78]-Moneda|^3_8in Nut Strips 11inLargo';
+
+// 9584: la pared del hopper con la intake (lado −Y del CAD: postes, policarbonato, rodillos) sale
+// al desplegar; las paredes laterales y sus tubos se copian (quedan también en el chasis) para que
+// el hopper extendido se vea cerrado. Sin el chasis ni los módulos swerve.
+const CLIP_9584 = (x, y, z) => {
+  const ax = Math.abs(x);
+  if (z < 0.2 && ax > 0.12 && ax < 0.31) return false; // módulos swerve de las esquinas
+  if (y < -0.26 && z > 0.085) return true;
+  return ax > 0.29 && z > 0.2 && y < 0 ? 'copy' : false;
+};
 
 export const SOURCES = [
   { team: 1678, repo: 'frc1678/C2026-Public', path: 'assets/Robot_Beta', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true },
@@ -42,7 +55,7 @@ export const SOURCES = [
   { team: 2412, repo: 'robototes/REBUILT2026', path: 'AdvantageScope/Robot_2026CornerTurret', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true, parts: ['^Turret <1>$', '^Intake Head <1>$'] },
   { team: 2826, repo: 'wave-2826/Rebuilt2026', path: 'misc/advantageScope/customAssets/Robot_WaveRobotics', license: 'GPL-3.0', frameIn: [27, 27], drop: 'bumper', bumperGeom: true, parts: ['^(Intake L <1>|Intake R <2>|Hopper <1>)$', '^V4 Azimuth <1>$'] },
   { team: 2713, repo: 'FRC2713/Robot2026', path: 'advantagescope/assets/Robot_frc2713-2026', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
-  { team: 9584, repo: 'frc971/9584-wcp-code-2026', path: 'ascope_assets/Robot_9584', license: 'MIT', frameIn: [27, 27], drop: 'bumper', bumperClip: true, lift: 0.1 },
+  { team: 9584, repo: 'frc971/9584-wcp-code-2026', path: 'ascope_assets/Robot_9584', license: 'MIT', frameIn: [27, 27], drop: 'bumper', bumperClip: true, lift: 0.1, clipComp: CLIP_9584 },
   { team: 7419, repo: 'frc-7419/Rebuilt2026', path: 'assets/Robot_7419', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
   { team: 339, repo: 'FIRST-Team-339/Rebuilt', path: 'ascope_assets/Robot_Kilroy26', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
   { team: 1757, repo: '1757WestwoodRobotics/2026-Rebuilt', path: 'advantagescopeassets/Robot_Orion', license: 'MIT', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },

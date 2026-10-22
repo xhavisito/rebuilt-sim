@@ -45,8 +45,6 @@ export interface CadRig {
    * entre `a` y `b` en el marco de la POSE del componente `comp`.
    */
   extras?: Array<{ comp: number; a: Vec3; b: Vec3; r: number; color: number }>;
-  /** CAD publicado como una sola malla (9584): nada se mueve. */
-  static?: boolean;
   /** Componentes que se dibujan opacos aunque el CAD los marque translúcidos. */
   opaque?: number[];
   /**
@@ -691,13 +689,13 @@ export const CAD_RIGS: Record<string, CadRig> = {
    * en una textura de paleta y los BUMPERS fundidos (ver `bumperClip`). Viene girado: los
    * flywheels miran a +Y del CAD y la intake a −Y. Su código apunta el frente al HUB
    * (AimAndDriveCommand), pero en el simulador la intake va al frente: se gira 90° y el
-   * shooter dispara hacia atrás (yawDeg 180 en la spec).
+   * shooter dispara hacia atrás (yawDeg 180 en la spec). La pared del hopper con la intake (c0,
+   * recortada por triángulo con `clipComp`) sale 0.3 m hacia −Y al desplegar.
    */
   '9584.glb': {
     yawDeg: 90,
-    static: true,
-    poses() {
-      return [];
+    poses(m) {
+      return [pose([0, -lerp(0, 0.3, m.intake), 0])];
     },
     hopper: [{ min: [-0.28, -0.28, 0.15], max: [0.28, 0.28, 0.5] }],
   },
