@@ -6,7 +6,7 @@
  * (pros, contras y datos del evento). Al guardar, tus compañeros de la IA siguen el plan y el
  * drive coach lo recuerda en el match. Debajo, el scouting de todos los equipos del evento.
  */
-import { autoConflicts, defaultStartZ, planTowerPoints, rowsToPlans, suggestedRows, type PhaseRow } from '../ai/PhasePlan';
+import { autoConflicts, defaultStartZ, normalizeRow, planTowerPoints, rowsToPlans, suggestedRows, type PhaseRow } from '../ai/PhasePlan';
 import { planMatch, report, type MatchPlan, type Note, type RobotReport, type ScoutRobot } from '../ai/Strategist';
 import { ACTIVE_TASKS, INACTIVE_TASKS, loadStrategies, saveCustomStrategies, type Strategy } from '../ai/Strategy';
 import { profileFromSpec } from '../ai/Scouting';
@@ -56,7 +56,7 @@ export function rowsForMatch(tt: Tournament, m: TMatch): { plan: MatchPlan; rows
     plan,
     mine.map((i) => robotById(tt.teams[i].specId).climb.maxLevel as 0 | 1 | 2 | 3),
   );
-  const saved = tt.matchPlans?.[m.id] as PhaseRow[] | undefined;
+  const saved = (tt.matchPlans?.[m.id] as PhaseRow[] | undefined)?.map(normalizeRow);
   return { plan, rows: structuredClone(saved ?? suggested), suggested, edited: !!saved };
 }
 
@@ -228,18 +228,34 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
     const status = savedNow ? `<span class="tag ok">✓ ${t('dash_saved')}</span>` : dirty ? `<span class="tag warn">${t('dash_unsaved')}</span>` : `<span class="tag">${edited ? t('dash_edited') : t('dash_suggested')}</span>`;
     const ordered = [...rows].sort((a, b) => a.station - b.station);
     const idx = (r: PhaseRow) => rows.indexOf(r);
+    // Una tabla por SHIFT, en el orden en que pasan si sale el AUTO que sugiere el estratega
+    // (quien gana el AUTO empieza con su HUB inactivo en SHIFT 1)
+    type Sec = { key: string; kind?: 'active' | 'inactive'; w: 0 | 1 };
+    const shiftSecs: Sec[] =
+      plan.autoAdvice === 'win'
+        ? [{ key: 'i0', kind: 'inactive', w: 0 }, { key: 'a0', kind: 'active', w: 0 }, { key: 'i1', kind: 'inactive', w: 1 }, { key: 'a1', kind: 'active', w: 1 }]
+        : [{ key: 'a0', kind: 'active', w: 0 }, { key: 'i0', kind: 'inactive', w: 0 }, { key: 'a1', kind: 'active', w: 1 }, { key: 'i1', kind: 'inactive', w: 1 }];
+    const sections: Sec[] = [{ key: 'auto', w: 0 }, ...shiftSecs, { key: 'endgame', w: 1 }];
     box.innerHTML = `
       <div class="row strat-head"><b>${t('dash_strategy')}</b>${status}<span class="grow"></span>
         <button class="btn primary" data-save>✓ ${t('dash_save')}</button>
         <button class="btn" data-reset ${edited || dirty ? '' : 'disabled'}>↺ ${t('dash_reset')}</button>
         <button class="btn" data-play>▶ ${t('play')} ${m.id}</button></div>
-      <nav class="strat-nav">${(['auto', 'active', 'inactive', 'endgame'] as const).map((ph, k) => `<button class="chipbtn" data-goto="${ph}"><b>${k + 1}</b> ${t(`phase_${ph}_short` as TKey)}</button>`).join('')}</nav>
+      <nav class="strat-nav">${sections.map((x, k) => `<button class="chipbtn" data-goto="${x.key}"><b>${k + 1}</b> ${t(`phase_${x.key}` as TKey)}</button>`).join('')}</nav>
       <div class="dlabel" style="margin-top:4px">${t('dash_summary')}</div>
-      <table class="ranktable psum"><tr><th>DS</th><th>${t('team')}</th><th>1 · ${t('phase_auto_short')}</th><th>2 · ${t('phase_active_short')}</th><th>3 · ${t('phase_inactive_short')}</th><th>4 · ${t('phase_endgame_short')}</th></tr>
+      <table class="ranktable psum"><tr><th>DS</th><th>${t('team')}</th>${sections.map((x, k) => `<th>${k + 1} · ${t(`phase_${x.key}` as TKey)}</th>`).join('')}</tr>
       ${ordered
         .map(
           (r) =>
-            `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${esc(routines.find((x) => x.id === r.auto)?.name ?? r.auto)}${r.startZ === null ? '' : ` · z ${zs[idx(r)].toFixed(2)} m`}</td><td>${t(`act_${r.active}` as TKey)}</td><td>${t(`inact_${r.inactive}` as TKey)}${r.inactive === 'defend' ? ` → ${r.defendTeam ?? t('dash_threat')}` : ''}</td><td>${r.climb ? `L${r.climb}` : t('eg_none')}</td></tr>`,
+            `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}${sections
+              .map((x) => {
+                if (x.key === 'auto') return `<td>${esc(routines.find((y) => y.id === r.auto)?.name ?? r.auto)}${r.startZ === null ? '' : ` · z ${zs[idx(r)].toFixed(2)} m`}</td>`;
+                if (x.key === 'endgame') return `<td>${r.climb ? `L${r.climb}` : t('eg_none')}</td>`;
+                const sp = r.windows[x.w];
+                if (x.kind === 'active') return `<td>${t(`act_${sp.active}` as TKey)}</td>`;
+                return `<td>${t(`inact_${sp.inactive}` as TKey)}${sp.inactive === 'defend' ? ` → ${sp.defendTeam ?? t('dash_threat')}` : ''}</td>`;
+              })
+              .join('')}</tr>`,
         )
         .join('')}</table>
       <div class="phase-grid">
@@ -255,25 +271,27 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
             })
             .join('')}</table></div>
         </section>
-        <section class="phase ph-active" data-phase="active"><h3><span class="pn">2</span>${t('phase_active')}</h3>
-          <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_task')}</th></tr>
-          ${ordered
-            .map((r) => `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'active', ACTIVE_TASKS.map((x) => [x, t(`act_${x}` as TKey)]), r.active)}<div class="pnote">${t(`note_act_${r.active}` as TKey)}</div></td></tr>`)
-            .join('')}</table>
-        </section>
-        <section class="phase ph-inactive" data-phase="inactive"><h3><span class="pn">3</span>${t('phase_inactive')}</h3>
-          <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_task')}</th></tr>
-          ${ordered
-            .map(
-              (r) =>
-                `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), 'inactive', INACTIVE_TASKS.map((x) => [x, t(`inact_${x}` as TKey)]), r.inactive)}${
+        ${sections
+          .filter((x) => x.kind)
+          .map((x) => {
+            const k = sections.indexOf(x) + 1;
+            const head = `<section class="phase ph-${x.kind}" data-phase="${x.key}"><h3><span class="pn">${k}</span>${t(`phase_${x.key}` as TKey)} <small>${t(`when_${x.key}` as TKey)}</small></h3>
+              <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_task')}</th></tr>`;
+            const body = ordered
+              .map((r) => {
+                const sp = r.windows[x.w];
+                if (x.kind === 'active')
+                  return `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), `active:${x.w}`, ACTIVE_TASKS.map((y) => [y, t(`act_${y}` as TKey)]), sp.active)}<div class="pnote">${t(`note_act_${sp.active}` as TKey)}</div></td></tr>`;
+                return `<tr class="${r.isPlayer ? 'me' : ''}">${teamCell(r)}<td>${sel(idx(r), `inactive:${x.w}`, INACTIVE_TASKS.map((y) => [y, t(`inact_${y}` as TKey)]), sp.inactive)}${
                   // a quién marca: solo si defiende
-                  r.inactive === 'defend' ? `<div class="pmark"><span>${t('dash_marks2')}</span>${sel(idx(r), 'defendTeam', [['', t('dash_threat')], ...theirTeams.map((x): [number, string] => [x, String(x)])], r.defendTeam ?? '')}</div>` : ''
-                }<div class="pnote">${t(`note_inact_${r.inactive}` as TKey)}</div></td></tr>`,
-            )
-            .join('')}</table>
-        </section>
-        <section class="phase ph-endgame" data-phase="endgame"><h3><span class="pn">4</span>${t('phase_endgame')} <small>0:30</small></h3>
+                  sp.inactive === 'defend' ? `<div class="pmark"><span>${t('dash_marks2')}</span>${sel(idx(r), `defend:${x.w}`, [['', t('dash_threat')], ...theirTeams.map((y): [number, string] => [y, String(y)])], sp.defendTeam ?? '')}</div>` : ''
+                }<div class="pnote">${t(`note_inact_${sp.inactive}` as TKey)}</div></td></tr>`;
+              })
+              .join('');
+            return `${head}${body}</table></section>`;
+          })
+          .join('')}
+        <section class="phase ph-endgame" data-phase="endgame"><h3><span class="pn">6</span>${t('phase_endgame')} <small>0:30</small></h3>
           <table class="ranktable ptable"><tr><th>DS</th><th>${t('team')}</th><th>${t('dash_tower')}</th></tr>
           ${ordered
             .map((r) => {
@@ -334,9 +352,12 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
         const v = el.value;
         const f = el.dataset.f;
         if (f === 'auto') r.auto = v;
-        if (f === 'active') r.active = v as PhaseRow['active'];
-        if (f === 'inactive') r.inactive = v as PhaseRow['inactive'];
-        if (f === 'defendTeam') r.defendTeam = v ? Number(v) : null;
+        // tareas por SHIFT: "active:0", "inactive:1", "defend:0"…
+        const [kind, wi] = (f ?? '').split(':');
+        const sp = wi !== undefined ? r.windows[Number(wi) as 0 | 1] : null;
+        if (sp && kind === 'active') sp.active = v as typeof sp.active;
+        if (sp && kind === 'inactive') sp.inactive = v as typeof sp.inactive;
+        if (sp && kind === 'defend') sp.defendTeam = v ? Number(v) : null;
         if (f === 'climb') r.climb = Number(v) as PhaseRow['climb'];
         dirty = true;
         savedNow = false;

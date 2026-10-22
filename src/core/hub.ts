@@ -28,6 +28,15 @@ export function hubActive(phase: Phase, a: Alliance, firstInactive: Alliance | n
   }
 }
 
+/**
+ * Ventana de la alianza (0 = primera, 1 = segunda): sus SHIFTS activos son 1 y 3 o 2 y 4 (según
+ * quién ganó el AUTO), igual que los inactivos; así SHIFT 1–2 son la ventana 0 y SHIFT 3–4 la 1.
+ * Antes (AUTO, TRANSITION) cuenta como la 0 y el END GAME como la 1.
+ */
+export function shiftWindow(phase: Phase): 0 | 1 {
+  return phase === 'SHIFT3' || phase === 'SHIFT4' || phase === 'END_GAME' || phase === 'POST' || phase === 'DONE' ? 1 : 0;
+}
+
 /** Intervalos [inicio, fin) en que el HUB de `a` está activo durante el match. */
 export function activeIntervals(a: Alliance, firstInactive: Alliance | null): Array<[number, number]> {
   const raw: Array<[number, number]> = [[T.autoStart, T.teleopStart]]; // AUTO + pausa de evaluación

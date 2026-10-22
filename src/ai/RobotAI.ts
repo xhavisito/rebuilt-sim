@@ -20,7 +20,7 @@
 import * as F from '../config/field';
 import type { Difficulty } from '../config/settings';
 import { isTeleop, T } from '../core/clock';
-import { fuelCounts } from '../core/hub';
+import { fuelCounts, shiftWindow } from '../core/hub';
 import type { Match } from '../core/match';
 import type { Rng } from '../core/rng';
 import { opponent, type Alliance } from '../core/types';
@@ -30,7 +30,7 @@ import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
 import { hubFuelNear } from './fuelSense';
 import { behindTower, Navigator, zoneOf, type Pt } from './Navigator';
-import { inLane, inNeutral, routeDistance, type RobotPlan } from './Strategy';
+import { inLane, inNeutral, planAt, routeDistance, type RobotPlan } from './Strategy';
 import { passTarget, PASS_LANE_MIN } from '../game/Mechanisms';
 import type { AiMemory } from './Memory';
 import type { DynRole, RobotProfile } from './Scouting';
@@ -135,10 +135,18 @@ export class RobotAI {
   setPlan(p: RobotPlan | null): void {
     this.plan = p;
     if (!p) return;
-    if (p.inactive) this.defender = p.inactive === 'defend';
+    if (p.windows) this.defender = false; // por SHIFT: se decide en cada ventana (`wplan`)
+    else if (p.inactive) this.defender = p.inactive === 'defend';
     else if (p.role === 'defender') this.defender = true;
     else if (p.role !== 'auto') this.defender = false;
     if (p.climb !== 'auto') this.climbLevel = Math.min(p.climb, this.r.spec.climb.maxLevel);
+  }
+
+  /** El plan con las tareas del SHIFT actual (ventana 0 = SHIFT 1–2, 1 = SHIFT 3–4). */
+  private get wplan(): RobotPlan | null {
+    const p = this.plan;
+    if (!p) return null;
+    return planAt(p, shiftWindow(this.ctx.match?.phase ?? 'TRANSITION'));
   }
 
   /** ¿Su plan deja que la alianza le cambie el rol? */
@@ -152,7 +160,7 @@ export class RobotAI {
    */
   private get feeding(): boolean {
     if (this.ctx.match?.phase === 'END_GAME') return false;
-    const pl = this.plan;
+    const pl = this.wplan;
     if (pl?.active || pl?.inactive) return this.hubCountsIn(0) ? pl.active === 'feed' : pl.inactive === 'feed';
     return pl?.role === 'feeder' || (this.roleFree && this.dynRole === 'feeder');
   }
@@ -167,7 +175,8 @@ export class RobotAI {
   private get defending(): boolean {
     const coach = this.coachTask();
     if (coach === 'stockpile') return false;
-    return this.defender || coach === 'defend' || (this.roleFree && this.dynRole === 'defender');
+    const byShift = this.plan?.windows ? this.wplan?.inactive === 'defend' : false;
+    return this.defender || byShift || coach === 'defend' || (this.roleFree && this.dynRole === 'defender');
   }
 
   /** Segundos hasta que su HUB vuelve a contar FUEL (0 si ya cuenta; 99 si no vuelve). */
@@ -479,7 +488,7 @@ export class RobotAI {
     const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
     victims.sort((a, b) => threat(b) - threat(a));
     // el rival que le asignó la estrategia (o el drive coach), si está en la cancha
-    const assigned = this.coachVictim ?? this.plan?.defendTeam ?? null;
+    const assigned = this.coachVictim ?? this.wplan?.defendTeam ?? null;
     const marked = assigned !== null ? victims.find((o) => o.spec.teamNumber === assigned) : undefined;
     if (marked) victims.unshift(marked);
     if (!victims[0]) return false;
@@ -661,7 +670,7 @@ export class RobotAI {
           return;
         }
         // la orden del coach o la tarea del plan para el SHIFT inactivo
-        const coach = this.coachTask() ?? (this.plan?.inactive === 'stockpile' ? 'stockpile' : null);
+        const coach = this.coachTask() ?? (this.wplan?.inactive === 'stockpile' ? 'stockpile' : null);
         if (coach === 'stockpile' || n >= cap - 2 || this.tactic) {
           let t: Tactic;
           if (coach === 'stockpile') {

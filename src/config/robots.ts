@@ -346,14 +346,15 @@ export const CAD_ROBOTS: RobotSpec[] = [
     // ensamble; rendimiento estimado. Movimientos deducidos del CAD (cadRigs.ts).
     widthIn: 28.2,
     lengthIn: 26.7,
-    heightIn: 29.9,
+    // Dato del equipo: pasa por debajo de los soportes de la TOWER (§5.8: desde 28.40 in del piso)
+    heightIn: 27.5,
     massKg: 63,
     maxSpeed: 4.6,
     intake: { widthIn: 27.2, extensionIn: 10, rate: 12 },
     hopperCapacity: 75, // dato del equipo
     // La intake empuja el frente del hopper 0.275 m (cadRigs, HOPPER_EXT_3478): 0.619 m del
-    // centro, 0.73 m de alto
-    deployedHopperIn: [24.4, 28.7],
+    // centro; alto como el robot (también pasa bajo los soportes de la TOWER)
+    deployedHopperIn: [24.4, 27.5],
     // Turret atrás a la derecha (centro del shooter en el ensamble)
     shooter: { type: 'turret', rate: 10, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.92, exitHeightIn: 25, backspin: 20, lanes: 1, posIn: [-6, -6.6] },
     climb: NO_CLIMB,

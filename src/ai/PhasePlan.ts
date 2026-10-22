@@ -7,7 +7,7 @@
 import { routineZones, type AutoRoutine } from '../auto/AutoRoutine';
 import { driverStationCenter } from '../config/field';
 import type { MatchPlan } from './Strategist';
-import { plan, type ActiveTask, type InactiveTask, type RobotPlan } from './Strategy';
+import { plan, type RobotPlan, type ShiftPlan } from './Strategy';
 
 export interface PhaseRow {
   team: number;
@@ -17,10 +17,11 @@ export interface PhaseRow {
   startZ: number | null;
   /** Rutina de AUTO (id). */
   auto: string;
-  active: ActiveTask;
-  inactive: InactiveTask;
-  /** Rival que marca si defiende (número de equipo); null = el más peligroso. */
-  defendTeam: number | null;
+  /**
+   * Tareas por SHIFT: [0] = SHIFT activo 1 e inactivo 1 (SHIFT 1–2), [1] = SHIFT activo 2 e
+   * inactivo 2 (SHIFT 3–4). Cada uno con a quién marca si defiende.
+   */
+  windows: [ShiftPlan, ShiftPlan];
   /** Nivel de TOWER en END GAME (0 = anota hasta el final). */
   climb: 0 | 1 | 2 | 3;
   /** Nivel máximo que alcanza su robot. */
@@ -38,11 +39,15 @@ export function suggestedRows(p: MatchPlan, maxClimb: Array<0 | 1 | 2 | 3>): Pha
     isPlayer: o.isPlayer,
     startZ: null,
     auto: o.auto,
-    // el alimentador alimenta todo el match; los demás anotan con el HUB activo
-    active: o.role === 'feeder' ? 'feed' : 'score',
-    // con el HUB apagado nadie espera: el defensor marca, el alimentador pasa todo, el resto acapara
-    inactive: o.role === 'defender' ? 'defend' : o.role === 'feeder' ? 'feed' : 'stockpile',
-    defendTeam: o.defendTeam,
+    windows: [0, 1].map(
+      (): ShiftPlan => ({
+        // el alimentador alimenta todo el match; los demás anotan con el HUB activo
+        active: o.role === 'feeder' ? 'feed' : 'score',
+        // con el HUB apagado nadie espera: el defensor marca, el alimentador pasa todo, el resto acapara
+        inactive: o.role === 'defender' ? 'defend' : o.role === 'feeder' ? 'feed' : 'stockpile',
+        defendTeam: o.defendTeam,
+      }),
+    ) as [ShiftPlan, ShiftPlan],
     climb: o.climb,
     maxClimb: maxClimb[i] ?? 0,
   }));
@@ -53,9 +58,21 @@ export function rowsToPlans(rows: PhaseRow[]): RobotPlan[] {
   return [1, 2, 3].map((ds) => {
     const r = rows.find((x) => x.station === ds);
     if (!r) return plan();
-    const role = r.inactive === 'defend' ? 'defender' : r.active === 'feed' && r.inactive === 'feed' ? 'feeder' : 'scorer';
-    return plan({ role, climb: r.climb, auto: r.auto, startZ: r.startZ, defendTeam: r.defendTeam, active: r.active, inactive: r.inactive });
+    const w = r.windows;
+    const role = w.every((x) => x.inactive === 'defend') ? 'defender' : w.every((x) => x.active === 'feed' && x.inactive === 'feed') ? 'feeder' : 'scorer';
+    return plan({ role, climb: r.climb, auto: r.auto, startZ: r.startZ, windows: structuredClone(w), active: w[0].active, inactive: w[0].inactive, defendTeam: w[0].defendTeam });
   });
+}
+
+/** Filas guardadas con el formato anterior (una sola tarea activa / inactiva) → por SHIFT. */
+export function normalizeRow(r: PhaseRow & { active?: ShiftPlan['active']; inactive?: ShiftPlan['inactive']; defendTeam?: number | null }): PhaseRow {
+  if (r.windows) return r;
+  const s: ShiftPlan = { active: r.active ?? 'score', inactive: r.inactive ?? 'stockpile', defendTeam: r.defendTeam ?? null };
+  const { active: _a, inactive: _i, defendTeam: _d, ...rest } = r;
+  void _a;
+  void _i;
+  void _d;
+  return { ...rest, windows: [{ ...s }, { ...s }] };
 }
 
 /** Choques de AUTO: para cada DS, las DS con las que comparte zona (DEPOT, TOWER, mitades…). */

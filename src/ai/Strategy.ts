@@ -53,6 +53,25 @@ export interface RobotPlan {
   /** Tarea por fase (tablas del dashboard); sin ellas manda `role`. */
   active?: ActiveTask;
   inactive?: InactiveTask;
+  /**
+   * Tareas por SHIFT: ventana 0 (SHIFT activo / inactivo 1, en SHIFT 1–2) y ventana 1 (SHIFT 3–4).
+   * Si están, mandan sobre `active` / `inactive` / `defendTeam` (ver `planAt`).
+   */
+  windows?: [ShiftPlan, ShiftPlan];
+}
+
+/** Lo que hace un robot en un par de SHIFTS (su SHIFT activo y su SHIFT inactivo de esa ventana). */
+export interface ShiftPlan {
+  active: ActiveTask;
+  inactive: InactiveTask;
+  /** Rival que marca si defiende (null = el más peligroso). */
+  defendTeam: number | null;
+}
+
+/** El plan con las tareas de la ventana `w` (0 = SHIFT 1–2, 1 = SHIFT 3–4). */
+export function planAt(p: RobotPlan, w: 0 | 1): RobotPlan {
+  const s = p.windows?.[w];
+  return s ? { ...p, active: s.active, inactive: s.inactive, defendTeam: s.defendTeam } : p;
 }
 
 export interface Strategy {
