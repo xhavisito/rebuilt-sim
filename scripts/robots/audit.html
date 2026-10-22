@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <base href="/" />
+    <title>Revisión de robot</title>
+    <style>
+      body { margin: 0; background: #1d2027; overflow: hidden; }
+      #info { position: fixed; left: 8px; top: 6px; color: #fff; font: 13px monospace; white-space: pre; }
+    </style>
+  </head>
+  <body>
+    <div id="info"></div>
+    <!--
+      Revisa un robot tal como se ve en el juego (RobotView, con su rig): flecha ROJA = frente del
+      robot (lado de la intake), flecha AMARILLA = hacia dónde sale el FUEL según la spec (shooter
+      fijo: yawDeg desde posIn; turret: el ángulo `turret` en grados). La torreta/hood del CAD debe
+      apuntar igual que la amarilla. ?id=cad-401&view=top|iso|front|back&intake=1&turret=60
+      Capturas: node scripts/robots/audit-shots.mjs
+    -->
+    <script type="module">
+      import * as THREE from 'three';
+      import { CAD_ROBOTS } from '/src/config/robots.ts';
+      import { RobotView } from '/src/render/RobotView.ts';
+
+      const q = new URLSearchParams(location.search);
+      const spec = CAD_ROBOTS.find((r) => r.id === (q.get('id') ?? 'cad-401'));
+      const turretDeg = Number(q.get('turret') ?? 0);
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setClearColor(0x1d2027);
+      document.body.appendChild(renderer.domElement);
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.4));
+      const sun = new THREE.DirectionalLight(0xffffff, 2);
+      sun.position.set(2, 4, 1);
+      scene.add(sun);
+      const grid = new THREE.GridHelper(3, 30, 0x555555, 0x333333);
+      scene.add(grid);
+
+      const view = new RobotView(spec, 'blue');
+      view.marker.visible = false;
+      scene.add(view.group);
+      await view.ready;
+      const st = (t) => ({ intakeDeploy: Number(q.get('intake') ?? 1), turretYaw: turretDeg * Math.PI / 180, hoodAngle: 1, climbHeight: 0, hopper: q.get('fuel') === '0' ? 0 : spec.hopperCapacity, enabled: true, wheelYaw: 0, wheelSpin: 0, intakeSpin: 0, flywheelSpin: 0 });
+      for (let i = 0; i < 120; i++) view.update(st(i / 30), i / 30);
+      // only=c1,c2: solo esos componentes del CAD (sin el chasis `main` ni los demás)
+      const only = q.get('only')?.split(',');
+      if (only) view.group.traverse((o) => { if (/^(main|c\d+)$/.test(o.name)) o.visible = only.includes(o.name); });
+
+      // Marco del robot en three: x adelante, −z a la izquierda
+      const sh = spec.shooter;
+      const yaw = sh.type === 'fixed' ? ((sh.yawDeg ?? 0) * Math.PI) / 180 : (turretDeg * Math.PI) / 180;
+      const [lx, ly] = sh.posIn ?? [0, 0];
+      const h = (sh.exitHeightIn * 0.0254);
+      const o = new THREE.Vector3(lx * 0.0254, h, -ly * 0.0254);
+      scene.add(new THREE.ArrowHelper(new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw)), o, 0.9, 0xffd400, 0.12, 0.08));
+      scene.add(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0.02, 0), 0.9, 0xff2020, 0.12, 0.08));
+
+      const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
+      const views = { iso: [-1.6, 2.0, 2.2], top: [0, 4.2, 0.001], front: [3.4, 0.6, 0], back: [-3.4, 0.6, 0], side: [0, 0.6, 3.4] };
+      cam.position.set(...(views[q.get('view') ?? 'iso'] ?? views.iso));
+      cam.lookAt(0, 0.3, 0);
+      if (q.get('zoom') === '1') {
+        // De cerca al shooter (para ver hacia dónde abre el hood de una turret)
+        const v = cam.position.clone().sub(new THREE.Vector3(0, 0.3, 0)).setLength(1.3);
+        cam.position.copy(o).add(v);
+        cam.lookAt(o);
+      }
+      renderer.render(scene, cam);
+      document.getElementById('info').textContent = `${spec.teamNumber} ${spec.name}  shooter=${sh.type}${sh.type === 'fixed' ? ` yaw=${sh.yawDeg ?? 0}` : ` turret=${turretDeg}`}  rigYaw=${spec.cad?.file}`;
+      window.__ready = true;
+    </script>
+  </body>
+</html>
