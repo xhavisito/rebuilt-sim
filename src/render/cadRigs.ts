@@ -484,4 +484,112 @@ export const CAD_RIGS: Record<string, CadRig> = {
       { min: [0.02, -0.31, 0.44], max: [0.33, 0.31, 0.72], maxDeployed: [0.33 + HOPPER_EXT_3478, 0.31, 0.72] },
     ],
   },
+
+  /**
+   * 401 (Copperhead) — RobotContainer.updateRobotModel y deploy/constants/comp/*.json. Orden de
+   * reference.txt: c0 base del shooter (gira con la turret: heading − 180°), c1 indexer + hopper,
+   * c2 intake (pivote: −8° desplegada → 90° guardada, IntakeConstants), c3 soporte de la turret,
+   * c4 carro del climber (sube en Z), c5 hood (−pitch + 50°; 13.75°–65°, HoodConstants).
+   */
+  '401.glb': {
+    poses(m) {
+      const shooterBase = pose([-0.058, 0.245, 0.37], rot(0, 0, -Math.PI / 2));
+      const so = pose([0.1045, -0.039, 0]);
+      const shooter = compose(compose(compose(shooterBase, so), pose([0, 0, 0], rot(0, 0, m.turret - Math.PI))), pose([-0.1045, 0.039, 0]));
+      const hoodRef = pose([0, 0.021, 0.101]);
+      const hood = lerp(13.7532108812, 65, m.hood) * DEG;
+      const iRef = pose([0.352, 0.158, 0.034]);
+      const intake = lerp(90, -8, m.intake) * DEG;
+      return [
+        shooter,
+        pose([0.121, 0.025, 0], rot(Math.PI / 2, 0, Math.PI / 2)),
+        compose(compose(compose(pose([0.35, 0, 0], rot(Math.PI / 2, 0, -Math.PI / 2)), iRef), pose([0, 0, 0], rot(intake, 0, 0))), pose([-0.352, -0.158, -0.034])),
+        pose([-0.099, 0.138, 0.331], rot(Math.PI / 2, 0, -Math.PI / 2)),
+        pose([-0.18, -0.218, -0.19 + m.climb * 0.3], rot(Math.PI / 2, 0, Math.PI)),
+        compose(compose(compose(compose(shooter, pose([0.1875, -0.04, 0.033], rot(Math.PI / 2, 0, 0))), hoodRef), pose([0, 0, 0], rot(-hood + 50 * DEG, 0, 0))), pose([0, -0.021, -0.101])),
+      ];
+    },
+    // Hopper sobre el indexer (c1), entre la turret (atrás a la izquierda) y la intake
+    hopper: [{ min: [-0.08, -0.3, 0.13], max: [0.28, 0.3, 0.42] }],
+  },
+
+  /**
+   * 2601 (Steel Hawks) "Kirin" — SuperstructureVisualizer e IntakeVisualizer. c0 turret en
+   * ROBOT_TO_TURRET (−5, 0, 17 in) con yaw turret + π, c1 hood (pitch −(80° − ángulo), 40°–80°:
+   * SimBot.HOOD), c2 intake de cremallera a −19° (Intake.RACK_ANGLE) que sale 12.125 in.
+   */
+  '2601.glb': {
+    poses(m) {
+      const t: Vec3 = [inch(-5), 0, inch(17)];
+      const yaw = m.turret + Math.PI;
+      const hood = lerp(80, 40, m.hood) * DEG;
+      const rack = lerp(0, inch(12.125), m.intake);
+      const a = -19 * DEG;
+      return [
+        pose(t, rot(0, 0, yaw)),
+        pose([t[0], t[1] + inch(-4.358), t[2] + inch(-2.642)], rot(0, -(80 * DEG - hood), yaw)),
+        pose([rack * Math.cos(a), 0, rack * Math.sin(a)]),
+      ];
+    },
+    // Hopper de todo el robot: alto al frente, bajo atrás (debajo de la turret)
+    hopper: [
+      { min: [-0.02, -0.3, 0.12], max: [0.3, 0.3, 0.5], maxDeployed: [0.58, 0.3, 0.5] },
+      { min: [-0.32, -0.3, 0.12], max: [-0.02, 0.3, 0.3] },
+    ],
+  },
+
+  /**
+   * 4201 (Vitruvian Bots) "Threepeater" — simulation/Robot2d.java. c0 intake que pivota en
+   * SIM.intakeOrigin (0° guardada → 105° desplegada: pitch −(105° − ángulo)), c1 hopper que sale
+   * con la intake hasta 12 in. Shooter fijo hacia el frente (FuelSim.launchFuel con yaw 0).
+   */
+  '4201.glb': {
+    poses(m) {
+      const a = lerp(0, 105, m.intake);
+      return [pivot([0.06, 0, 0.13], rot(0, -(105 - a) * DEG, 0)), pose([inch((a * 12) / 105), 0, 0])];
+    },
+    // Hopper alto (el robot mide casi 30 in) que crece 12 in al frente con la intake
+    hopper: [{ min: [-0.22, -0.3, 0.16], max: [0.2, 0.3, 0.6], maxDeployed: [0.5, 0.3, 0.6] }],
+  },
+
+  /**
+   * 6357 (The Spring Konstant) — SK26Turret.telemeterize: c0 turret que gira alrededor de
+   * (−7.05, 7.05 in); su ángulo = estándar − 90° (kTurretCoordinateOffset). c1 intake "four
+   * slaps" (subensamble separado por nombre, sources.mjs `parts`; desplegada en el CAD): sin poses
+   * en el código, se levanta 60° sobre el eje de sus brazos (deducido del CAD).
+   */
+  '6357.glb': {
+    poses(m) {
+      return [
+        rotateAround(IDENTITY, [inch(-7.05), inch(7.05), 0], rot(0, 0, m.turret - Math.PI / 2)),
+        rotateAround(IDENTITY, [0.2, 0, 0.19], rot(0, -lerp(60, 0, m.intake) * DEG, 0)),
+      ];
+    },
+    // Hopper al frente, abajo de las paredes naranjas que sobresalen del chasis
+    hopper: [{ min: [-0.05, -0.3, 0.2], max: [0.5, 0.3, 0.5] }],
+  },
+
+  /**
+   * 6657 (Arborbotics) — Superstructure.get3DComponents y TurretConstants. c0 turret en
+   * TURRET_CENTER (yaw = heading relativo + 90°, getRelativeTurretHeading), c1 hood (roll de
+   * 10°–40°, HoodConstants) desplazado HOOD_OFFSET con la turret, c2 intake de cremallera hacia
+   * atrás a 0.2229 rad (0–12.375 in, IntakeConstants) con las paredes del hopper. La intake está
+   * atrás en el CAD: el modelo se gira 180°.
+   */
+  '6657.glb': {
+    yawDeg: 180,
+    poses(m) {
+      const center: Vec3 = [0.118317, -0.105617, 0.511175];
+      const q = rot(0, 0, m.turret + Math.PI / 2);
+      const off = qrot(q, [0, inch(-4.7), inch(0.95)]);
+      const ext = lerp(0, inch(12.375), m.intake);
+      return [
+        pose(center, q),
+        pose([center[0] + off[0], center[1] + off[1], center[2] + off[2]], qmul(q, rot(lerp(10, 40, m.hood) * DEG, 0, 0))),
+        pose([-Math.cos(0.2229) * ext, 0, -Math.sin(0.2229) * ext]),
+      ];
+    },
+    // Hopper atrás en el CAD, montado en la intake (sus paredes salen con ella)
+    hopper: [{ min: [-0.38, -0.3, 0.26], max: [0.02, 0.3, 0.56], comp: 2 }],
+  },
 };

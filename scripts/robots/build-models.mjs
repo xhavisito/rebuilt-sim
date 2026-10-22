@@ -51,7 +51,8 @@ const qmul = (a, b) => [
 /** Secuencia de rotaciones de AdvantageScope (en orden, cada una premultiplicada). */
 const seqQuat = (rots) => {
   let q = [0, 0, 0, 1];
-  for (const r of rots ?? []) q = qmul(axisQuat(r.axis, r.degrees), q);
+  // Algunos config.json traen `{}` en vez de `[]` (8214): sin rotaciones
+  for (const r of Array.isArray(rots) ? rots : []) q = qmul(axisQuat(r.axis, r.degrees), q);
   return q;
 };
 
@@ -141,9 +142,11 @@ for (const src of SOURCES) {
   }
   // ---- CAD sin assets de AdvantageScope (`parts`): los subensambles que se mueven, por nombre,
   // pasan a ser los componentes c0, c1… con zeroed nulo (malla en el marco WPILib del robot).
+  // Si el asset ya trae componentes, los de `parts` siguen después de ellos.
   const mainM = mat4(main.getWorldMatrix());
   const mainInv = mainM.clone().invert();
-  for (const [i, re] of (src.parts ?? []).map((r) => new RegExp(r, 'i')).entries()) {
+  for (const re of (src.parts ?? []).map((r) => new RegExp(r, 'i'))) {
+    const i = groups.length - 1;
     const g = doc.createNode(`c${i}`);
     const frame = doc.createNode(`c${i}_frame`).setMatrix(mainM.toArray());
     g.addChild(frame);

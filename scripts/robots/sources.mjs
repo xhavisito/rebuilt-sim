@@ -8,7 +8,8 @@
 //  - `budget`: triángulos máximos del modelo completo (el simplificador busca el error).
 //  - `local`: sin repo público; el equipo mandó el CAD (no se versiona). fetch-sources.mjs copia
 //    el config.json escrito a mano (scripts/robots/local/<equipo>/) y el model.glb va a mano.
-//  - `parts`: regex de los subensambles que se mueven → componentes c0, c1… (sin model_N.glb).
+//  - `parts`: regex de los subensambles que se mueven → componentes c0, c1… (sin model_N.glb;
+//    si el asset ya trae componentes, van después de ellos: 6357 → c1 la intake).
 // Frente del hopper de 3478 (lo empuja la intake al salir): pared del frente, paredes laterales
 // internas que se deslizan en las placas fijas, el separador de arriba y las guías ("monedas")
 const HOPPER_3478 = '^LB26-02-306-frente|^(Mirror)?LB26-02-308-pared lateral|^LB26-02-307-spacer sup hopper-1$|^(Mirror)?LB26-02-31[78]-Moneda|^3_8in Nut Strips 11inLargo';
@@ -24,4 +25,9 @@ export const SOURCES = [
   { team: 4915, repo: 'Spartronics4915/2026-Rebuilt', path: 'assets/Robot_Artemis', license: 'MIT', frameIn: [26.5, 28.5], drop: 'bumper', bumperGeom: true },
   // SolidWorks → Guardar como .glb (Extended Reality), mandado por el equipo; sin BUMPERS
   { team: 3478, local: 'CAD de SolidWorks enviado por el equipo (LB26-00_Bocho_Houston)', license: 'Con permiso del equipo 3478', frameIn: [26.7, 28.2], parts: ['Intake VHouston', '^LB26-04-01_shooter$', 'SpindexerHouston', HOPPER_3478] },
+  { team: 2601, repo: 'steelhawks/Rebuilt2026', path: 'Robot_Kirin', license: 'MIT', frameIn: [27, 27], bumperGeom: true },
+  { team: 401, repo: 'team401/2026-Robot-Code', path: 'advantagekit_config/Robot_401_2026', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: '^Bumpers <|bumper board|bumper padding' },
+  { team: 4201, repo: '4201VitruvianBots/Rebuilt2026', path: 'resources/Robot_Threepeater_v1', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true },
+  { team: 6357, repo: 'frc6357/robot-code-2026', path: 'advantagescope/assets/Robot_2026bot', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], bumperGeom: true, parts: ['^four slaps'] },
+  { team: 6657, repo: 'FRC6657/Rebuilt', path: 'AdvantageScopeAssets/Robot_Arbor26', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: '^Bumper$' },
 ];

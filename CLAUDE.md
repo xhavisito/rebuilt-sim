@@ -41,6 +41,8 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   equipo, simplificados con `scripts/robots/`; licencias en `public/robots/LICENSES.md`).
   `CAD_ROBOTS` en `src/config/robots.ts`; `RobotView` los carga con GLTFLoader + meshopt y mueve
   sus componentes (intake, hopper, turret, hood…) con `src/render/cadRigs.ts`, como AdvantageScope.
+  Para armar un rig: `npm run dev` y `scripts/robots/preview.html?file=401.glb&tint=1&intake=1`
+  (capturas con `node scripts/robots/preview-shots.mjs 401.glb`).
 
 ## Convenciones
 - Unidades internas: metros, kg, segundos. `inch(x)` convierte; deja la medida original en comentario.

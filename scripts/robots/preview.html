@@ -1,0 +1,103 @@
+<!doctype html>
+<!--
+  Vista previa de un robot CAD (public/robots/*.glb) para armar su rig en src/render/cadRigs.ts.
+  Con `npm run dev`: http://localhost:5173/scripts/robots/preview.html?file=401.glb
+  Parámetros: view=iso|front|side|top|back · intake/hood/turret/climb/spin (estado del rig) ·
+  rig=0 (componentes sin pose, como vienen en el GLB) · tint=1 (cada componente de un color) ·
+  only=main,c0 (solo esas partes). Marco WPILib: X adelante (flecha roja), Y izquierda (verde).
+  El cuadro gris es un chasis de 27 × 27 in.
+-->
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Vista previa de robot</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #20242b; overflow: hidden; }
+      #info { position: fixed; left: 8px; top: 8px; color: #dde; font: 13px monospace; white-space: pre; }
+    </style>
+  </head>
+  <body>
+    <div id="info"></div>
+    <script type="module">
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+      import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+      import { CAD_RIGS } from '/src/render/cadRigs.ts';
+
+      const q = new URLSearchParams(location.search);
+      const file = q.get('file') ?? '6328.glb';
+      const num = (k) => Number(q.get(k) ?? 0);
+      const mech = { intake: num('intake'), hood: num('hood'), turret: num('turret'), climb: num('climb'), spin: num('spin') };
+      const only = q.get('only')?.split(',');
+      const TINTS = [0xff4040, 0x40ff40, 0x4080ff, 0xffff40, 0xff40ff, 0x40ffff, 0xff9040, 0xa060ff];
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(innerWidth, innerHeight);
+      document.body.appendChild(renderer.domElement);
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+      const sun = new THREE.DirectionalLight(0xffffff, 2);
+      sun.position.set(2, 3, 1);
+      scene.add(sun);
+      // Marco WPILib (Z arriba) → Y arriba
+      const wpi = new THREE.Group();
+      wpi.rotation.x = -Math.PI / 2;
+      scene.add(wpi);
+      const ax = (dir, color) => wpi.add(new THREE.ArrowHelper(new THREE.Vector3(...dir), new THREE.Vector3(0, 0, 0.002), 0.6, color, 0.06, 0.04));
+      ax([1, 0, 0], 0xff0000);
+      ax([0, 1, 0], 0x00ff00);
+      ax([0, 0, 1], 0x4060ff);
+      const h = (27 * 0.0254) / 2;
+      const frame = new THREE.LineLoop(
+        new THREE.BufferGeometry().setFromPoints([[-h, -h], [h, -h], [h, h], [-h, h]].map(([x, y]) => new THREE.Vector3(x, y, 0.001))),
+        new THREE.LineBasicMaterial({ color: 0x999999 }),
+      );
+      wpi.add(frame);
+      const grid = new THREE.GridHelper(2, 20, 0x555555, 0x333333);
+      grid.rotation.x = Math.PI / 2;
+      wpi.add(grid);
+
+      const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+      const g = await loader.loadAsync(`/robots/${file}`);
+      const nodes = new Map();
+      g.scene.traverse((o) => /^(main|c\d+)$/.test(o.name) && nodes.set(o.name, o));
+      const rig = q.get('rig') === '0' ? null : CAD_RIGS[file];
+      const poses = rig ? rig.poses(mech) : [];
+      const lines = [`${file}  ${JSON.stringify(mech)}`];
+      for (const [name, node] of nodes) {
+        const holder = new THREE.Group();
+        const i = name === 'main' ? -1 : Number(name.slice(1));
+        const p = i >= 0 ? poses[i] : undefined;
+        if (p === null) continue;
+        if (p) {
+          holder.position.set(...p.t);
+          holder.quaternion.set(...p.q);
+        }
+        if (only && !only.includes(name)) continue;
+        if (q.get('tint') === '1' && i >= 0)
+          node.traverse((o) => {
+            if (o.isMesh) o.material = new THREE.MeshStandardMaterial({ color: TINTS[i % TINTS.length], roughness: 0.6 });
+          });
+        node.traverse((o) => {
+          if (o.isMesh) {
+            o.geometry.computeVertexNormals();
+            o.material.side = THREE.DoubleSide;
+          }
+        });
+        holder.add(node);
+        wpi.add(holder);
+        const box = new THREE.Box3().setFromObject(node);
+        lines.push(`${name}${i >= 0 ? ` (${['rojo', 'verde', 'azul', 'amarillo', 'magenta', 'cian', 'naranja', 'morado'][i % 8]})` : ''}`);
+      }
+      document.getElementById('info').textContent = lines.join('\n');
+
+      const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50);
+      const views = { iso: [1.9, 1.5, 1.9], front: [3, 0.35, 0], back: [-3, 0.35, 0], side: [0, 0.35, -3], left: [0, 0.35, 3], top: [0, 3.2, 0.001] };
+      // En Y arriba: +X WPILib = +X, +Y WPILib (izquierda) = −Z
+      cam.position.set(...(views[q.get('view') ?? 'iso'] ?? views.iso));
+      cam.lookAt(0, 0.28, 0);
+      renderer.render(scene, cam);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

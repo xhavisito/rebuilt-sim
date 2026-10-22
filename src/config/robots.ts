@@ -362,6 +362,104 @@ export const CAD_ROBOTS: RobotSpec[] = [
     cad: { file: '3478.glb' },
     real: cadReal('LamBot', 'Bocho', 'Turret con hood alimentada por un spindexer; swerve MK4i con Krakens. CAD enviado por el equipo; rendimiento estimado.', 'Turret with a hood fed by a spindexer; MK4i swerve with Krakens. CAD provided by the team; estimated performance.'),
   }),
+  // ---- Robots con CAD de equipos de distintos niveles (variedad): sus modelos y rigs vienen de
+  // sus repos (ver cadRigs.ts). Sin binders ni EPA verificable: el rendimiento es un estimado a
+  // partir del diseño (capacidad, shooter, si tira en movimiento) y de los récords publicados.
+  base({
+    id: 'cad-401',
+    name: 'Copperhead',
+    teamNumber: 401,
+    widthIn: 27.5,
+    lengthIn: 27.5,
+    heightIn: 21,
+    massKg: 62,
+    maxSpeed: 4.7,
+    intake: { widthIn: 25, extensionIn: 10.5, rate: 11 }, // pivote −8°…90° (IntakeConstants.json)
+    hopperCapacity: 45,
+    // Turret con hood (RobotInfo.json robotToShooter: −0.099, 0.138, 0.379 m)
+    shooter: { type: 'turret', rate: 11, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.91, exitHeightIn: 15, backspin: 20, lanes: 1, posIn: [-3.9, 5.4] },
+    climb: { maxLevel: 1, timeL1: 3.4, timeL2: 99, timeL3: 99 },
+    colors: { primary: '#30343b', accent: '#c46a2b' },
+    cad: { file: '401.glb' },
+    real: cadReal('Copperhead Robotics', 'Copperhead 2026', 'Nivel alto-medio: 35-30 en 2026, Excellence in Engineering en el campeonato. Turret de 352° con hood, intake que pivota y climber; rendimiento estimado.', 'Upper-mid tier: 35-30 in 2026, Excellence in Engineering at Championship. 352° turret with a hood, pivoting intake and a climber; estimated performance.'),
+  }),
+  base({
+    id: 'cad-4201',
+    name: 'Threepeater',
+    teamNumber: 4201,
+    widthIn: 30,
+    lengthIn: 24,
+    heightIn: 29.8, // hopper alto: no pasa bajo el TRENCH
+    massKg: 63,
+    maxSpeed: 4.6,
+    intake: { widthIn: 28, extensionIn: 11, rate: 12 }, // pivote 0°…105° (INTAKE.PIVOT)
+    hopperCapacity: 60, // SIM.MAX_FUEL
+    deployedHopperIn: [24, 29.8], // el hopper sale 12 in con la intake (Robot2d)
+    // Tres flywheels arriba del hopper que tiran hacia el frente (launchFuel con yaw 0)
+    shooter: { type: 'fixed', rate: 12, maxSpeed: 13, minAngle: 50, maxAngle: 78, accuracy: 0.88, exitHeightIn: 27, backspin: 25, lanes: 3, yawDeg: 0, posIn: [-6, 0] },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#2fa84f' },
+    cad: { file: '4201.glb' },
+    real: cadReal('Vitruvian Bots', 'Threepeater', 'Nivel medio-alto: dumper fijo de 3 flywheels hacia el frente sobre un hopper alto que crece 12 in con la intake; rendimiento estimado.', 'Upper-mid tier: fixed 3-flywheel dumper firing forward over a tall hopper that grows 12 in with the intake; estimated performance.'),
+  }),
+  base({
+    id: 'cad-2601',
+    name: 'Kirin',
+    teamNumber: 2601,
+    widthIn: 27,
+    lengthIn: 29,
+    heightIn: 21.4,
+    massKg: 62,
+    maxSpeed: 4.5,
+    intake: { widthIn: 26, extensionIn: 11.4, rate: 10 }, // cremallera a −19° (Intake.RACK_ANGLE)
+    hopperCapacity: 50,
+    // Turret en ROBOT_TO_TURRET (−5, 0, 17 in)
+    shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.87, exitHeightIn: 19, backspin: 20, lanes: 1, posIn: [-5, 0] },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#2f6fd6' },
+    cad: { file: '2601.glb' },
+    real: cadReal('Steel Hawks', 'Kirin', 'Nivel medio: turret con hood sobre un hopper grande; intake de cremallera inclinada; rendimiento estimado.', 'Mid tier: turret with a hood over a big hopper; angled rack-and-pinion intake; estimated performance.'),
+  }),
+  base({
+    id: 'cad-6657',
+    name: 'Arbor26',
+    teamNumber: 6657,
+    widthIn: 27.5,
+    lengthIn: 27.5,
+    heightIn: 23.9,
+    massKg: 62,
+    maxSpeed: 4.5,
+    // El modelo va girado 180°: la intake (atrás en el CAD) es el frente del simulador
+    intake: { widthIn: 26, extensionIn: 11.5, rate: 9 }, // cremallera 0–12.375 in (IntakeConstants)
+    hopperCapacity: 45,
+    // Turret en TURRET_CENTER (0.118, −0.106, 0.511 m del CAD; girado 180°)
+    shooter: { type: 'turret', rate: 8, maxSpeed: 13, minAngle: 40, maxAngle: 76, accuracy: 0.86, exitHeightIn: 21, backspin: 20, lanes: 1, posIn: [-4.7, 4.2] },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#3c8d40' },
+    cad: { file: '6657.glb' },
+    real: cadReal('Arborbotics', 'Arbor26', 'Nivel medio: turret de 370° con hood; intake de cremallera que saca las paredes del hopper; rendimiento estimado.', 'Mid tier: 370° turret with a hood; rack-and-pinion intake that pulls the hopper walls out; estimated performance.'),
+  }),
+
+  base({
+    id: 'cad-6357',
+    name: 'SKBot',
+    teamNumber: 6357,
+    widthIn: 27,
+    lengthIn: 27,
+    heightIn: 21.5,
+    massKg: 60,
+    maxSpeed: 4.2,
+    traction: 1.0,
+    intake: { widthIn: 22, extensionIn: 6, rate: 7 },
+    overhangIn: 10, // el hopper sobresale al frente arriba de los BUMPERS
+    hopperCapacity: 35,
+    // Turret de ±170° que gira alrededor de (−7.05, 7.05 in) (SK26Turret)
+    shooter: { type: 'turret', rate: 6, maxSpeed: 12.5, minAngle: 45, maxAngle: 76, accuracy: 0.8, exitHeightIn: 19, backspin: 25, lanes: 1, posIn: [-7, 7] },
+    climb: NO_CLIMB,
+    colors: { primary: '#30343b', accent: '#7c4dbd' },
+    cad: { file: '6357.glb' },
+    real: cadReal('The Spring Konstant', '2026 SKBot', 'Nivel bajo: 4-8 y 5-7 en sus eventos de 2026. Turret de ±170° atrás a la izquierda y hopper que sobresale al frente; rendimiento estimado.', 'Lower tier: 4-8 and 5-7 at its 2026 events. ±170° turret at the back left and a hopper that overhangs the front; estimated performance.'),
+  }),
 ];
 
 /** Robots incluidos (solo robots reales con su CAD; los diseños propios se hacen en el editor). */
