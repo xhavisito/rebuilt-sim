@@ -1,4 +1,5 @@
-// Flujo de modos: torneo (jugar Q1 → resultados → continuar) y multijugador local.
+// Flujo de modos: torneo (omitir matches de otros, jugar el propio → resultados → continuar) y
+// multijugador local.
 import { chromium } from 'playwright';
 import { startServer } from './_server.mjs';
 const server = await startServer(4184);
@@ -10,6 +11,11 @@ await page.waitForFunction(() => !document.getElementById('loading'));
 // --- torneo
 await page.click('[data-go="tournament"]');
 await page.click('[data-create]');
+// Matches de otros equipos: se pueden ver u omitir; "omitir hasta mi match" los simula
+if (await page.$('[data-watch]')) {
+  console.log('other teams match: watch/skip buttons', await page.evaluate(() => document.querySelectorAll('[data-watch], [data-skip], [data-skipall]').length));
+  await page.click('[data-skipall]');
+}
 await page.click('[data-play]');
 await page.waitForTimeout(4000);
 console.log('tournament session', await page.evaluate(() => JSON.stringify({ mode: window.app.session.cfg.mode, players: window.app.session.players().length, phase: window.app.session.match.phase })));
@@ -18,7 +24,7 @@ await page.waitForSelector('.results', { timeout: 15000 });
 await page.screenshot({ path: 'shots/modes-results.png' });
 await page.click('[data-a="continue"]');
 await page.waitForTimeout(500);
-console.log('after continue', await page.evaluate(() => { const t = JSON.parse(localStorage.getItem('rebuilt-sim.tournament.v1')); return JSON.stringify({ played: t.quals.filter((m) => m.result).length, q1: t.quals[0].result, table: !!document.querySelector('.ranktable') }); }));
+console.log('after continue', await page.evaluate(() => { const t = JSON.parse(localStorage.getItem('rebuilt-sim.tournament.v1')); const mine = t.quals.find((m) => m.result?.perf && Object.keys(m.result.perf).length === 6); return JSON.stringify({ played: t.quals.filter((m) => m.result).length, perf: mine ? Object.values(mine.result.perf)[0] : null, table: !!document.querySelector('.ranktable') }); }));
 // --- multijugador local: teclado + táctil
 await page.click('[data-back]');
 await page.click('[data-go="local"]');

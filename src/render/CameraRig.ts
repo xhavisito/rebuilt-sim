@@ -8,8 +8,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import * as F from '../config/field';
 import type { Alliance, StationNumber } from '../core/types';
 
-export type CameraMode = 'driver' | 'third' | 'onboard' | 'top' | 'broadcast' | 'free';
-export const CAMERA_MODES: CameraMode[] = ['third', 'driver', 'onboard', 'top', 'broadcast', 'free'];
+export type CameraMode = 'driver' | 'third' | 'onboard' | 'top' | 'broadcast' | 'stands' | 'free';
+export const CAMERA_MODES: CameraMode[] = ['third', 'driver', 'onboard', 'top', 'broadcast', 'stands', 'free'];
 /** Cámaras que giran con el robot: el manejo es relativo a la cámara (adelante = adelante). */
 export const ROBOT_CAMERAS: ReadonlySet<CameraMode> = new Set(['onboard']);
 
@@ -156,6 +156,15 @@ export class CameraRig {
         desiredPos.set(cx, 7.8, F.HALF_W + 4.2);
         desiredLook.set(cx * 1.05, 0, -0.6);
         fov = 56;
+        break;
+      }
+      case 'stands': {
+        // Desde las gradas del lado −Z, a media altura: sigue la jugada despacio, como un
+        // espectador
+        const cx = THREE.MathUtils.clamp(tgt.x * 0.35, -3.5, 3.5);
+        desiredPos.set(cx * 0.6, 6.4, -(F.HALF_W + 5.6));
+        desiredLook.set(cx, 0, 0.9);
+        fov = 60;
         break;
       }
       case 'free': {
