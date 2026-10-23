@@ -244,6 +244,14 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     verificable para la mayoría, el nivel (rate/precisión) se estima por diseño para tener
     variedad, de alto (180, 2713, 1757) a bajo (9584, 339, 10021). Rigs revisados con
     `scripts/robots/preview.html` (`fuel=1` dibuja los lugares del hopper).
+28. **Playoffs del torneo** (§10.6 y siguientes; el manual no está en el repo, verificar con TU22):
+    8 alianzas de 3 con 24+ equipos (si no, 4), selección en serpentina 1→N, N→1; en la ronda 1
+    un capitán puede invitar a un capitán de menor seed (las de abajo suben y entra el siguiente
+    del ranking, aunque haya rechazado antes). Bracket de doble eliminación de FRC (13 matches con
+    8 alianzas, 5 con 4) y Final al mejor de 3. El seed más alto de cada cruce del bracket va de
+    rojo como en el diagrama oficial. **Empates**: se desempata con el orden de la Tabla 10-1
+    (puntos sin faltas, FUEL de AUTO, puntos de TOWER); si persiste, el match se repite
+    (`M5-R1`). Sin robots de respaldo (backup) ni timeouts entre matches.
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
