@@ -37,7 +37,7 @@ import { chassisYawFor, passTarget, plowLoad, predictLaunch, runIntake, runShoot
 import { AimGuide } from '../render/AimGuide';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
-export type SessionMode = 'practice' | 'match' | 'local' | 'tournament';
+export type SessionMode = 'practice' | 'match' | 'local' | 'tournament' | 'online';
 
 export interface RobotSlotConfig {
   spec: RobotSpec;
@@ -69,12 +69,22 @@ export interface SessionConfig {
   aiDifficulty?: Difficulty;
   /** Entrenamiento de la IA: explora más tácticas (matches de solo IA para el playbook). */
   training?: boolean;
+  /**
+   * En línea: el host simula todo (sus jugadores locales son los slots < `localPlayers`, los demás
+   * slots son jugadores remotos); el cliente no simula, solo dibuja el estado que manda el host.
+   */
+  net?: { role: 'host' | 'client'; localPlayers: number };
+}
+
+/** Lo que pone el estado del host en la sesión del cliente (ver net/Replica). */
+export interface SessionReplica {
+  update(frameDt: number): void;
 }
 
 /** Notificaciones hacia la App (audio, HUD, efectos). */
 export interface SessionHooks {
   matchEvent?(e: MatchEvent): void;
-  toast?(key: 'gyroReset' | 'fieldRel' | 'robotRel'): void;
+  toast?(key: 'gyroReset' | 'fieldRel' | 'robotRel', robot: number): void;
   cameraChange?(mode: string): void;
   /** Un FUEL cruzó el sensor del HUB (counted = dio punto). */
   fuelScored?(hub: Alliance, counted: boolean, x: number, y: number, z: number): void;
@@ -85,7 +95,7 @@ export interface SessionHooks {
   /** El HUMAN PLAYER lanzó o abrió la CHUTE. */
   hpAction?(alliance: Alliance, what: 'throw' | 'door'): void;
   /** Golpe fuerte (0–1) con el robot del jugador `slot` involucrado o no (-1). */
-  impact?(strength: number, slot: number, x: number, y: number, z: number): void;
+  impact?(strength: number, slot: number, x: number, y: number, z: number, robots?: number[]): void;
 }
 
 export class GameSession {
@@ -119,6 +129,13 @@ export class GameSession {
   private acc = 0;
   private alpha = 0;
   private stepsLastFrame = 0;
+  /** Jugadores que ven esta pantalla (slots 0…n−1); en línea, el resto son remotos. */
+  readonly localCount: number;
+  /** Cliente en línea: aplica el estado del host en lugar de simular. */
+  replica: SessionReplica | null = null;
+  /** PINS que manda el host (cliente en línea). */
+  netPins: Array<{ victim: number; pinner: number; seconds: number }> = [];
+  private aiCtx: AiContext;
 
   constructor(
     readonly cfg: SessionConfig,
@@ -127,6 +144,7 @@ export class GameSession {
     protected settings: Settings,
   ) {
     this.rng = new Rng(cfg.seed);
+    this.localCount = cfg.net?.localPlayers ?? Infinity;
     this.pw = new PhysicsWorld(renderer.preset.physicsHz);
     this.pw.setIterations(renderer.preset.solverIterations);
     buildFieldColliders(this.pw);
@@ -145,6 +163,8 @@ export class GameSession {
       const st = defaultStart(rc.alliance, rc.station, F.inch(rc.spec.lengthIn / 2 + rc.spec.bumperIn));
       const r = new Robot(this.pw, i, rc.spec, rc.alliance, rc.station, rc.control, st.x, startZ[i], st.heading);
       r.fieldRelative = settings.drive.fieldRelative;
+      // la marca de "tu robot" solo para los jugadores de esta pantalla
+      if (rc.control.type === 'player' && rc.control.slot >= this.localCount) r.view.marker.visible = false;
       this.robots.push(r);
       this.group.add(r.view.group);
     });
@@ -182,6 +202,8 @@ export class GameSession {
     // Cámaras: una por jugador (o una compartida)
     const players = this.players();
     const n = cfg.sharedCamera ? 1 : Math.max(1, players.length);
+    // (en línea, el host también tiene una cámara por jugador remoto: no se dibuja; su pose llega
+    // del cliente y sirve para su manejo field-relative y para apuntar con el mouse)
     for (let k = 0; k < n; k++) {
       const rig = new CameraRig(k === 0 ? renderer.renderer.domElement : null);
       const pr = players[k] ?? this.robots[0];
@@ -191,13 +213,13 @@ export class GameSession {
       }
       rig.shakeEnabled = settings.cameraShake;
       // Sin robot propio (espectador): cámara de transmisión
-      rig.setMode(cfg.sharedCamera || !players.length ? 'broadcast' : n > 1 ? 'third' : settings.camera);
+      rig.setMode(cfg.sharedCamera || !players.length ? 'broadcast' : Math.min(n, this.localCount) > 1 ? 'third' : settings.camera);
       this.rigs.push(rig);
     }
     renderer.scene.add(this.group);
     field.setLeds(false);
     // IA para los robots de la computadora
-    const aiCtx: AiContext = {
+    const aiCtx: AiContext = (this.aiCtx = {
       robots: this.robots,
       fuel: this.fuel,
       match: this.match,
@@ -210,8 +232,9 @@ export class GameSession {
       memory: (cfg.aiDifficulty ?? 'normal') === 'easy' ? undefined : aiMemory,
       tactics: new Map(),
       training: cfg.training,
-    };
-    for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
+    });
+    // (el cliente en línea no tiene IA: sus robots se mueven con el estado del host)
+    if (cfg.net?.role !== 'client') for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
     // Cerebro de alianza (fuera de Fácil reparte roles): scouting de los 6 robots y, en cada
     // momento, quién anota, quién alimenta y quién defiende
     const fixedRole = (r: Robot): DynRole | undefined => {
@@ -226,7 +249,7 @@ export class GameSession {
     });
     // Drive coach del jugador (matches con un solo jugador)
     const player = this.playerRobot(0);
-    if (this.match && player && this.players().length === 1)
+    if (this.match && player && this.players().length === 1 && !cfg.net)
       this.coach = new DriveCoach(
         {
           robots: this.robots,
@@ -250,7 +273,7 @@ export class GameSession {
 
   /** Arranca el reloj del match (después de la cuenta regresiva de la App). */
   beginMatch(): void {
-    if (this.match && !this.match.running) {
+    if (this.match && !this.match.running && !this.replica) {
       // Rutinas de AUTO: la elegida (jugador o estrategia); las demás, repartidas por alianza para
       // que nadie comparta zona con su compañero (DEPOT, TOWER, mitades de la NEUTRAL ZONE)
       for (const a of ALLIANCES) {
@@ -406,6 +429,45 @@ export class GameSession {
       .sort((a, b) => (a.control as { slot: number }).slot - (b.control as { slot: number }).slot);
   }
 
+  /** Jugadores de esta pantalla (sin los remotos del modo en línea). */
+  localPlayers(): Robot[] {
+    return this.players().filter((r) => (r.control as { slot: number }).slot < this.localCount);
+  }
+
+  /** PINS activos (G418) para el HUD. */
+  pins(): Array<{ victim: number; pinner: number; seconds: number }> {
+    return this.replica ? this.netPins : (this.referee?.activePins() ?? []);
+  }
+
+  /** Un jugador remoto se fue: la IA maneja su robot el resto del match. */
+  handOverToAi(index: number): void {
+    const r = this.robots[index];
+    if (!r || this.ais.has(index) || this.replica) return;
+    this.ais.set(index, new RobotAI(r, this.aiCtx, this.cfg.aiDifficulty ?? 'normal'));
+    r.view.marker.visible = false;
+  }
+
+  /** Pose de la cámara de un jugador remoto (host en línea). */
+  setRemoteCamera(slot: number, cam: { p: number[]; q: number[]; fov: number; aspect: number; mode: CameraMode }): void {
+    const rig = this.rigs[slot];
+    if (!rig || slot < this.localCount) return;
+    const c = rig.camera;
+    c.position.set(cam.p[0], cam.p[1], cam.p[2]);
+    c.quaternion.set(cam.q[0], cam.q[1], cam.q[2], cam.q[3]).normalize();
+    if (c.fov !== cam.fov || c.aspect !== cam.aspect) {
+      c.fov = THREE.MathUtils.clamp(cam.fov, 10, 120);
+      c.aspect = THREE.MathUtils.clamp(cam.aspect, 0.2, 5);
+      c.updateProjectionMatrix();
+    }
+    c.updateMatrixWorld(true);
+    if (CAMERA_MODES.includes(cam.mode)) rig.mode = cam.mode;
+  }
+
+  /** Interpolación del render (cliente en línea: entre dos estados del host). */
+  setInterp(alpha: number): void {
+    this.alpha = alpha;
+  }
+
   playerRobot(slot = 0): Robot | undefined {
     return this.robots.find((r) => r.control.type === 'player' && r.control.slot === slot);
   }
@@ -535,19 +597,24 @@ export class GameSession {
         // El rumbo actual pasa a ser "hacia el campo" (lejos del piloto)
         const base = rig.downfield > 0 ? 0 : Math.PI;
         r.gyroOffset = r.phys.heading() - base;
-        this.hooks.toast?.('gyroReset');
+        this.hooks.toast?.('gyroReset', r.index);
       }
       if (inp.pressed.has('toggleFieldRelative')) {
         r.fieldRelative = !r.fieldRelative;
-        this.hooks.toast?.(r.fieldRelative ? 'fieldRel' : 'robotRel');
+        this.hooks.toast?.(r.fieldRelative ? 'fieldRel' : 'robotRel', r.index);
       }
     });
   }
 
   // ------------------------------------------------------------------ bucle
   update(frameDt: number, inputs: PlayerInput[]): void {
+    if (this.replica) {
+      this.replica.update(frameDt);
+      return;
+    }
     this.handlePressed(inputs);
-    if (this.paused) return;
+    // en línea la pausa es solo un menú: el match sigue para todos
+    if (this.paused && !this.cfg.net) return;
     const dt = this.pw.dt;
     this.acc += Math.min(frameDt, 0.1) * this.timeScale;
     let steps = 0;
@@ -654,7 +721,7 @@ export class GameSession {
     const slotOf = (x?: Robot) => (x && x.control.type === 'player' ? x.control.slot : -1);
     const slot = Math.max(slotOf(ra), slotOf(rb));
     const p = r.phys.curPos;
-    this.hooks.impact?.(strength, slot, p.x, 0.3, p.z);
+    this.hooks.impact?.(strength, slot, p.x, 0.3, p.z, [ra, rb].filter((x) => !!x).map((x) => x!.index));
   }
 
   /** Prepara la escena para dibujar (interpolación) y devuelve los viewports. */
@@ -668,8 +735,8 @@ export class GameSession {
     this.updateAimGuides(frameDt);
     const players = this.players();
     const views: Viewport[] = [];
-    const n = this.rigs.length;
-    this.rigs.forEach((rig, k) => {
+    const n = Math.min(this.rigs.length, this.localCount);
+    this.rigs.slice(0, n).forEach((rig, k) => {
       const r = players[k] ?? players[0] ?? this.robots[0];
       const t = r
         ? {
@@ -699,7 +766,7 @@ export class GameSession {
 
   /** Trayectoria del siguiente tiro de cada jugador (ver AimGuide). */
   private updateAimGuides(dt: number): void {
-    for (const r of this.players()) {
+    for (const r of this.localPlayers()) {
       let g = this.aimGuides.get(r.index);
       if (!g) {
         g = new AimGuide();

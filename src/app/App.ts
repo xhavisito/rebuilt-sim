@@ -35,9 +35,11 @@ import { RULES } from '../core/fouls';
 import { Hud, PHASE_LABEL, type PlayerHudInfo } from '../ui/Hud';
 import { esc } from '../ui/forms';
 import { keyToNav, MenuNav, PadNav } from '../ui/nav';
-import { keyLabel } from '../input/actions';
+import { emptyInput, keyLabel, type PlayerInput } from '../input/actions';
 import { CAMERA_MODES, type CameraMode } from '../render/CameraRig';
 import { attachChartHover, renderResults } from '../ui/Results';
+import { ClientRoom, HostRoom } from '../net/Online';
+import type { NetEvent } from '../net/protocol';
 import { getLang, setLang, t, tx, type TKey } from '../ui/i18n';
 
 export class App {
@@ -79,6 +81,9 @@ export class App {
   /** Match de torneo en curso. */
   private tournamentCtx: { tt: Tournament; match: TMatch } | null = null;
   private doneLayoutBtn: HTMLButtonElement | null = null;
+  /** Sala en línea propia (host) o a la que entraste (cliente). */
+  netHost: HostRoom | null = null;
+  netClient: ClientRoom | null = null;
 
   constructor(
     private appEl: HTMLElement,
@@ -120,14 +125,14 @@ export class App {
       this.settings.showFps = !this.settings.showFps;
       this.save();
     });
-    this.input.onDeviceChange.push((d) => this.touch.setEnabled(d === 'touch' && !!this.session?.players().length));
+    this.input.onDeviceChange.push((d) => this.touch.setEnabled(d === 'touch' && !!this.session?.localPlayers().length));
     window.addEventListener('resize', () => {
       this.renderer.resize();
       this.renderer.onQualityChange.forEach((cb) => cb(this.renderer.preset));
     });
     document.addEventListener('visibilitychange', () => {
-      // Pausa automática al perder el foco
-      if (document.hidden && this.session && !this.session.paused) this.togglePause();
+      // Pausa automática al perder el foco (en línea no: el match sigue para todos)
+      if (document.hidden && this.session && !this.session.paused && !this.session.cfg.net) this.togglePause();
     });
     this.hud.setColorblind(this.settings.colorblind);
     this.screens = new Screens(this, uiEl, new Showroom());
@@ -170,6 +175,7 @@ export class App {
   // ------------------------------------------------------------------ menús
   /** Sale de la sesión y muestra el menú principal (con el campo girando de fondo). */
   quitToMenu(): void {
+    this.leaveOnline();
     this.session?.dispose();
     this.session = null;
     this.tournamentCtx = null;
@@ -330,16 +336,24 @@ export class App {
       cameraChange: (mode) => {
         this.toast(`${t('camera')}: ${t(`cam_${mode}` as TKey)}`);
         // Recuerda la cámara elegida (un solo jugador; la libre es solo de práctica)
-        if (s.rigs.length === 1 && cfg.mode !== 'local' && !cfg.sharedCamera && mode !== 'free') {
+        if (Math.min(s.rigs.length, s.localCount) === 1 && cfg.mode !== 'local' && !cfg.sharedCamera && mode !== 'free') {
           this.settings.camera = mode as Settings['camera'];
           this.save();
         }
       },
     };
+    // En línea: el host reenvía sonidos y efectos a los clientes
+    if (cfg.net?.role === 'host' && this.netHost) {
+      const localCount = s.localCount;
+      s.hooks = this.netHost.wrapHooks(s.hooks, (i) => {
+        const c = s.robots[i]?.control;
+        return c?.type === 'player' && c.slot < localCount;
+      });
+    }
     // recompone el composer con la cámara nueva
     this.renderer.setQuality(this.renderer.quality, s.rigs[0].camera);
     // Sin robot propio (espectador) no hay controles táctiles
-    this.touch.setEnabled(this.input.lastDevice === 'touch' && s.players().length > 0);
+    this.touch.setEnabled(this.input.lastDevice === 'touch' && s.localPlayers().length > 0);
     this.hud.setPractice(cfg.mode === 'practice');
     const hpPlayer = Object.values(cfg.humanPlayers ?? {}).includes('player');
     this.touch.setButtonVisible('chute', hpPlayer);
@@ -444,6 +458,100 @@ export class App {
       sharedCamera: shared,
       seed: (Math.random() * 2 ** 32) >>> 0,
     });
+  }
+
+  // ------------------------------------------------------------------ en línea
+  /** Abre una sala (eres el host). */
+  async hostRoom(): Promise<HostRoom> {
+    this.leaveOnline();
+    const room = await HostRoom.create();
+    const m = this.settings.match;
+    room.me = { name: this.settings.driverName, alliance: m.alliance, spec: robotById(m.robotId) };
+    room.difficulty = m.difficulty;
+    room.fuel = m.fuel;
+    room.aiPool = () => aiRobotPool(this.settings.match.difficulty, '');
+    room.onLeft = (name) => this.toast(t('net_left', { n: name }));
+    this.netHost = room;
+    return room;
+  }
+
+  /** Entra a la sala de otro jugador. */
+  async joinRoom(code: string, alliance: Alliance, robotId: string): Promise<ClientRoom> {
+    this.leaveOnline();
+    const room = await ClientRoom.join(code, { name: this.settings.driverName, alliance, spec: robotById(robotId) });
+    this.netClient = room;
+    room.onStart = (cfg) => {
+      this.closeOverlay();
+      this.startSession(cfg);
+      if (this.session) room.attach(this.session);
+    };
+    room.onEvent = (e) => this.onNetEvent(e);
+    room.onClosed = () => {
+      if (this.netClient !== room) return;
+      this.netClient = null;
+      this.toast(t('net_hostLeft'), 'major');
+      if (this.session) this.quitToMenu();
+      else this.screens.main();
+    };
+    return room;
+  }
+
+  /** Host: arranca (o repite) el match con los jugadores del lobby. */
+  startOnlineMatch(): void {
+    const room = this.netHost;
+    if (!room) return;
+    const m = this.settings.match;
+    room.fillAi = room.lobby().fillAi;
+    const robots = room.buildRobots();
+    for (const rc of robots)
+      if (rc.control.type === 'ai') {
+        if (!rc.spec.real) rc.spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
+        rc.spec.shooter.accuracy = Math.min(0.97, rc.spec.shooter.accuracy * DIFFICULTY[m.difficulty].accuracy);
+      }
+    this.startSession({
+      mode: 'online',
+      robots,
+      humanPlayers: {},
+      aiAccuracy: { easy: 0.6, normal: 0.78, hard: 0.88, einstein: 0.95 }[m.difficulty],
+      aiDifficulty: m.difficulty,
+      fuelTotal: m.fuel,
+      eventType: m.eventType,
+      fouls: m.fouls,
+      seed: (Math.random() * 2 ** 32) >>> 0,
+      net: { role: 'host', localPlayers: 1 },
+    });
+    if (this.session) room.begin(this.session);
+  }
+
+  /** Cierra la sala propia o sale de la ajena. */
+  leaveOnline(): void {
+    this.netHost?.close();
+    this.netHost = null;
+    const c = this.netClient;
+    this.netClient = null;
+    c?.close();
+  }
+
+  /** Cliente: sonidos y efectos que manda el host. */
+  private onNetEvent(e: NetEvent): void {
+    const s = this.session;
+    const room = this.netClient;
+    if (e.k === 'left') {
+      this.toast(t('net_left', { n: e.name }));
+      return;
+    }
+    if (!s?.replica || !room) return;
+    const h = s.hooks;
+    if (e.k === 'match') {
+      const m = s.match;
+      if (m && e.e.type === 'phase') m.phase = e.e.phase;
+      if (m && e.e.type === 'firstInactive') m.firstInactive = e.e.alliance;
+      h.matchEvent?.(e.e);
+    } else if (e.k === 'score') h.fuelScored?.(e.hub, e.counted, e.x, e.y, e.z);
+    else if (e.k === 'launch' && s.robots[e.robot]) h.launch?.(s.robots[e.robot], e.kind, e.robot === room.robot);
+    else if (e.k === 'hp') h.hpAction?.(e.a, e.what);
+    else if (e.k === 'impact') h.impact?.(e.s, e.robots.includes(room.robot) ? 0 : -1, e.x, e.y, e.z);
+    else if (e.k === 'toast' && e.robot === room.robot) h.toast?.(e.key, e.robot);
   }
 
   /**
@@ -641,7 +749,9 @@ export class App {
   restart(): void {
     const s = this.session;
     if (!s) return;
-    if (s.cfg.mode === 'practice') this.startPractice();
+    if (s.cfg.net?.role === 'client') this.toast(t('net_waitHost'));
+    else if (s.cfg.net) this.startOnlineMatch();
+    else if (s.cfg.mode === 'practice') this.startPractice();
     else if (s.cfg.mode === 'match') this.startMatch(!s.players().length);
     else this.startSession({ ...s.cfg, seed: (Math.random() * 2 ** 32) >>> 0 });
   }
@@ -684,7 +794,7 @@ export class App {
       [t('a_cameraNext'), kb(K.cameraNext.slice(0, 1))],
       [t('a_slow'), kb(K.slow.slice(0, 1))],
     ];
-    const modeLabel = practice ? t('practice') : s.cfg.mode === 'tournament' ? t('tournament') : s.cfg.mode === 'local' ? t('local') : t('match');
+    const modeLabel = practice ? t('practice') : s.cfg.mode === 'tournament' ? t('tournament') : s.cfg.mode === 'local' ? t('local') : s.cfg.mode === 'online' ? t('online') : t('match');
     const score = m
       ? `<div class="ps-score">
           <div class="red"><span>${t('red')}</span><b>${m.score('red')}</b></div>
@@ -701,7 +811,7 @@ export class App {
           <nav class="ps-menu">
             <button data-a="resume" class="primary" data-nav data-nav-default>${I.play}<span>${t('resume')}</span><kbd>Esc</kbd></button>
             ${practice ? `<button data-a="reset" data-nav>${I.reset}<span>${t('resetField')}</span></button>` : ''}
-            ${this.tournamentCtx ? '' : `<button data-a="restart" data-nav>${I.restart}<span>${t('restart')}</span></button>`}
+            ${this.tournamentCtx || s.replica ? '' : `<button data-a="restart" data-nav>${I.restart}<span>${t('restart')}</span></button>`}
             ${this.tournamentCtx && !s.players().length ? `<button data-a="skipMatch" data-nav>${I.restart}<span>${t('skipMatch')}</span></button>` : ''}
             <button data-a="quit" class="quit" data-nav>${I.quit}<span>${t('quit')}</span></button>
           </nav>
@@ -717,7 +827,7 @@ export class App {
           </div>
           <label class="ps-vol"><span>${t('volMaster')}</span><input type="range" min="0" max="1" step="0.05" value="${this.settings.audio.master}" data-vol/><b data-volv>${Math.round(this.settings.audio.master * 100)}%</b></label>
           ${
-            rig && s.rigs.length === 1
+            rig && Math.min(s.rigs.length, s.localCount) === 1
               ? `<h3>${t('camera')}</h3><div class="ps-cams">${cams.map((c) => `<button class="chipbtn ${rig.mode === c ? 'on' : ''}" data-nav data-a="c:${c}">${t(`cam_${c}` as TKey)}</button>`).join('')}</div>`
               : ''
           }
@@ -739,7 +849,7 @@ export class App {
           else {
             const key = k as 'autoAim' | 'shootOnMove' | 'aimGuide' | 'fieldRelative';
             d[key] = !d[key];
-            if (key === 'fieldRelative') for (const r of s.players()) r.fieldRelative = d.fieldRelative;
+            if (key === 'fieldRelative') for (const r of s.localPlayers()) r.fieldRelative = d.fieldRelative;
           }
           this.save();
           this.showPause(a);
@@ -799,8 +909,9 @@ export class App {
   }
 
   private tick(dt: number): void {
-    const inputs = this.input.poll();
+    let inputs = this.input.poll();
     const s = this.session;
+    if (s && this.netHost?.session === s) inputs = this.netHost.mergeInputs(inputs);
     this.screens.tick(dt);
     this.clock += dt;
     this.stadium.update(dt, this.clock);
@@ -827,6 +938,7 @@ export class App {
       this.fpsAcc.sim += t1 - t0;
       this.fpsAcc.gpu += t2 - t1;
       this.updateHud(s, views);
+      this.tickOnline(dt, s, inputs[0]);
     } else if (!this.screens.visible) {
       // Sin menú encima: el campo gira lentamente de fondo
       this.menuAngle += dt * 0.06;
@@ -852,6 +964,25 @@ export class App {
       }
     }
     (window as unknown as { __fps: number }).__fps = f.fps;
+  }
+
+  /** En línea: el host manda el estado; el cliente, sus controles y su cámara. */
+  private tickOnline(dt: number, s: GameSession, inp: PlayerInput | undefined): void {
+    if (this.netHost?.session === s) this.netHost.tick(dt);
+    const c = this.netClient;
+    if (c && s.replica && inp) {
+      const cam = s.rigs[0].camera;
+      const p = cam.position;
+      const q = cam.quaternion;
+      const r3 = (v: number) => Math.round(v * 1000) / 1000;
+      c.sendInput(s.paused ? emptyInput() : inp, {
+        p: [r3(p.x), r3(p.y), r3(p.z)],
+        q: [r3(q.x), r3(q.y), r3(q.z), r3(q.w)],
+        fov: cam.fov,
+        aspect: r3(cam.aspect),
+        mode: s.rigs[0].mode,
+      });
+    }
   }
 
   /** Pantalla gigante con el marcador. */
@@ -916,7 +1047,7 @@ export class App {
 
   private updateHud(s: GameSession, views: Viewport[]): void {
     // Contadores de PIN (G418) encima del robot pineado
-    const pins = s.referee?.activePins() ?? [];
+    const pins = s.pins();
     const cam = s.rigs[0].camera;
     this.hud.setPins(
       pins
@@ -931,7 +1062,7 @@ export class App {
     const r0 = s.playerRobot(0);
     if (r0) this.touch.setActive('intake', r0.intakeOn);
     const phase = s.phase;
-    const players = s.players();
+    const players = s.localPlayers();
     const multi = players.length > 1;
     this.hud.update(
       s.match,

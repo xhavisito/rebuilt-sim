@@ -37,6 +37,12 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
 - `ui/` DOM: menús, HUD, resultados, ajustes, diseñador de AUTO, editor de robot.
 - `game/` sesión de juego: une física + core + render + IA + árbitro.
 - `auto/` rutinas de AUTO (marco azul, se reflejan para rojo) y su ejecutor.
+- `net/` modo en línea: host autoritativo (su sesión simula; los remotos son slots de jugador
+  con cámara virtual) y clientes que dibujan el estado (`Replica`). WebRTC P2P; señalización por
+  el broker gratuito de PeerJS (`?signal=local` = BroadcastChannel entre pestañas, para e2e).
+  TURN opcional al compilar (`VITE_TURN_URL/USER/PASS`, ver `config/net.ts`).
+  Salas públicas: anuncio "retained" por sala en un broker MQTT público (`net/directory.ts`,
+  cliente mínimo en `net/mqtt.ts`); las privadas solo con código.
 - `pwa/` registro del service worker; `vite.config.ts` genera `sw.js` con el precache.
 - `public/robots/*.glb` modelos 3D reales de robots 2026 (assets de AdvantageScope de cada
   equipo, simplificados con `scripts/robots/`; licencias en `public/robots/LICENSES.md`).

@@ -1018,3 +1018,20 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .dash .ptotal { margin-top: 8px; font-size: 13px; color: var(--muted); }
 .dash .ptotal.ok { color: #4ade80; }
 .dash .chipbtn.tiny { padding: 0 6px; font-size: 12px; margin-left: 4px; }
+
+/* ---------------------------------------------------------------- en línea (lobby) */
+.net-code { font-family: 'Chakra Petch', monospace; font-size: 30px; font-weight: 700; letter-spacing: 0.22em; padding: 2px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.06); }
+.net-code-in { text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700; width: 9em; }
+.net-players { grid-column: 1 / -1; display: grid; gap: 6px; }
+.net-p { display: grid; grid-template-columns: 6px 1fr auto; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.net-p i { align-self: stretch; border-radius: 3px; background: #2f7df6; }
+.net-p.red i { background: #e5413a; }
+.net-p small { opacity: 0.6; font-weight: 400; }
+.net-p span { font-size: 12px; opacity: 0.75; }
+.net-p em { font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 1px 5px; border-radius: 4px; background: rgba(255, 213, 79, 0.18); color: #ffd54f; }
+.net-wait { animation: net-pulse 1.6s ease-in-out infinite; }
+@keyframes net-pulse { 50% { opacity: 0.55; } }
+.net-rooms { grid-column: 1 / -1; display: grid; gap: 6px; }
+.net-room { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.net-room span { font-size: 12px; opacity: 0.75; letter-spacing: 0.05em; }
+@media (max-width: 560px) { .net-room { grid-template-columns: 1fr auto; } .net-room span { grid-column: 1; } }

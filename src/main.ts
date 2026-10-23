@@ -36,6 +36,9 @@ async function boot(): Promise<void> {
   if (mode === 'match') app.startMatch(params.get('spectate') === '1');
   else if (mode === 'practice') app.startPractice();
   else app.quitToMenu();
+  // Enlace de invitación a una sala en línea (?join=CÓDIGO)
+  const join = params.get('join');
+  if (join && !mode) app.screens.online(join);
   const speed = Number(params.get('speed'));
   if (app.session && speed > 0) app.session.timeScale = speed;
   const cam = params.get('cam');
