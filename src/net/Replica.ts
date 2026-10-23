@@ -75,89 +75,64 @@ const ANGLES = new Set<string>(['turretYaw', 'wheelYaw']);
 /** Puesto de TOWER ficticio: el HUD del cliente solo pregunta si está enganchado. */
 const ATTACHED = {} as ClimbSlot;
 
-export class Replica implements SessionReplica {
-  private buf: Snapshot[] = [];
-  private base: FuelSnap;
-  private renderT = -1;
+/** Pone en la sesión el estado lento (marcador, faltas, estadísticas, OUTPOST, PINS). */
+export function applySlowState(s: GameSession, st: SlowState): void {
+  const m = s.match;
+  if (m && st.m) {
+    m.running = st.m.running;
+    m.phase = st.m.phase as Phase;
+    m.firstInactive = st.m.firstInactive;
+    m.firstInactiveRandom = st.m.firstInactiveRandom;
+    Object.assign(m.fuel.red, (st.m.fuel as typeof m.fuel).red);
+    Object.assign(m.fuel.blue, (st.m.fuel as typeof m.fuel).blue);
+    Object.assign(m.tower.red, (st.m.tower as typeof m.tower).red);
+    Object.assign(m.tower.blue, (st.m.tower as typeof m.tower).blue);
+    m.fouls.splice(0, m.fouls.length, ...(st.m.fouls as FoulRecord[]));
+    m.cards.splice(0, m.cards.length, ...(st.m.cards as CardRecord[]));
+    m.disqualified.clear();
+    for (const i of st.m.disq) m.disqualified.add(i);
+    m.history.splice(0, m.history.length, ...(st.m.history as typeof m.history));
+    m.autoTowerDone = st.m.autoTowerDone;
+    m.teleopTowerDone = st.m.teleopTowerDone;
+  }
+  st.r.forEach((x, i) => {
+    const r = s.robots[i];
+    if (!r) return;
+    Object.assign(r.stats, x.stats);
+    Object.assign(r.towerResult, x.tower);
+    r.climb.progress = x.climb;
+  });
+  for (const a of ALLIANCES) {
+    s.humanPlayers[a].doorOpen = !!st.door[a];
+    s.fuel.chute[a].splice(0, s.fuel.chute[a].length, ...st.chute[a]);
+    s.fuel.corral[a].splice(0, s.fuel.corral[a].length, ...st.corral[a]);
+  }
+  s.netPins = st.pins;
+}
+
+/**
+ * Dibuja el estado entre dos snapshots (`k` = 0…1): robots, mecanismos y FUEL. Lo usan el cliente
+ * en línea y el reproductor de repeticiones.
+ */
+export class SnapshotApplier {
   private prevState: Uint8Array;
-  /** Último estado recibido (s del host) y cuándo llegó (para detectar al host congelado). */
-  lastRecv = 0;
 
   constructor(private s: GameSession) {
-    this.base = newFuelSnap(s.fuel.count);
     this.prevState = new Uint8Array(s.fuel.count).fill(FuelState.Out);
   }
 
-  push(buf: ArrayBuffer): void {
-    const snap = decodeSnapshot(buf, this.base);
-    if (!snap) return;
-    this.base = snap.fuel;
-    this.buf.push(snap);
-    if (this.buf.length > 30) this.buf.shift();
-    this.lastRecv = performance.now();
+  /** Tras un salto (repeticiones): el FUEL no se "absorbe" desde donde estaba antes del salto. */
+  reset(): void {
+    this.prevState.fill(FuelState.Out);
   }
 
-  applySlow(st: SlowState): void {
-    const s = this.s;
-    const m = s.match;
-    if (m && st.m) {
-      m.running = st.m.running;
-      m.phase = st.m.phase as Phase;
-      m.firstInactive = st.m.firstInactive;
-      m.firstInactiveRandom = st.m.firstInactiveRandom;
-      Object.assign(m.fuel.red, (st.m.fuel as typeof m.fuel).red);
-      Object.assign(m.fuel.blue, (st.m.fuel as typeof m.fuel).blue);
-      Object.assign(m.tower.red, (st.m.tower as typeof m.tower).red);
-      Object.assign(m.tower.blue, (st.m.tower as typeof m.tower).blue);
-      m.fouls.splice(0, m.fouls.length, ...(st.m.fouls as FoulRecord[]));
-      m.cards.splice(0, m.cards.length, ...(st.m.cards as CardRecord[]));
-      m.disqualified.clear();
-      for (const i of st.m.disq) m.disqualified.add(i);
-      m.history.splice(0, m.history.length, ...(st.m.history as typeof m.history));
-      m.autoTowerDone = st.m.autoTowerDone;
-      m.teleopTowerDone = st.m.teleopTowerDone;
-    }
-    st.r.forEach((x, i) => {
-      const r = s.robots[i];
-      if (!r) return;
-      Object.assign(r.stats, x.stats);
-      Object.assign(r.towerResult, x.tower);
-      r.climb.progress = x.climb;
-    });
-    for (const a of ALLIANCES) {
-      s.humanPlayers[a].doorOpen = !!st.door[a];
-      s.fuel.chute[a].splice(0, s.fuel.chute[a].length, ...st.chute[a]);
-      s.fuel.corral[a].splice(0, s.fuel.corral[a].length, ...st.corral[a]);
-    }
-    s.netPins = st.pins;
-  }
-
-  /** Segundos desde el último estado del host. */
-  get silence(): number {
-    return this.lastRecv ? (performance.now() - this.lastRecv) / 1000 : 0;
-  }
-
-  update(frameDt: number): void {
-    const b = this.buf;
-    if (!b.length) return;
-    const latest = b[b.length - 1].t;
-    const target = latest - NET.interpDelay;
-    if (this.renderT < 0 || Math.abs(this.renderT - target) > 0.5) this.renderT = target;
-    else this.renderT += frameDt + (target - this.renderT) * Math.min(1, frameDt * 2);
-    this.renderT = Math.min(this.renderT, latest);
-    // los dos estados que rodean el instante a dibujar
-    let i = 0;
-    while (i < b.length - 2 && b[i + 1].t <= this.renderT) i++;
-    const A = b[i];
-    const B = b[Math.min(i + 1, b.length - 1)];
-    const k = B.t > A.t ? Math.max(0, Math.min(1, (this.renderT - A.t) / (B.t - A.t))) : 1;
-    if (i > 0) b.splice(0, i);
+  apply(A: Snapshot, B: Snapshot, k: number, time: number): void {
     this.applyRobots(A, B, k);
     this.applyFuel(A, B);
     const s = this.s;
     if (s.match) s.match.t = lerp(A.mt, B.mt, k);
-    s.simTime = this.renderT;
-    s.fuel.time = this.renderT;
+    s.simTime = time;
+    s.fuel.time = time;
     s.setInterp(k);
   }
 
@@ -194,7 +169,8 @@ export class Replica implements SessionReplica {
     const a = A.fuel;
     const b = B.fuel;
     for (const list of f.robotStore.values()) list.length = 0;
-    for (let i = 0; i < f.count; i++) {
+    const n = Math.min(f.count, b.state.length);
+    for (let i = 0; i < n; i++) {
       const st = b.state[i] === 255 ? FuelState.Out : (b.state[i] as FuelState);
       const o = i * 3;
       // recién recogido: la animación de absorción sale de donde se veía
@@ -218,5 +194,63 @@ export class Replica implements SessionReplica {
         f.pos[o + c] = b.pos[o + c] / 1000;
       }
     }
+  }
+}
+
+export class Replica implements SessionReplica {
+  private buf: Snapshot[] = [];
+  private base: FuelSnap;
+  private renderT = -1;
+  private applier: SnapshotApplier;
+  /** Último estado recibido (s del host) y cuándo llegó (para detectar al host congelado). */
+  lastRecv = 0;
+  /** Tiempo del host del último estado recibido. */
+  hostTime = 0;
+  /** Grabación de la repetición: cada estado y cada estado lento que llega. */
+  onSnapshot: ((snap: Snapshot) => void) | null = null;
+  onSlow: ((st: SlowState) => void) | null = null;
+
+  constructor(private s: GameSession) {
+    this.base = newFuelSnap(s.fuel.count);
+    this.applier = new SnapshotApplier(s);
+  }
+
+  push(buf: ArrayBuffer): void {
+    const snap = decodeSnapshot(buf, this.base);
+    if (!snap) return;
+    this.base = snap.fuel;
+    this.buf.push(snap);
+    if (this.buf.length > 30) this.buf.shift();
+    this.lastRecv = performance.now();
+    this.hostTime = snap.t;
+    this.onSnapshot?.(snap);
+  }
+
+  applySlow(st: SlowState): void {
+    applySlowState(this.s, st);
+    this.onSlow?.(st);
+  }
+
+  /** Segundos desde el último estado del host. */
+  get silence(): number {
+    return this.lastRecv ? (performance.now() - this.lastRecv) / 1000 : 0;
+  }
+
+  update(frameDt: number): void {
+    const b = this.buf;
+    if (!b.length) return;
+    const latest = b[b.length - 1].t;
+    const target = latest - NET.interpDelay;
+    if (this.renderT < 0 || Math.abs(this.renderT - target) > 0.5) this.renderT = target;
+    else this.renderT += frameDt + (target - this.renderT) * Math.min(1, frameDt * 2);
+    this.renderT = Math.min(this.renderT, latest);
+    // los dos estados que rodean el instante a dibujar
+    let i = 0;
+    while (i < b.length - 2 && b[i + 1].t <= this.renderT) i++;
+    const A = b[i];
+    const B = b[Math.min(i + 1, b.length - 1)];
+    const k = B.t > A.t ? Math.max(0, Math.min(1, (this.renderT - A.t) / (B.t - A.t))) : 1;
+    if (i > 0) b.splice(0, i);
+    this.applier.apply(A, B, k, this.renderT);
   }
 }

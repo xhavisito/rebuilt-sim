@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseAnnouncement } from '../src/net/directory';
+import { NET } from '../src/config/net';
 import { connectPacket, encodeLength, parsePackets, publishPacket, subscribePacket } from '../src/net/mqtt';
 
 describe('MQTT mínimo', () => {
@@ -32,7 +33,7 @@ describe('MQTT mínimo', () => {
 
 describe('anuncios de salas públicas', () => {
   const now = 1_000_000;
-  const ok = { v: 1, code: 'ABCDE', name: 'Bocho', players: 3, started: false, ts: now - 1000 };
+  const ok = { v: NET.protocol, code: 'ABCDE', name: 'Bocho', players: 3, started: false, ts: now - 1000 };
   it('acepta un anuncio válido', () => {
     expect(parseAnnouncement('ABCDE', JSON.stringify(ok), now)).toEqual({ code: 'ABCDE', name: 'Bocho', players: 3, started: false, ts: now - 1000 });
   });

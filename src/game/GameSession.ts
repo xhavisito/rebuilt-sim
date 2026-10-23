@@ -37,9 +37,14 @@ import { HumanPlayer, type HpContext } from './HumanPlayer';
 import { chassisYawFor, passTarget, plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
 import { AimGuide } from '../render/AimGuide';
 import { AutoPathView } from '../render/AutoPathView';
+import { Director } from './Director';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
 export type SessionMode = 'practice' | 'match' | 'local' | 'tournament' | 'online';
+
+/** Cámaras del espectador (sin robot propio): las de siempre, más el director automático. */
+export type SpectatorCam = CameraMode | 'director';
+export const SPECTATOR_CAMS: SpectatorCam[] = ['director', 'broadcast', 'stands', 'top', 'third', 'onboard', 'driver', 'free'];
 
 export interface RobotSlotConfig {
   spec: RobotSpec;
@@ -139,8 +144,16 @@ export class GameSession {
   readonly localCount: number;
   /** Cliente en línea: aplica el estado del host en lugar de simular. */
   replica: SessionReplica | null = null;
+  /** Después de cada paso de física (la grabación de la repetición, a paso fijo). */
+  onStep: ((dt: number) => void) | null = null;
   /** PINS que manda el host (cliente en línea). */
   netPins: Array<{ victim: number; pinner: number; seconds: number }> = [];
+  /** Espectador: robot que siguen las cámaras (−1 = el que elija el director). */
+  focus = -1;
+  /** Espectador: cámara elegida (el director corta solo entre cámaras). */
+  spectatorCam: SpectatorCam = 'director';
+  /** Director de cámaras del espectador (los hooks de la App le avisan de tiros y choques). */
+  readonly director = new Director();
   private aiCtx: AiContext;
 
   constructor(
@@ -218,7 +231,7 @@ export class GameSession {
         rig.station = pr.station;
       }
       rig.shakeEnabled = settings.cameraShake;
-      // Sin robot propio (espectador): cámara de transmisión
+      // Sin robot propio (espectador): cámara de transmisión (con el director, ver frame)
       rig.setMode(cfg.sharedCamera || !players.length ? 'broadcast' : Math.min(n, this.localCount) > 1 ? 'third' : settings.camera);
       this.rigs.push(rig);
     }
@@ -489,6 +502,40 @@ export class GameSession {
     this.alpha = alpha;
   }
 
+  /** Sin robot propio en esta pantalla (IA vs IA, torneo visto, espectador en línea, repetición). */
+  get spectator(): boolean {
+    return this.localPlayers().length === 0;
+  }
+
+  /** Robot que siguen las cámaras del espectador. */
+  get viewFocus(): number {
+    const i = this.spectatorCam !== 'director' && this.focus >= 0 ? this.focus : this.director.shot.focus;
+    return Math.max(0, Math.min(this.robots.length - 1, i));
+  }
+
+  /** Espectador: elige la cámara (`director` = cortes automáticos). */
+  setSpectatorCam(c: SpectatorCam): void {
+    const rig = this.rigs[0];
+    if (!rig) return;
+    this.spectatorCam = c;
+    if (c === 'director') {
+      this.director.held = 99; // corta ya
+      this.focus = -1;
+    } else {
+      // al dejar el director, sigue al robot que estaba viendo
+      if (this.focus < 0) this.focus = this.director.shot.focus;
+      rig.setMode(c);
+    }
+    this.hooks.cameraChange?.(c);
+  }
+
+  /** Espectador: sigue a un robot (−1 = el que elija el director). */
+  setFocus(i: number): void {
+    this.focus = i >= 0 && i < this.robots.length ? i : -1;
+    if (this.focus >= 0 && this.spectatorCam === 'director') this.setSpectatorCam('third');
+    else if (this.focus < 0 && this.spectatorCam !== 'director') this.setSpectatorCam('director');
+  }
+
   playerRobot(slot = 0): Robot | undefined {
     return this.robots.find((r) => r.control.type === 'player' && r.control.slot === slot);
   }
@@ -578,6 +625,10 @@ export class GameSession {
   cycleCamera(slot = 0): void {
     const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
     if (!rig) return;
+    if (this.spectator) {
+      this.setSpectatorCam(SPECTATOR_CAMS[(SPECTATOR_CAMS.indexOf(this.spectatorCam) + 1) % SPECTATOR_CAMS.length]);
+      return;
+    }
     const i = CAMERA_MODES.indexOf(rig.mode);
     let next = CAMERA_MODES[(i + 1) % CAMERA_MODES.length];
     if (next === 'free' && this.cfg.mode !== 'practice') next = CAMERA_MODES[0];
@@ -587,6 +638,10 @@ export class GameSession {
 
   /** Elige la cámara del jugador `slot` (menú de pausa). */
   setCamera(mode: CameraMode, slot = 0): void {
+    if (this.spectator) {
+      if (this.spectatorCam !== mode) this.setSpectatorCam(mode);
+      return;
+    }
     const rig = this.rigs[Math.min(slot, this.rigs.length - 1)];
     if (!rig || rig.mode === mode || (mode === 'free' && this.cfg.mode !== 'practice')) return;
     rig.setMode(mode);
@@ -630,6 +685,10 @@ export class GameSession {
   // ------------------------------------------------------------------ bucle
   update(frameDt: number, inputs: PlayerInput[]): void {
     if (this.replica) {
+      // sin simular: solo la cámara es de esta pantalla
+      inputs.forEach((inp, slot) => {
+        if (inp.pressed.has('cameraNext') && (this.rigs.length === 1 ? slot === 0 : true)) this.cycleCamera(slot);
+      });
       this.replica.update(frameDt);
       return;
     }
@@ -713,6 +772,7 @@ export class GameSession {
     if (m?.phase === 'POST' && !m.teleopTowerDone && this.robots.every((r) => Math.hypot(r.phys.velocity().x, r.phys.velocity().z) < 0.05))
       this.evaluateTower('teleop');
     this.simTime += dt;
+    this.onStep?.(dt);
   }
 
   /** Golpes fuertes: sonido, vibración y temblor de cámara. */
@@ -758,8 +818,10 @@ export class GameSession {
     const players = this.players();
     const views: Viewport[] = [];
     const n = Math.min(this.rigs.length, this.localCount);
+    const spectator = this.spectator;
+    if (spectator) this.directCameras(frameDt);
     this.rigs.slice(0, n).forEach((rig, k) => {
-      const r = players[k] ?? players[0] ?? this.robots[0];
+      const r = spectator ? this.robots[this.viewFocus] : (players[k] ?? players[0] ?? this.robots[0]);
       const t = r
         ? {
             x: r.view.group.position.x,
@@ -782,6 +844,29 @@ export class GameSession {
       else views.push({ camera: rig.camera, x: (k % 2) * 0.5, y: k < 2 ? 0.5 : 0, w: 0.5, h: 0.5, hide });
     });
     return views;
+  }
+
+  private lastShot: unknown = null;
+
+  /** Espectador: el director decide la toma; las cámaras que siguen a un robot toman su lado. */
+  private directCameras(dt: number): void {
+    const rig = this.rigs[0];
+    const m = this.match;
+    const shot = this.director.update(
+      dt,
+      this.robots.map((r) => ({ speed: Math.hypot(r.phys.velocity().x, r.phys.velocity().z), alliance: r.alliance, climbing: r.climbing })),
+      m ? m.phase : null,
+      m ? timerSeconds(m.t) : 0,
+    );
+    // cada toma nueva es un corte (sin paneo desde la anterior)
+    if (this.spectatorCam === 'director' && (shot !== this.lastShot || rig.mode !== shot.mode)) rig.setMode(shot.mode);
+    this.lastShot = shot;
+    const r = this.robots[this.viewFocus];
+    const follows = rig.mode === 'third' || rig.mode === 'onboard' || rig.mode === 'driver';
+    if (r) {
+      rig.alliance = follows ? r.alliance : 'blue';
+      rig.station = r.station;
+    }
   }
 
   private aimGuides = new Map<number, AimGuide>();

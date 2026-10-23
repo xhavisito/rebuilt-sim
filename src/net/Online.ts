@@ -55,6 +55,10 @@ interface Remote {
   robot: number;
   input: PlayerInput;
   pressed: Set<ButtonAction>;
+  /** Solo mira: sin robot; puede entrar con el match empezado. */
+  spectator: boolean;
+  /** Espectador que entró a medio match: le falta el FUEL completo (ver tick). */
+  needsKey: boolean;
 }
 
 // ------------------------------------------------------------------ host
@@ -111,7 +115,7 @@ export class HostRoom {
 
   private accept(id: string): Remote {
     const link = new PeerLink(this.sig, id, false);
-    const r: Remote = { id, link, name: '', alliance: 'red', spec: robotById(''), joined: false, slot: -1, robot: -1, input: emptyInput(), pressed: new Set() };
+    const r: Remote = { id, link, name: '', alliance: 'red', spec: robotById(''), joined: false, slot: -1, robot: -1, input: emptyInput(), pressed: new Set(), spectator: false, needsKey: false };
     this.remotes.set(id, r);
     link.onData = (d) => this.onData(r, d);
     link.onClose = () => this.drop(r);
@@ -127,20 +131,26 @@ export class HostRoom {
       return;
     }
     if (m.t === 'hello') {
-      const players = [...this.remotes.values()].filter((x) => x.joined).length + 1;
-      const reject = m.v !== NET.protocol ? 'version' : this.started ? 'started' : players >= NET.maxPlayers ? 'full' : null;
+      const spectate = !!m.spectate;
+      const players = this.players().length + 1;
+      const watching = this.joined().filter((x) => x.spectator).length;
+      const reject =
+        m.v !== NET.protocol ? 'version' : spectate ? (watching >= NET.maxSpectators ? 'full' : null) : this.started ? 'started' : players >= NET.maxPlayers ? 'full' : null;
       if (reject) {
         this.send(r, { t: 'reject', reason: reject });
         setTimeout(() => r.link.close(), 500);
         return;
       }
       r.joined = true;
-      r.name = String(m.name || '').slice(0, 24) || `P${players + 1}`;
+      r.spectator = spectate;
+      r.name = String(m.name || '').slice(0, 24) || (spectate ? `👁 ${watching + 1}` : `P${players + 1}`);
       r.alliance = m.alliance === 'blue' ? 'blue' : 'red';
       r.spec = safeSpec(m.spec);
       this.send(r, { t: 'welcome', id: r.id });
+      // con el match empezado, el espectador entra directo a verlo
+      if (spectate && this.session) this.startSpectator(r, this.session);
       this.lobbyChanged();
-    } else if (m.t === 'pick' && r.joined && !this.started) {
+    } else if (m.t === 'pick' && r.joined && !r.spectator && !this.started) {
       r.alliance = m.alliance === 'blue' ? 'blue' : 'red';
       r.spec = safeSpec(m.spec);
       this.lobbyChanged();
@@ -171,11 +181,19 @@ export class HostRoom {
     return [...this.remotes.values()].filter((r) => r.joined && r.link.open);
   }
 
+  /** Jugadores remotos (sin los espectadores). */
+  private players(): Remote[] {
+    return this.joined().filter((r) => !r.spectator);
+  }
+
   lobby(): LobbyInfo {
     return {
       players: [
         { id: 'host', name: this.me.name || 'Host', alliance: this.me.alliance, robotName: this.me.spec.name, team: this.me.spec.teamNumber, host: true },
-        ...this.joined().map((r) => ({ id: r.id, name: r.name, alliance: r.alliance, robotName: r.spec.name, team: r.spec.teamNumber, host: false })),
+        ...this.players().map((r) => ({ id: r.id, name: r.name, alliance: r.alliance, robotName: r.spec.name, team: r.spec.teamNumber, host: false })),
+        ...this.joined()
+          .filter((r) => r.spectator)
+          .map((r) => ({ id: r.id, name: r.name, alliance: r.alliance, robotName: '', team: 0, host: false, spectator: true })),
       ],
       difficulty: this.difficulty,
       fillAi: this.fillAi,
@@ -208,7 +226,7 @@ export class HostRoom {
   }
 
   private announce(): void {
-    this.announcer?.update({ name: this.me.name || 'Host', players: this.lobby().players.length, started: this.started });
+    this.announcer?.update({ name: this.me.name || 'Host', players: this.players().length + 1, started: this.started });
   }
 
   lobbyChanged(): void {
@@ -233,7 +251,7 @@ export class HostRoom {
       return robots.length - 1;
     };
     seat(this.me.alliance, this.me.spec, 0);
-    this.joined().forEach((r, k) => {
+    this.players().forEach((r, k) => {
       r.slot = k + 1;
       r.robot = seat(r.alliance, r.spec, r.slot);
     });
@@ -259,6 +277,10 @@ export class HostRoom {
     this.snapAcc = 1;
     this.slowAcc = 1;
     for (const r of this.joined()) {
+      if (r.spectator) {
+        this.startSpectator(r, s);
+        continue;
+      }
       if (r.robot < 0) continue;
       r.input = emptyInput();
       r.pressed.clear();
@@ -269,6 +291,23 @@ export class HostRoom {
       };
       this.send(r, { t: 'start', cfg, robot: r.robot });
     }
+  }
+
+  /**
+   * Manda al espectador el match (ningún robot es suyo). Recibe el estado desde el siguiente envío,
+   * con el FUEL completo (needsKey) porque los demás solo reciben lo que cambia.
+   */
+  private startSpectator(r: Remote, s: GameSession): void {
+    r.robot = -1;
+    r.slot = -1;
+    r.needsKey = true;
+    const cfg: SessionConfig = {
+      ...s.cfg,
+      net: { role: 'client', localPlayers: 1 },
+      robots: s.cfg.robots.map((rc) => ({ ...rc, control: { type: 'none' }, plan: undefined })),
+    };
+    this.send(r, { t: 'start', cfg, robot: -1 });
+    this.slowAcc = 1;
   }
 
   /** Controles de todos los slots: los locales y, en su slot, los de cada jugador remoto. */
@@ -291,14 +330,24 @@ export class HostRoom {
   tick(dt: number): void {
     const s = this.session;
     if (!s || !this.sent || !this.fuelNow) return;
-    const peers = this.joined().filter((r) => r.robot >= 0);
+    const peers = this.joined().filter((r) => r.robot >= 0 || r.spectator);
     this.snapAcc += dt;
     this.slowAcc += dt;
     if (this.snapAcc >= 1 / NET.snapshotHz) {
       this.snapAcc = 0;
       captureFuel(s.fuel, this.fuelNow);
-      const buf = encodeSnapshot(s.simTime, s.match?.t ?? 0, captureRobots(s), this.fuelNow, this.sent);
-      for (const r of peers) r.link.send(buf);
+      const robots = captureRobots(s);
+      const buf = encodeSnapshot(s.simTime, s.match?.t ?? 0, robots, this.fuelNow, this.sent);
+      for (const r of peers) if (!r.needsKey) r.link.send(buf);
+      // el recién llegado: todo el FUEL (desde aquí ya tiene lo mismo que `sent`)
+      const late = peers.filter((r) => r.needsKey);
+      if (late.length) {
+        const key = encodeSnapshot(s.simTime, s.match?.t ?? 0, robots, this.fuelNow, newFuelSnap(s.fuel.count));
+        for (const r of late) {
+          r.needsKey = false;
+          r.link.send(key);
+        }
+      }
     }
     if (this.slowAcc >= 1 / NET.slowHz) this.sendSlow();
   }
@@ -339,7 +388,7 @@ export class HostRoom {
         this.broadcastEvent({ k: 'hp', a, what });
       },
       impact: (strength, slot, x, y, z, robots = []) => {
-        h.impact?.(strength, slot < (this.session?.localCount ?? 1) ? slot : -1, x, y, z);
+        h.impact?.(strength, slot < (this.session?.localCount ?? 1) ? slot : -1, x, y, z, robots);
         this.broadcastEvent({ k: 'impact', s: strength, robots, x, y, z });
       },
       toast: (key, robot) => {
@@ -383,8 +432,10 @@ export class ClientRoom {
   onClosed: () => void = () => {};
   lobby: LobbyInfo | null = null;
   replica: Replica | null = null;
-  /** Índice del robot propio en el match. */
+  /** Índice del robot propio en el match (−1 = espectador). */
   robot = -1;
+  /** Entró solo a ver. */
+  spectator = false;
   private lastSend = 0;
   private lastKey = '';
 
@@ -395,7 +446,7 @@ export class ClientRoom {
   ) {}
 
   /** Entra a la sala `code` (se resuelve al recibir la bienvenida del host). */
-  static join(code: string, hello: { name: string; alliance: Alliance; spec: RobotSpec }): Promise<ClientRoom> {
+  static join(code: string, hello: { name: string; alliance: Alliance; spec: RobotSpec; spectate?: boolean }): Promise<ClientRoom> {
     const sig = makeSignaling(`${hostId(code)}c${Math.random().toString(36).slice(2, 10)}`);
     return new Promise((resolve, reject) => {
       let done = false;
@@ -441,6 +492,7 @@ export class ClientRoom {
             }
             if (m.t === 'welcome') {
               done = true;
+              room.spectator = !!hello.spectate;
               window.clearTimeout(to);
               resolve(room);
             } else if (m.t === 'reject') {

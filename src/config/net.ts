@@ -7,9 +7,11 @@
  */
 export const NET = {
   /** Versión del protocolo: host y clientes deben coincidir. */
-  protocol: 1,
+  protocol: 2,
   /** Jugadores humanos por sala (6 robots en el campo). */
   maxPlayers: 6,
+  /** Espectadores por sala (además de los jugadores; cada uno recibe el estado del host). */
+  maxSpectators: 8,
   /** Estado del campo que manda el host (Hz). */
   snapshotHz: 30,
   /** Estado lento (marcador, faltas, estadísticas) (Hz). */

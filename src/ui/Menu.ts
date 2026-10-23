@@ -22,6 +22,9 @@ import type { Showroom } from '../render/Showroom';
 import type { ClientRoom, HostRoom } from '../net/Online';
 import { parseRoomCode, type LobbyInfo } from '../net/protocol';
 import { RoomBrowser, type PublicRoom } from '../net/directory';
+import { deserializeReplay, type ReplayData } from '../replay/Recording';
+import { deleteReplay, KEEP_RECENT, listReplays, loadReplay, replayBytes, setStarred, type StoredReplay } from '../replay/store';
+import { download } from '../replay/VideoExport';
 
 export type SetupMode = 'practice' | 'match';
 
@@ -122,6 +125,7 @@ export class Screens {
       ['online', 'online', 'onlineDesc'],
       ['tournament', 'tournament', 'tournamentDesc'],
       ['spectate', 'spectate', 'spectateDesc'],
+      ['replays', 'replays', 'replaysDesc'],
     ];
     const workshop: Array<[string, TKey, TKey]> = [
       ['strategy', 'strategyPlanner', 'strategyPlannerDesc'],
@@ -236,6 +240,7 @@ export class Screens {
         else if (go === 'auto') this.app.openAutoDesigner();
         else if (go === 'strategy') this.app.openStrategyPlanner();
         else if (go === 'editor') this.app.openRobotEditor();
+        else if (go === 'replays') this.replays();
         else if (go === 'spectate') {
           this.hide();
           this.app.startMatch(true);
@@ -260,6 +265,94 @@ export class Screens {
     r.querySelector('[data-fs]')!.addEventListener('click', () => this.app.toggleFullscreen());
     r.querySelector('[data-install]')!.addEventListener('click', () => this.app.install());
     this.enableNav({ onBack: () => {}, onLeftRight: step });
+  }
+
+  // ------------------------------------------------------------------ repeticiones
+  /** Repeticiones guardadas en este navegador y abrir un archivo compartido. */
+  replays(): void {
+    const back = () => this.replays();
+    const watch = (d: ReplayData) => {
+      this.hide();
+      this.app.playReplay(d, back);
+    };
+    const render = (list: StoredReplay[] | null, err = '') => {
+      const fmtDate = (ms: number) => new Date(ms).toLocaleString(getLang() === 'es' ? 'es-MX' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
+      const dur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+      const size = (b: number) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`);
+      const mode = (m: StoredReplay['meta']['mode']) => t(m === 'match' ? 'match' : m === 'local' ? 'local' : m === 'tournament' ? 'tournament' : m === 'online' ? 'online' : 'practice');
+      const rows = (list ?? [])
+        .map((r) => {
+          const m = r.meta;
+          const win = m.score.red > m.score.blue ? 'red' : m.score.blue > m.score.red ? 'blue' : '';
+          return `<div class="rp-row">
+            <button class="rp-main" data-nav data-watch="${r.id}">
+              <span class="rp-score"><b class="red ${win === 'red' ? 'w' : ''}">${m.score.red}</b><i>–</i><b class="blue ${win === 'blue' ? 'w' : ''}">${m.score.blue}</b></span>
+              <span class="rp-info"><b>${m.teams.red.join(' · ')} <em>vs</em> ${m.teams.blue.join(' · ')}</b>
+                <small>${esc(mode(m.mode))}${m.clip ? ` · ${t('rp_clip')}` : ''}${m.partial ? ` · ${t('rp_partial')}` : ''} · ${fmtDate(m.date)} · ${dur(m.duration)} · ${size(r.size)}</small></span>
+              <span class="rp-play">▶</span>
+            </button>
+            <button class="chipbtn ${r.starred ? 'on' : ''}" data-star="${r.id}" title="${t('rp_star')}">★</button>
+            <button class="chipbtn" data-dl="${r.id}" title="${t('rp_download')}">⬇</button>
+            <button class="chipbtn" data-del="${r.id}" title="${t('rp_delete')}">✕</button>
+          </div>`;
+        })
+        .join('');
+      this.show(
+        `${this.brandbar('2026 REBUILT')}
+        <h1>${t('replays')}</h1>
+        <div class="panel rp-panel" data-drop>
+          <div class="rp-open"><label class="btn primary">${t('rp_open')}<input type="file" accept=".rbreplay,application/octet-stream" data-file hidden/></label><span>${t('rp_dropHint')}</span></div>
+          ${err ? `<div class="msg bad">${esc(err)}</div>` : ''}
+          <div class="rp-list">${list === null ? `<div class="msg warn">${t('loading')}</div>` : rows || `<div class="msg warn">${t('rp_none')}</div>`}</div>
+          <div class="msg">${t('rp_keepNote', { n: KEEP_RECENT })}</div>
+        </div>
+        <div class="actionbar"><button class="btn" data-back data-nav>${t('back')}</button></div>`,
+        list !== null,
+      );
+      if (this.nav) this.nav.refresh();
+      else this.enableNav();
+      const r = this.root;
+      const openFile = (f: File | undefined) => {
+        if (!f) return;
+        void f
+          .arrayBuffer()
+          .then((b) => deserializeReplay(new Uint8Array(b)))
+          .then(watch)
+          .catch(() => render(list, t('rp_badFile')));
+      };
+      r.querySelector<HTMLInputElement>('[data-file]')!.addEventListener('change', (e) => openFile((e.target as HTMLInputElement).files?.[0]));
+      const drop = r.querySelector<HTMLElement>('[data-drop]')!;
+      drop.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        drop.classList.add('drag');
+      });
+      drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+      drop.addEventListener('drop', (e) => {
+        e.preventDefault();
+        drop.classList.remove('drag');
+        openFile(e.dataTransfer?.files[0]);
+      });
+      const reload = () => listReplays().then((l) => render(l), () => render([], t('rp_storageErr')));
+      r.querySelectorAll<HTMLElement>('[data-watch]').forEach((b) => b.addEventListener('click', () => void loadReplay(b.dataset.watch!).then(watch, () => render(list, t('rp_badFile')))));
+      r.querySelectorAll<HTMLElement>('[data-star]').forEach((b) =>
+        b.addEventListener('click', () => void setStarred(b.dataset.star!, !b.classList.contains('on')).then(reload)),
+      );
+      r.querySelectorAll<HTMLElement>('[data-del]').forEach((b) => b.addEventListener('click', () => void deleteReplay(b.dataset.del!).then(reload)));
+      r.querySelectorAll<HTMLElement>('[data-dl]').forEach((b) =>
+        b.addEventListener('click', () => {
+          const it = list?.find((x) => x.id === b.dataset.dl);
+          void replayBytes(b.dataset.dl!).then((bytes) => {
+            const d = new Date(it?.meta.date ?? Date.now());
+            download(new Blob([bytes as BlobPart]), `rebuilt-${d.toISOString().slice(0, 16).replace(/[-:T]/g, '')}.rbreplay`);
+          });
+        }),
+      );
+    };
+    render(null);
+    listReplays().then(
+      (l) => render(l),
+      () => render([], t('rp_storageErr')),
+    );
   }
 
   // ------------------------------------------------------------------ galería de robots
@@ -796,7 +889,7 @@ export class Screens {
         <div class="net-rooms" data-rooms><div class="msg warn">${t('net_searching')}</div></div>
         <h3>${t('net_join')}</h3>
         <label>${t('net_code')}</label><div class="row"><input type="text" class="net-code-in" maxlength="7" data-code value="${esc(code)}" placeholder="ABCDE" autocapitalize="characters" autocomplete="off" spellcheck="false"/>
-          <button class="btn" data-nav data-join>${t('net_join')}</button></div>
+          <button class="btn" data-nav data-join>${t('net_join')}</button><button class="btn" data-nav data-watchroom>👁 ${t('net_watchCode')}</button></div>
         <label></label><div class="msg ${error ? 'bad' : 'warn'}" data-status ${error ? '' : 'hidden'}>${esc(error)}</div>
       </div>
       <div class="actionbar"><button class="btn" data-back data-nav>${t('back')}</button></div>
@@ -818,7 +911,7 @@ export class Screens {
       status.hidden = false;
       status.className = `msg ${bad ? 'bad' : 'warn'}`;
       status.textContent = msg;
-      r.querySelectorAll<HTMLButtonElement>('[data-create], [data-join]').forEach((b) => (b.disabled = !bad));
+      r.querySelectorAll<HTMLButtonElement>('[data-create], [data-join], [data-watchroom]').forEach((b) => (b.disabled = !bad));
     };
     r.querySelector('[data-create]')!.addEventListener('click', () => {
       busy(t('net_connecting'));
@@ -828,16 +921,17 @@ export class Screens {
         .catch(() => busy(t('net_err_network'), true));
     });
     const codeIn = r.querySelector<HTMLInputElement>('[data-code]')!;
-    const join = () => {
+    const join = (spectate = false) => {
       const c = parseRoomCode(codeIn.value);
       if (!c) return busy(t('net_badCode'), true);
       busy(t('net_connecting'));
       this.app
-        .joinRoom(c, m.alliance, m.robotId)
+        .joinRoom(c, m.alliance, m.robotId, spectate)
         .then((room) => this.onlineClient(room))
         .catch((e: Error) => busy(t(`net_err_${e.message}` as TKey) || t('net_err_network'), true));
     };
-    r.querySelector('[data-join]')!.addEventListener('click', join);
+    r.querySelector('[data-join]')!.addEventListener('click', () => join());
+    r.querySelector('[data-watchroom]')!.addEventListener('click', () => join(true));
     // Salas públicas en vivo
     const roomsEl = r.querySelector<HTMLElement>('[data-rooms]')!;
     const showRooms = (list: PublicRoom[]) => {
@@ -845,7 +939,8 @@ export class Screens {
         ? list
             .map(
               (x) => `<div class="net-room"><b>${esc(x.name || 'Host')}</b><span>${x.code} · ${x.players}/6${x.started ? ` · ${t('net_inGame')}` : ''}</span>
-                <button class="btn" data-nav data-room="${x.code}" ${x.started || x.players >= 6 ? 'disabled' : ''}>${t('net_join')}</button></div>`,
+                <span class="net-room-btns"><button class="btn" data-nav data-room="${x.code}" ${x.started || x.players >= 6 ? 'disabled' : ''}>${t('net_join')}</button>
+                <button class="btn" data-nav data-watch="${x.code}">👁 ${t('net_watch')}</button></span></div>`,
             )
             .join('')
         : `<div class="msg warn">${t('net_noRooms')}</div>`;
@@ -853,6 +948,12 @@ export class Screens {
         b.addEventListener('click', () => {
           codeIn.value = b.dataset.room!;
           join();
+        }),
+      );
+      roomsEl.querySelectorAll<HTMLElement>('[data-watch]').forEach((b) =>
+        b.addEventListener('click', () => {
+          codeIn.value = b.dataset.watch!;
+          join(true);
         }),
       );
       this.nav?.refresh();
@@ -867,7 +968,7 @@ export class Screens {
     codeIn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') join();
     });
-    if (code && !error) join();
+    if (code && !error) join(new URLSearchParams(location.search).get('watch') === '1');
   }
 
   /** Salir del lobby: cierra la sala (host) o sale de ella. */
@@ -895,7 +996,7 @@ export class Screens {
           <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], room.me.alliance)}
           <label>${t('robot')}</label>${select('rb', robots, room.me.spec.id)}
           <label>${t('fillAi')}</label>${seg('fill', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], room.fillAi ? '1' : '0')}
-          <h3>${t('net_players', { n: info.players.length })}</h3>
+          <h3>${t('net_players', { n: info.players.filter((p) => !p.spectator).length })}</h3>
           ${lobbyList(info, 'host')}
           <label></label><div class="msg warn">${t('net_hostHint')} ${t('net_seat')}</div>
         </div>
@@ -938,15 +1039,20 @@ export class Screens {
     let first = true;
     const render = (info: LobbyInfo | null) => {
       if (this.app.netClient !== room || this.app.session) return;
+      const watching = room.spectator;
       this.show(
         `
         ${this.brandbar('2026 REBUILT')}
         <h1>${t('online')}</h1>
         <div class="panel form">
           <label>${t('net_room')}</label><div class="row"><span class="net-code">${room.code}</span></div>
-          <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
-          <label>${t('robot')}</label>${select('rb', robots, m.robotId)}
-          <h3>${t('net_players', { n: info?.players.length ?? 1 })}</h3>
+          ${
+            watching
+              ? `<label></label><div class="msg ok">👁 ${t('net_watching')}</div>`
+              : `<label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
+          <label>${t('robot')}</label>${select('rb', robots, m.robotId)}`
+          }
+          <h3>${t('net_players', { n: info?.players.filter((p) => !p.spectator).length ?? 1 })}</h3>
           ${info ? lobbyList(info, room.id) : ''}
           <label></label><div class="msg warn net-wait">${t('net_waitHost')}</div>
         </div>
@@ -957,6 +1063,7 @@ export class Screens {
       if (this.nav) this.nav.refresh();
       else this.enableNav({ onBack: () => this.leaveLobby() });
       bind(this.root, (name, v) => {
+        if (watching) return;
         if (name === 'al') m.alliance = v as Alliance;
         else if (name === 'rb') m.robotId = String(v);
         this.app.save();
@@ -1060,8 +1167,8 @@ type PickerTab = 'top' | 'custom';
 function lobbyList(info: LobbyInfo, me: string): string {
   return `<div class="net-players">${info.players
     .map(
-      (p) => `<div class="net-p ${p.alliance}"><i></i><b>${esc(p.name)}${p.id === me ? ` <small>(${t('net_you')})</small>` : ''}</b>
-        <span>${p.host ? '<em>HOST</em> ' : ''}${esc(p.robotName)}${p.team ? ` · ${p.team}` : ''}</span></div>`,
+      (p) => `<div class="net-p ${p.spectator ? 'spec' : p.alliance}"><i></i><b>${esc(p.name)}${p.id === me ? ` <small>(${t('net_you')})</small>` : ''}</b>
+        <span>${p.spectator ? `👁 ${t('net_spectator')}` : `${p.host ? '<em>HOST</em> ' : ''}${esc(p.robotName)}${p.team ? ` · ${p.team}` : ''}`}</span></div>`,
     )
     .join('')}</div>`;
 }
@@ -1146,6 +1253,8 @@ const MODE_ICON: Record<string, string> = {
   online: svg('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5s-1.2 6.1-3.8 8.5c-2.6-2.4-3.8-5.2-3.8-8.5s1.2-6.1 3.8-8.5z"/>'),
   // trofeo
   tournament: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>'),
+  // claqueta / repetición
+  replays: svg('<path d="M3.5 9.5h17v10a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z"/><path d="m3.5 9.5 1-4.6 16 3.4-.6 1.2M8.6 5.7l2 3.8M13.4 6.7l2 3.1"/><path d="m10.5 13 4 2.25-4 2.25z"/>'),
   // ojo / transmisión
   spectate: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
   // pizarra con jugadas

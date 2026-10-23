@@ -55,7 +55,15 @@ src/
   auto/                    AutoRoutine.ts (tipos, rutinas default), AutoExecutor.ts, Trajectory.ts (rutas suaves)
   referee/Referee.ts       detección de violaciones
   audio/Audio.ts           Web Audio: cues del FMS, efectos, música, voz (SpeechSynthesis)
-  ui/                      i18n.ts, styles.css, Menu, Hud, Results, Settings, AutoDesigner, RobotEditor, Tournament
+  ui/                      i18n.ts, styles.css, Menu, Hud, Results, Settings, AutoDesigner, RobotEditor, Tournament,
+                           SpectatorBar (cámaras, robot a seguir, línea de tiempo y clips)
+  net/                     modo en línea (host autoritativo, clientes y espectadores, WebRTC)
+  replay/
+    Recording.ts           grabación (snapshots de net/protocol + cuadros clave), archivo .rbreplay, clips, momentos
+    ReplayPlayer.ts        SessionTap (graba la sesión) y ReplayPlayer (SessionReplica que la reproduce)
+    store.ts               IndexedDB: últimas 8 + las conservadas
+    VideoExport.ts         clip a MP4/WebM con marcador (MediaRecorder)
+  game/Director.ts         director de cámaras del espectador (lógica pura)
   pwa/                     registro del SW y plantilla sw-template.js
 tests/                     Vitest
 scripts/screenshot.mjs     verificación con Playwright
@@ -108,6 +116,20 @@ scripts/screenshot.mjs     verificación con Playwright
 - **Estratega del torneo** (`Strategist.ts`, puro): pros y contras, predicción, roles, AUTO sin
   choques, si conviene ganar el AUTO (ventana final de 55 s), END GAME / TRAVERSAL y RP. El
   dashboard aplica el plan como estrategia `coach-plan` (se rehace para cada match).
+
+- **Repeticiones = el modo en línea grabado**: se guarda lo mismo que el host manda a sus
+  clientes (estado binario a 30 Hz con el FUEL en delta, estado lento en JSON cuando cambia,
+  eventos de sonido/efectos) y se reproduce con el mismo `SnapshotApplier` del cliente. No se
+  re-simula (Rapier no es determinista entre navegadores y la IA usa `Math.random`): así la
+  repetición es exacta y saltar a cualquier punto cuesta a lo más 2 s de decodificación (cuadro
+  clave cada 2 s). Se graba a paso fijo (`GameSession.onStep`), no por frame: no depende de los
+  FPS. Un match completo pesa ~1–2 MB con gzip (`CompressionStream`).
+- **Espectador en línea**: entra con `hello.spectate` (protocolo 2), no ocupa lugar de jugador
+  (hasta 8) y puede entrar a medio match: el host le manda un cuadro con todo el FUEL antes de
+  incluirlo en los envíos en delta.
+- **Video de clips**: el canvas WebGL se copia cada frame a un canvas 2D (≤1280 px) con un
+  marcador dibujado encima (el HUD es DOM) y MediaRecorder graba ese canvas más una copia de la
+  mezcla de audio. MP4 donde el navegador lo graba (Chrome/Safari); si no, WebM.
 
 ## Sistema de coordenadas y layout del campo
 Fuente: Game Manual TU22 §5 + layout oficial WPILib `2026-rebuilt-welded` (AprilTags) +
