@@ -133,6 +133,21 @@ scripts/screenshot.mjs     verificación con Playwright
 - **Espectador en línea**: entra con `hello.spectate` (protocolo 2), no ocupa lugar de jugador
   (hasta 8) y puede entrar a medio match: el host le manda un cuadro con todo el FUEL antes de
   incluirlo en los envíos en delta.
+- **Partida rápida en línea** (botón "Jugar en línea", sin servidor propio): el directorio de
+  salas públicas (MQTT) anuncia también `quick`, `open` (puede recibir a un jugador ya) y `left`
+  (segundos que le quedan al match). Quien pica Jugar junta anuncios 1.6 s y entra a la mejor sala
+  rápida (lobby con más gente; si no, el match con más tiempo por delante, ≥ 30 s); si no hay, abre
+  una que arranca sola a los 25 s (+8 s por cada uno que entra, tope 45 s; 3 s si se llena de
+  personas) con la IA en los lugares vacíos. A medio match se entra en lugar de un robot de la IA
+  (`takeOverFromAi`; sale con `handOverToAi`), con su robot, sin cuenta regresiva. Dos hosts
+  solitarios que abrieron a la vez se juntan: el de código mayor se cambia al otro.
+  No hay migración de host: si el host se va, la sala se cierra (el lobby rápido vuelve a buscar).
+- **Predicción del cliente**: el robot propio va en el presente (los demás, 100 ms atrás
+  interpolados). Se integra el chasis con el modelo de `RobotPhysics.drive` y se reconcilia con el
+  host: objetivo = pose del host + lo predicho en los últimos `tau` s (ida y vuelta medida con
+  ping + silencio desde el último estado, tope 0.6 s); el error se corrige al 6/s, se salta si es
+  > 1.5 m y deja de empujar contra lo que el host dice que lo detuvo. Solo en TELEOP manejando;
+  si el host se traba (> 0.35 s sin estados) se vuelve a la pose interpolada.
 - **Video de clips**: el canvas WebGL se copia cada frame a un canvas 2D (≤1280 px) con un
   marcador dibujado encima (el HUD es DOM) y MediaRecorder graba ese canvas más una copia de la
   mezcla de audio. MP4 donde el navegador lo graba (Chrome/Safari); si no, WebM.

@@ -89,7 +89,8 @@ export interface SessionConfig {
 
 /** Lo que pone el estado del host en la sesión del cliente (ver net/Replica). */
 export interface SessionReplica {
-  update(frameDt: number): void;
+  /** `input`: los controles del jugador de esta pantalla (el cliente en línea predice su robot). */
+  update(frameDt: number, input?: PlayerInput): void;
 }
 
 /** Notificaciones hacia la App (audio, HUD, efectos). */
@@ -483,6 +484,34 @@ export class GameSession {
     r.view.marker.visible = false;
   }
 
+  /**
+   * Un jugador que entra a medio match (partida rápida en línea) toma el robot `index` de la IA
+   * con el slot `slot` (remoto: su cámara virtual se agrega aquí).
+   */
+  takeOverFromAi(index: number, slot: number): boolean {
+    const r = this.robots[index];
+    if (!r || !this.ais.has(index) || this.replica) return false;
+    this.ais.delete(index);
+    // suelta los FUEL que la IA tenía apartados
+    for (const [ball, owner] of this.aiCtx.claims) if (owner === index) this.aiCtx.claims.delete(ball);
+    r.control = { type: 'player', slot };
+    r.view.marker.visible = slot < this.localCount;
+    while (this.rigs.length <= slot) {
+      const rig = new CameraRig(null);
+      rig.alliance = r.alliance;
+      rig.station = r.station;
+      rig.shakeEnabled = false;
+      rig.setMode('third');
+      this.rigs.push(rig);
+    }
+    return true;
+  }
+
+  /** Mando de manejo que daría el host a estos controles (predicción del cliente en línea). */
+  predictDrive(r: Robot, inp: PlayerInput): { vx: number; vz: number; omega: number } {
+    return this.playerCommand(r, inp, this.rigs[0]).drive;
+  }
+
   /** Pose de la cámara de un jugador remoto (host en línea). */
   setRemoteCamera(slot: number, cam: { p: number[]; q: number[]; fov: number; aspect: number; mode: CameraMode }): void {
     const rig = this.rigs[slot];
@@ -691,7 +720,10 @@ export class GameSession {
       inputs.forEach((inp, slot) => {
         if (inp.pressed.has('cameraNext') && (this.rigs.length === 1 ? slot === 0 : true)) this.cycleCamera(slot);
       });
-      this.replica.update(frameDt);
+      // el reset de giroscopio también aquí (lo hace el host): la predicción maneja igual que él
+      const own = this.playerRobot(0);
+      if (own && inputs[0]?.pressed.has('resetGyro')) own.gyroOffset = own.phys.heading() - (this.rigs[0].downfield > 0 ? 0 : Math.PI);
+      this.replica.update(frameDt, inputs[0]);
       return;
     }
     this.handlePressed(inputs);

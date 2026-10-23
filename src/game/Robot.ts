@@ -89,7 +89,8 @@ export class Robot {
     readonly spec: RobotSpec,
     readonly alliance: Alliance,
     readonly station: StationNumber,
-    readonly control: ControlKind,
+    /** (cambia si un jugador en línea entra a medio match en lugar de la IA) */
+    public control: ControlKind,
     x: number,
     z: number,
     heading: number,
