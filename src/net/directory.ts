@@ -13,6 +13,12 @@ export interface PublicRoom {
   name: string;
   players: number;
   started: boolean;
+  /** Sala de partida rápida (botón Jugar): arranca sola y deja entrar a medio match. */
+  quick: boolean;
+  /** Puede recibir a un jugador ahora (en el lobby con lugar o, rápida, con un robot de la IA). */
+  open: boolean;
+  /** Segundos que le quedan al match (0 en el lobby). */
+  left: number;
   /** Cuándo se anunció (ms, reloj del host). */
   ts: number;
 }
@@ -35,7 +41,11 @@ export function parseAnnouncement(topicCode: string, payload: string, now = Date
   if (!code || o.code !== code || o.v !== NET.protocol) return null;
   if (typeof o.ts !== 'number' || Math.abs(now - o.ts) > STALE_MS) return null;
   const players = Math.max(1, Math.min(NET.maxPlayers, Math.floor(Number(o.players) || 1)));
-  return { code, name: String(o.name ?? '').slice(0, 24), players, started: !!o.started, ts: o.ts };
+  const started = !!o.started;
+  const left = Math.max(0, Math.min(600, Number(o.left) || 0));
+  // (un anuncio sin `open`, de antes de la partida rápida: abierta si está en el lobby con lugar)
+  const open = typeof o.open === 'boolean' ? o.open : !started && players < NET.maxPlayers;
+  return { code, name: String(o.name ?? '').slice(0, 24), players, started, quick: !!o.quick, open, left, ts: o.ts };
 }
 
 export interface Transport {
@@ -91,7 +101,7 @@ export const transport = (): Transport => (new URLSearchParams(location.search).
 export class RoomAnnouncer {
   private t: Transport | null = null;
   private timer = 0;
-  private info: Omit<PublicRoom, 'ts' | 'code'> = { name: '', players: 1, started: false };
+  private info: Omit<PublicRoom, 'ts' | 'code'> = { name: '', players: 1, started: false, quick: false, open: true, left: 0 };
 
   constructor(readonly code: string) {}
 

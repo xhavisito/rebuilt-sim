@@ -55,6 +55,11 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   TURN opcional al compilar (`VITE_TURN_URL/USER/PASS`, ver `config/net.ts`).
   Salas públicas: anuncio "retained" por sala en un broker MQTT público (`net/directory.ts`,
   cliente mínimo en `net/mqtt.ts`); las privadas solo con código.
+  Partida rápida (botón "Jugar en línea", `net/quickMatch.ts`): busca en el directorio una sala
+  rápida con lugar (lobby o match empezado: entra en lugar de un robot de la IA,
+  `GameSession.takeOverFromAi`) o abre una que arranca sola; dos hosts solitarios se juntan.
+  Predicción del robot propio en el cliente: `net/prediction.ts` + `OwnPrediction` (Replica.ts);
+  `?predict=0` la apaga y `?lag=300` simula ida y vuelta para probarla con dos pestañas.
   Galería de robots de la comunidad: Supabase gratuito (`net/robotHub.ts`, `docs/comunidad.md`),
   activa si se compila con `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 - `replay/` repeticiones: `SessionTap` graba a paso fijo lo mismo que el host manda en línea

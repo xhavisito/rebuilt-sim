@@ -18,6 +18,7 @@ el estado relevante (y capturas en `shots/`).
 | `robot-editor.mjs` | Taller: importar un CAD propio (GLB), ajustar ejes/escala/piezas móviles, guardarlo (vuelve tras recargar), jugar un match con él y exportar / importar el robot |
 | `community.mjs` | Galería de la comunidad contra un Supabase simulado: publicar con CAD, verlo y descargarlo desde otro navegador, jugar con él, recargar sin red, reportar y borrar |
 | `online.mjs` | En línea con 2 pestañas (WebRTC real, señalización local): sala pública en la lista, lobby, match, controles remotos, marcador y la IA toma al que se va |
+| `quick-match.mjs` | Partida rápida (botón Jugar): dos que buscan a la vez se juntan en una sala, el lobby arranca solo con la IA, un tercero entra a medio match en lugar de un robot de la IA y, con 300 ms de lag simulado, su robot responde antes de la ida y vuelta (predicción) |
 | `stats.mjs` | Estadísticas: un match completo se registra una vez (jugador, rating, robots); pestañas de la pantalla y ranking por broker local; móvil sin scroll horizontal |
 | `ranking.mjs` | Ranking con backend: el SQL real en un Postgres local (se omite si no hay); match aceptado y rating calculado en el servidor, ranking, código de cuenta en otro navegador y salir del ranking |
 | `gamepad.mjs` | Control simulado: pantalla de Control navegable con el D-pad, reasignar (intercambio), manejar con el stick y vibración al tirar (gatillo) y al recoger FUEL |

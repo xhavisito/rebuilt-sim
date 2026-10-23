@@ -155,6 +155,12 @@ export class Screens {
             <small>${t('matchDesc')}</small>
             <span class="mh-go">${MODE_ICON.go}</span>
           </button>
+          <button class="mm-hero alt" data-nav data-go="quick">
+            <span class="mh-kick">${t('qm_kick')}</span>
+            <b>${t('qm_play')}</b>
+            <small>${t('qm_desc')}</small>
+            <span class="mh-go">${MODE_ICON.go}</span>
+          </button>
           <div class="mm-tiles">${play.map((it) => tile(it, 'mm-tile')).join('')}</div>
           <div class="mm-eyebrow"><span>02</span>${t('mm_workshop')}</div>
           <div class="mm-tools">${workshop.map((it) => tile(it, 'mm-tool')).join('')}</div>
@@ -237,6 +243,7 @@ export class Screens {
         if (go === 'match' || go === 'practice') this.setup(go);
         else if (go === 'local') this.local();
         else if (go === 'online') this.online();
+        else if (go === 'quick') this.quickPlay();
         else if (go === 'settings') this.settings();
         else if (go === 'tournament') this.app.openTournament();
         else if (go === 'auto') this.app.openAutoDesigner();
@@ -891,8 +898,10 @@ export class Screens {
         <label>${t('driverName')}</label><input type="text" maxlength="24" data-name value="${esc(this.s.driverName)}" placeholder="${t('driverPlaceholder')}"/>
         <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
         <label>${t('robot')}</label>${select('rb', robots, m.robotId)}
+        <h3>${t('qm_title')}</h3>
+        <label></label><div class="row"><button class="btn primary" data-nav data-quick>${t('qm_play')}</button><span class="msg ok">${t('qm_desc')}</span></div>
         <h3>${t('net_create')}</h3>
-        <label></label><div class="row"><button class="btn primary" data-nav data-create>${t('net_create')}</button></div>
+        <label></label><div class="row"><button class="btn" data-nav data-create>${t('net_create')}</button></div>
         <h3>${t('net_public')}</h3>
         <div class="net-rooms" data-rooms><div class="msg warn">${t('net_searching')}</div></div>
         <h3>${t('net_join')}</h3>
@@ -919,8 +928,9 @@ export class Screens {
       status.hidden = false;
       status.className = `msg ${bad ? 'bad' : 'warn'}`;
       status.textContent = msg;
-      r.querySelectorAll<HTMLButtonElement>('[data-create], [data-join], [data-watchroom]').forEach((b) => (b.disabled = !bad));
+      r.querySelectorAll<HTMLButtonElement>('[data-create], [data-join], [data-watchroom], [data-quick]').forEach((b) => (b.disabled = !bad));
     };
+    r.querySelector('[data-quick]')!.addEventListener('click', () => this.quickPlay());
     r.querySelector('[data-create]')!.addEventListener('click', () => {
       busy(t('net_connecting'));
       this.app
@@ -979,6 +989,72 @@ export class Screens {
     if (code && !error) join(new URLSearchParams(location.search).get('watch') === '1');
   }
 
+  /**
+   * Partida rápida: busca una sala pública rápida con lugar y entra, o abre una (ver
+   * App.quickMatch). Mientras busca se pueden cambiar la alianza y el robot preferidos.
+   */
+  quickPlay(): void {
+    const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: r.name }));
+    const m = this.s.match;
+    const ctl = new AbortController();
+    this.show(`
+      ${this.brandbar('2026 REBUILT')}
+      <h1>${t('qm_title')}</h1>
+      <div class="panel form">
+        <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
+        <label>${t('robot')}</label>${select('rb', robots, m.robotId)}
+        <label></label><div class="qm-status" data-qm><span class="qm-spin" aria-hidden="true"></span><span data-qstatus>${t('qm_searching')}</span></div>
+        <label></label><div class="msg warn">${t('qm_hint')}</div>
+      </div>
+      <div class="actionbar"><button class="btn" data-nav data-cancel>${t('cancel')}</button><div class="grow"></div>
+        <button class="btn primary" data-nav data-retry hidden>${t('qm_retry')}</button></div>
+    `);
+    const cancel = () => {
+      ctl.abort();
+      this.app.leaveOnline();
+      this.online();
+    };
+    this.enableNav({ onBack: cancel });
+    this.cleanup.push(() => ctl.abort());
+    const r = this.root;
+    bind(r, (name, v) => {
+      if (name === 'al') m.alliance = v as Alliance;
+      else if (name === 'rb') m.robotId = String(v);
+      this.app.save();
+    });
+    r.querySelector('[data-cancel]')!.addEventListener('click', cancel);
+    r.querySelector('[data-retry]')!.addEventListener('click', () => this.quickPlay());
+    const statusEl = r.querySelector<HTMLElement>('[data-qstatus]')!;
+    this.app
+      .quickMatch((k) => {
+        if (!ctl.signal.aborted) statusEl.textContent = t(k);
+      }, ctl.signal)
+      .then((room) => {
+        if (ctl.signal.aborted) return;
+        if (room === this.app.netHost) this.onlineHost(room as HostRoom);
+        else this.onlineClient(room as ClientRoom);
+      })
+      .catch((e: Error) => {
+        if (ctl.signal.aborted || e.message === 'cancel') return;
+        r.querySelector('[data-qm]')!.classList.add('bad');
+        statusEl.textContent = t('qm_fail');
+        r.querySelector<HTMLElement>('[data-retry]')!.hidden = false;
+        this.nav?.refresh();
+      });
+  }
+
+  /** Lobby rápido: cuenta regresiva en `[data-startsin]` (cada ¼ s, sin volver a dibujar). */
+  private quickCountdown(left: () => number | null): void {
+    const tick = () => {
+      const el = this.root.querySelector<HTMLElement>('[data-startsin]');
+      const s = left();
+      if (el && s !== null) el.textContent = countdownText(s);
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    this.cleanup.push(() => window.clearInterval(id));
+  }
+
   /** Salir del lobby: cierra la sala (host) o sale de ella. */
   private leaveLobby(): void {
     this.app.leaveOnline();
@@ -999,19 +1075,25 @@ export class Screens {
         <div class="panel form">
           <label>${t('net_room')}</label><div class="row"><span class="net-code" data-roomcode>${room.code}</span><button class="chipbtn" data-copy>⧉ ${t('net_copyLink')}</button></div>
           <label></label><div class="msg ok">${t('net_shareHint')}</div>
-          <label>${t('net_visibility')}</label>${seg('vis', [{ value: 'private', label: t('net_private') }, { value: 'public', label: t('net_publicOne') }], room.isPublic ? 'public' : 'private')}
-          <label></label><div class="msg ${room.isPublic ? 'ok' : 'warn'}">${room.isPublic ? t('net_publicHint') : t('net_privateHint')}</div>
+          ${
+            room.quick
+              ? `<label></label><div class="qm-countdown" data-startsin>${countdownText((room.startAt - performance.now()) / 1000)}</div>
+          <label></label><div class="msg ok">${t('qm_lobbyHint')}</div>`
+              : `<label>${t('net_visibility')}</label>${seg('vis', [{ value: 'private', label: t('net_private') }, { value: 'public', label: t('net_publicOne') }], room.isPublic ? 'public' : 'private')}
+          <label></label><div class="msg ${room.isPublic ? 'ok' : 'warn'}">${room.isPublic ? t('net_publicHint') : t('net_privateHint')}</div>`
+          }
           <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], room.me.alliance)}
           <label>${t('robot')}</label>${select('rb', robots, room.me.spec.id)}
-          <label>${t('fillAi')}</label>${seg('fill', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], room.fillAi ? '1' : '0')}
+          ${room.quick ? '' : `<label>${t('fillAi')}</label>${seg('fill', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], room.fillAi ? '1' : '0')}`}
           <h3>${t('net_players', { n: info.players.filter((p) => !p.spectator).length })}</h3>
           ${lobbyList(info, 'host')}
           <label></label><div class="msg warn">${t('net_hostHint')} ${t('net_seat')}</div>
         </div>
         <div class="actionbar"><button class="btn" data-nav data-leave>${t('net_leave')}</button><div class="grow"></div>
-        <button class="btn primary" data-nav data-start>${t('net_startMatch')}</button></div>`,
+        <button class="btn primary" data-nav data-start>${room.quick ? t('qm_startNow') : t('net_startMatch')}</button></div>`,
         !first,
       );
+      if (first && room.quick) this.quickCountdown(() => (room.started ? null : Math.max(0, (room.startAt - performance.now()) / 1000)));
       first = false;
       if (this.nav) this.nav.refresh();
       else this.enableNav({ onBack: () => this.leaveLobby() });
@@ -1041,7 +1123,7 @@ export class Screens {
   }
 
   /** Lobby del cliente: jugadores, tu alianza/robot y esperar al host. */
-  private onlineClient(room: ClientRoom): void {
+  onlineClient(room: ClientRoom): void {
     const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: r.name }));
     const m = this.s.match;
     let first = true;
@@ -1062,11 +1144,13 @@ export class Screens {
           }
           <h3>${t('net_players', { n: info?.players.filter((p) => !p.spectator).length ?? 1 })}</h3>
           ${info ? lobbyList(info, room.id) : ''}
-          <label></label><div class="msg warn net-wait">${t('net_waitHost')}</div>
+          ${info?.quick ? `<label></label><div class="qm-countdown" data-startsin>${countdownText(room.startsIn ?? 0)}</div>` : ''}
+          <label></label><div class="msg warn net-wait">${info?.quick ? t('qm_lobbyHint') : t('net_waitHost')}</div>
         </div>
         <div class="actionbar"><button class="btn" data-nav data-leave>${t('net_leave')}</button></div>`,
         !first,
       );
+      if (first) this.quickCountdown(() => room.startsIn);
       first = false;
       if (this.nav) this.nav.refresh();
       else this.enableNav({ onBack: () => this.leaveLobby() });
@@ -1252,6 +1336,9 @@ const TIMELINE: Array<[string, number, string]> = [
 /** Íconos de línea (24×24, propios) de los modos del menú principal. */
 const svg = (d: string) =>
   `<svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+/** Cuenta regresiva del lobby rápido. */
+const countdownText = (s: number) => (s > 0.5 ? t('qm_startsIn', { n: Math.ceil(s) }) : t('qm_starting'));
+
 const MODE_ICON: Record<string, string> = {
   // hexágono del HUB con una pelota de FUEL
   practice: svg('<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><circle cx="12" cy="12" r="3.2"/>'),

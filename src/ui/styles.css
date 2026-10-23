@@ -735,6 +735,10 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .mm-hero .mh-go { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); width: 42px; height: 42px; display: grid; place-items: center; background: var(--accent-ink); color: var(--accent); clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); transition: transform 0.15s; }
 .mm-hero:hover, .mm-hero.focused { outline: none; filter: brightness(1.06); }
 .mm-hero.focused .mh-go, .mm-hero:hover .mh-go { transform: translate(4px, -50%); }
+/* partida rápida en línea: segunda tarjeta, en azul */
+.mm-hero.alt { padding-top: 12px; padding-bottom: 12px; color: #fff; background: linear-gradient(115deg, var(--blue-deep) 0%, var(--blue) 70%, #5aa0ff 100%); }
+.mm-hero.alt b { font-size: clamp(22px, 2.2vw, 30px); }
+.mm-hero.alt .mh-go { background: #fff; color: var(--blue-deep); width: 36px; height: 36px; }
 /* modos de juego (mosaico) y herramientas (lista) */
 .mm-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .mm-tile, .mm-tool {
@@ -1136,6 +1140,12 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 
 /* ---------------------------------------------------------------- en línea (lobby) */
 .net-code { font: 700 30px/1.2 var(--display); letter-spacing: 0.22em; padding: 4px 14px 4px 16px; color: var(--accent); background: rgba(255, 199, 44, 0.08); border: 1px solid rgba(255, 199, 44, 0.35); clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px)); }
+.qm-status { display: flex; align-items: center; gap: 12px; font: 600 15px var(--font); color: var(--text); }
+.qm-status.bad { color: #ff8a80; }
+.qm-status.bad .qm-spin { display: none; }
+.qm-spin { width: 18px; height: 18px; border: 2px solid var(--line-2); border-top-color: var(--accent); border-radius: 50%; animation: qm-spin 0.8s linear infinite; }
+@keyframes qm-spin { to { transform: rotate(360deg); } }
+.qm-countdown { font: 700 22px/1.2 var(--display); letter-spacing: 0.04em; color: var(--accent); text-transform: uppercase; }
 .net-code-in { text-transform: uppercase; letter-spacing: 0.2em; font: 700 15px var(--display) !important; width: 9em; }
 .net-players { grid-column: 1 / -1; display: grid; gap: 6px; }
 .net-p { display: grid; grid-template-columns: 4px 1fr auto; align-items: center; gap: 12px; padding: 9px 14px 9px 0; border: 1px solid var(--line); background: linear-gradient(160deg, var(--surface-2), var(--surface)); clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%); }
