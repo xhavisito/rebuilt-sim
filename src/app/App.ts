@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import * as F from '../config/field';
 import { CAD_ROBOTS, robotById, ROBOT_PRESETS, type RobotSpec } from '../config/robots';
 import { Rng } from '../core/rng';
-import { simulateMatch, type TeamPerf, type Tournament, type TMatch } from '../core/tournament';
+import { carriedYellows, recordCards, simulateMatch, type TeamPerf, type Tournament, type TMatch } from '../core/tournament';
 import { StrategyPlanner } from '../ui/StrategyPlanner';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
@@ -18,13 +18,14 @@ import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
 import { applyRows, COACH_PLAN_ID, rowsForMatch } from '../ui/StrategyDashboard';
 import { loadSettings, saveSettings, type Difficulty, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
-import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
+import { ALLIANCES, opponent, type Alliance, type StationNumber } from '../core/types';
 import { GameSession, type RobotSlotConfig, type SessionConfig } from '../game/GameSession';
 import type { Robot } from '../game/Robot';
 import { InputManager, type SlotDevice } from '../input/InputManager';
 import { TouchControls } from '../input/TouchControls';
 import { FieldView } from '../render/FieldView';
 import { Effects } from '../render/Effects';
+import { robotFx } from '../render/RobotView';
 import { ALLIANCE_COLOR } from '../render/FieldView';
 import { QUALITY_ORDER, Renderer, type Quality, type Viewport } from '../render/Renderer';
 import { Showroom } from '../render/Showroom';
@@ -36,7 +37,7 @@ import { loadJSON, saveJSON } from '../config/settings';
 import { buildResults } from '../game/results';
 import { recordSession } from '../game/playerStats';
 import { StatsScreen, syncBoard } from '../ui/StatsScreen';
-import { RULES } from '../core/fouls';
+import { FOUL_POINTS, RULES } from '../core/fouls';
 import { Hud, PHASE_LABEL, type PlayerHudInfo } from '../ui/Hud';
 import { esc } from '../ui/forms';
 import { keyToNav, MenuNav, PadNav } from '../ui/nav';
@@ -64,7 +65,9 @@ export class App {
   readonly touch: TouchControls;
   readonly audio: AudioEngine;
   readonly hud: Hud;
-  readonly effects = new Effects();
+  readonly effects = new Effects(3000);
+  /** Polvo de las llantas (mezcla normal, no aditiva). */
+  readonly dust = new Effects(500, false);
   readonly stadium = new Stadium();
   session: GameSession | null = null;
   /** Dificultad de la IA por alianza en los matches (URL `?difficultyRed=`/`?difficultyBlue=`; banco de pruebas). */
@@ -121,10 +124,15 @@ export class App {
     setLang(this.settings.lang);
     this.renderer = new Renderer(appEl);
     this.field = new FieldView();
-    this.renderer.scene.add(this.field.group, this.stadium.group, this.effects.points);
+    this.renderer.scene.add(this.field.group, this.stadium.group, this.effects.points, this.dust.points);
+    robotFx.glow = this.effects;
+    robotFx.dust = this.dust;
     this.renderer.onQualityChange.push((p) => {
       this.stadium.setDensity(p.crowd);
-      this.effects.setViewportHeight(window.innerHeight * Math.min(window.devicePixelRatio || 1, p.maxPixelRatio) * p.renderScale);
+      const vh = window.innerHeight * Math.min(window.devicePixelRatio || 1, p.maxPixelRatio) * p.renderScale;
+      this.effects.setViewportHeight(vh);
+      this.dust.setViewportHeight(vh);
+      robotFx.level = this.renderer.quality === 'low' ? 0 : this.renderer.quality === 'medium' ? 1 : 2;
     });
     this.input = new InputManager(this.settings, this.renderer.renderer.domElement);
     this.audio = new AudioEngine(this.settings);
@@ -227,7 +235,6 @@ export class App {
     this.session?.dispose();
     this.session = null;
     this.tournamentCtx = null;
-    this.audio.stopMusic();
     this.closeOverlay();
     this.hud.setVisible(false);
     this.touch.setEnabled(false);
@@ -380,7 +387,6 @@ export class App {
   startSession(cfg: SessionConfig, replay?: ReplayData): void {
     this.endSessionExtras();
     this.session?.dispose();
-    this.audio.stopMusic();
     this.screens.hide();
     this.doneLayoutBtn?.remove();
     if (cfg.mode !== 'local') this.input.slots = [{ type: 'any' }];
@@ -489,6 +495,8 @@ export class App {
       });
     }
     this.effects.clear();
+    this.dust.clear();
+    this.trailPrev = new Float32Array(0);
     this.autoQ = { t: 0, frames: 0, steps: 0 };
   }
 
@@ -826,6 +834,7 @@ export class App {
       eventType: tt.eventType,
       fouls: m.fouls,
       playoff: match.kind !== 'qual',
+      carriedYellows: carriedYellows(tt, match),
       seed: (Math.random() * 2 ** 32) >>> 0,
     });
     if (watch) this.session?.setCamera(watch);
@@ -843,7 +852,6 @@ export class App {
     this.session?.dispose();
     this.session = null;
     this.tournamentCtx = null;
-    this.audio.stopMusic();
     this.closeOverlay();
     this.hud.setVisible(false);
     this.openTournament();
@@ -878,6 +886,8 @@ export class App {
       };
     });
     if (target) target.result = { red: side('red'), blue: side('blue'), perf };
+    // YELLOW CARDS que se quedan para los siguientes matches de Qualifications
+    recordCards(c.tt, c.match, s.robots.flatMap((r, k) => (mm.cards.some((x) => x.robot === r.index) ? [k] : [])));
     saveTournament(c.tt);
     this.tournamentCtx = null;
     if (open) this.openTournament();
@@ -892,7 +902,6 @@ export class App {
         switch (e.phase) {
           case 'AUTO':
             this.audio.cavalryCharge();
-            this.audio.startMusic();
             break;
           case 'AUTO_PAUSE':
             this.audio.buzzer();
@@ -918,7 +927,6 @@ export class App {
             break;
           case 'POST':
             this.audio.buzzer();
-            this.audio.stopMusic();
             break;
         }
         break;
@@ -945,13 +953,12 @@ export class App {
       case 'foul': {
         const f = e.foul;
         const team = this.session?.robots[f.robot]?.spec.teamNumber;
-        this.toast(`${f.rule} – ${RULES[f.rule].title} · ${f.severity} FOUL${team ? ` (${team})` : ''}`, f.severity === 'MAJOR' ? 'major' : 'minor');
+        // Regla, qué pasó (en el idioma del jugador), severidad y a quién van los puntos
+        const pts = t('foulFor', { n: FOUL_POINTS[f.severity], a: t(opponent(f.offender)).toUpperCase() });
+        this.toast(`${f.rule} · ${tx(RULES[f.rule])} · ${f.severity} FOUL${team ? ` (${team})` : ''} · ${pts}`, f.severity === 'MAJOR' ? 'major' : 'minor');
         this.audio.whistle();
         const fr = f.robot >= 0 ? this.session?.robots[f.robot] : undefined;
-        if (fr?.isPlayer) {
-          this.input.haptic(localSlot(fr, this.session?.localCount ?? 1), 'foul');
-          this.toast(tx(RULES[f.rule]));
-        }
+        if (fr?.isPlayer) this.input.haptic(localSlot(fr, this.session?.localCount ?? 1), 'foul');
         break;
       }
       case 'card': {
@@ -981,7 +988,9 @@ export class App {
     const saved = recordSession(s);
     if (saved?.rec) {
       if (saved.rec.delta) this.toast(t('st_ratingToast', { r: saved.rec.rating, d: `${saved.rec.delta > 0 ? '+' : ''}${saved.rec.delta}` }), saved.rec.delta > 0 ? 'good' : '');
-      void syncBoard(saved.store, this.settings);
+      void syncBoard(saved.store, this.settings, saved.input).then((g) => {
+        if (g?.delta) this.toast(t('st_globalToast', { r: g.rating, d: `${g.delta > 0 ? '+' : ''}${g.delta}` }), g.delta > 0 ? 'good' : '');
+      });
     }
     const inTournament = !!this.tournamentCtx;
     // (en línea no se ve aquí: el host sigue con la sala; queda en Repeticiones)
@@ -1332,6 +1341,7 @@ export class App {
     this.clock += dt;
     this.stadium.update(dt, this.clock);
     this.effects.update(dt);
+    this.dust.update(dt);
     if (s) {
       this.updateArenaScreen(s);
       this.emitTrails(s);
@@ -1411,13 +1421,38 @@ export class App {
     else this.stadium.setScreen(formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t)), String(m.score('red')), String(m.score('blue')));
   }
 
-  /** Estela sutil de los FUEL disparados (cada 2 frames). */
-  private trailFrame = 0;
+  /**
+   * Estela de los FUEL disparados: puntos que se apagan, rellenando el tramo desde el cuadro
+   * anterior para que se lea como una línea continua (ámbar del FUEL).
+   */
+  private trailPrev = new Float32Array(0);
   private emitTrails(s: GameSession): void {
-    if (this.renderer.quality === 'low' || s.paused || (this.trailFrame++ & 1)) return;
+    if (this.renderer.quality === 'low' || s.paused) return;
     const f = s.fuel;
-    for (let i = 0; i < f.count; i++)
-      if (f.state[i] === FuelState.Field && f.flags[i] & FLAG_SHOT) this.effects.trail(f.pos[i * 3], f.pos[i * 3 + 1], f.pos[i * 3 + 2]);
+    if (this.trailPrev.length < f.count * 4) this.trailPrev = new Float32Array(f.count * 4);
+    const prev = this.trailPrev;
+    for (let i = 0; i < f.count; i++) {
+      const o = i * 4;
+      if (!(f.state[i] === FuelState.Field && f.flags[i] & FLAG_SHOT)) {
+        prev[o + 3] = 0;
+        continue;
+      }
+      const x = f.pos[i * 3];
+      const y = f.pos[i * 3 + 1];
+      const z = f.pos[i * 3 + 2];
+      // tramo desde la posición anterior (máx. 4 puntos; si saltó lejos, solo el actual)
+      const d = prev[o + 3] ? Math.hypot(x - prev[o], y - prev[o + 1], z - prev[o + 2]) : 0;
+      const n = d > 0 && d < 1.5 ? Math.min(4, Math.ceil(d / 0.06)) : 1;
+      for (let k = 1; k <= n; k++) {
+        const t = k / n;
+        const age = (1 - t) * 0.03;
+        this.effects.trail(prev[o] + (x - prev[o]) * (n > 1 ? t : 1), prev[o + 1] + (y - prev[o + 1]) * (n > 1 ? t : 1), prev[o + 2] + (z - prev[o + 2]) * (n > 1 ? t : 1), 1, 0.62, 0.12, 0.3 - age);
+      }
+      prev[o] = x;
+      prev[o + 1] = y;
+      prev[o + 2] = z;
+      prev[o + 3] = 1;
+    }
   }
 
   /**
@@ -1464,6 +1499,39 @@ export class App {
     }
   }
 
+  /**
+   * Banderas del árbitro: faltas de los últimos 3 s y tarjetas de los últimos 4 s, sobre el robot
+   * que las cometió (se leen del Match, así que también salen en línea y en repeticiones).
+   */
+  private refFlags(s: GameSession, cam: THREE.Camera): Array<{ x: number; y: number; title: string; sub: string; cls: string }> {
+    const m = s.match;
+    if (!m) return [];
+    const out: Array<{ x: number; y: number; title: string; sub: string; cls: string }> = [];
+    const stack = new Map<number, number>();
+    const put = (robot: number, age: number, life: number, title: string, sub: string, cls: string) => {
+      const r = s.robots[robot];
+      if (!r || age < 0 || age > life) return;
+      const n = stack.get(robot) ?? 0;
+      stack.set(robot, n + 1);
+      if (n >= 2) return; // a lo más dos por robot (la más reciente arriba)
+      const v = r.view.group.position.clone();
+      v.y += 1.35;
+      v.project(cam);
+      if (v.z >= 1) return;
+      const x = Math.min(window.innerWidth - 112, Math.max(112, ((v.x + 1) / 2) * window.innerWidth));
+      out.push({ x, y: ((1 - v.y) / 2) * window.innerHeight - 10 - n * 46, title, sub, cls: `${cls}${age > life - 0.5 ? ' fade' : ''}` });
+    };
+    for (let i = m.cards.length - 1; i >= 0; i--) {
+      const c = m.cards[i];
+      put(c.robot, m.t - c.time, 4, `${c.card === 'RED' ? t('redCard') : t('yellow')}`, `${c.rule} · ${tx(RULES[c.rule])}`, c.card === 'RED' ? 'card-red' : 'card-yellow');
+    }
+    for (let i = m.fouls.length - 1; i >= 0 && m.t - m.fouls[i].time <= 3; i--) {
+      const f = m.fouls[i];
+      put(f.robot, m.t - f.time, 3, `${f.rule} · ${f.severity} · ${t('foulFor', { n: FOUL_POINTS[f.severity], a: t(opponent(f.offender)).toUpperCase() })}`, tx(RULES[f.rule]), f.severity === 'MAJOR' ? 'major' : 'minor');
+    }
+    return out;
+  }
+
   private updateHud(s: GameSession, views: Viewport[]): void {
     // Contadores de PIN (G418) encima del robot pineado
     const pins = s.pins();
@@ -1478,6 +1546,7 @@ export class App {
         })
         .filter((p) => p.z < 1),
     );
+    this.hud.setFlags(this.refFlags(s, cam));
     const r0 = s.playerRobot(0);
     if (r0) this.touch.setActive('intake', r0.intakeOn);
     const phase = s.phase;

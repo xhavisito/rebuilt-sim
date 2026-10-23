@@ -49,7 +49,7 @@ export interface Settings {
   touch: { scale: number; opacity: number; layout: Record<string, { x: number; y: number }> };
   keys: KeyBindings;
   padBindings: PadBindings;
-  audio: { master: number; music: number; sfx: number; voice: number };
+  audio: { master: number; sfx: number; voice: number };
   match: {
     eventType: EventType;
     fuel: 504 | 600;
@@ -93,7 +93,7 @@ export const DEFAULT_SETTINGS: Settings = {
   touch: { scale: 1, opacity: 0.55, layout: {} },
   keys: DEFAULT_KEYS,
   padBindings: DEFAULT_PAD,
-  audio: { master: 0.8, music: 0.35, sfx: 0.8, voice: 0.7 },
+  audio: { master: 0.8, sfx: 0.8, voice: 0.7 },
   match: {
     eventType: 'regional',
     fuel: 504,
@@ -135,6 +135,8 @@ export function loadSettings(): Settings {
       // Las recreaciones aproximadas ("top-…") se reemplazaron por robots con su CAD real
       // …y los diseños genéricos de las primeras versiones se quitaron
       if (s.match.robotId.startsWith('top-') || ['tank', 'balanced', 'climber', 'defender'].includes(s.match.robotId)) s.match.robotId = 'cad-1678';
+      // La música sintetizada se quitó
+      delete (s.audio as { music?: number }).music;
       return s;
     }
   } catch {

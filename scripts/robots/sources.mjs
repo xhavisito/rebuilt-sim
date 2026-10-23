@@ -1,6 +1,7 @@
 // Modelos 3D de robots 2026 publicados por los equipos en sus repos de código (assets de
 // AdvantageScope). Todos con licencia que permite redistribuir con atribución (ver
 // public/robots/LICENSES.md).
+//  - `clear`: regex de piezas de policarbonato que el CAD trae opacas (se dibujan translúcidas).
 //  - `drop`: regex (nombre de la pieza o de un ensamble que la contiene) de piezas a quitar,
 //    sobre todo los BUMPERS propios: el simulador dibuja los suyos en el color de alianza.
 //  - `bumperGeom`: además quita las piezas bajas (< 0.2 m) que quedan fuera del chasis
@@ -60,5 +61,7 @@ export const SOURCES = [
   { team: 339, repo: 'FIRST-Team-339/Rebuilt', path: 'ascope_assets/Robot_Kilroy26', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
   { team: 1757, repo: '1757WestwoodRobotics/2026-Rebuilt', path: 'advantagescopeassets/Robot_Orion', license: 'MIT', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
   { team: 10021, repo: 'guerin-robotics/Rebuilt2026', path: 'Advantage Scope Assets/Robot_Omega', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
+  { team: 3847, repo: 'Spectrum3847/2026-Spectrum', path: 'advantagescope-custom-assets/Robot_FM', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true, clear: 'Hopper', minPart: 0.04 },
+  { team: 1425, repo: 'errorcodexero/Rebuilt2026', path: '.advantagescope/Robot_Relic2026', license: 'BSD-3-Clause (WPILib)', drop: '^Bumper Assembly|^BMP-' },
   { team: 5024, repo: 'frc5024/Rebuilt', path: 'userAssets/Robot_Rebuilt', license: 'BSD-3-Clause (WPILib)', frameIn: [27, 27], drop: 'bumper', bumperGeom: true },
 ];

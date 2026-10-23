@@ -15,6 +15,8 @@ export interface DriveModel {
   maxSpeed: number;
   /** Aceleración máxima (m/s²): la del robot, limitada por la tracción. */
   aMax: number;
+  /** Para frenar o cambiar de dirección solo limita la tracción (m/s²). */
+  aBrake: number;
   /** Giro máximo (rad/s) y su aceleración (rad/s²). */
   maxOmega: number;
   alpha: number;
@@ -57,7 +59,8 @@ const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 export function driveModel(spec: { maxSpeed: number; maxAccel: number; traction: number; maxOmega: number; drivetrain: string }, halfL: number, halfW: number): DriveModel {
   const aMax = Math.max(0, Math.min(spec.maxAccel, spec.traction * 9.81));
   const tank = spec.drivetrain === 'tank';
-  return { maxSpeed: spec.maxSpeed, aMax, maxOmega: spec.maxOmega, alpha: (aMax / Math.hypot(halfL, halfW)) * (tank ? 1.2 : 1.6), tank };
+  const aBrake = Math.max(0, Math.min(spec.traction * 9.81, spec.maxAccel * 1.3));
+  return { maxSpeed: spec.maxSpeed, aMax, aBrake, maxOmega: spec.maxOmega, alpha: (aMax / Math.hypot(halfL, halfW)) * (tank ? 1.2 : 1.6), tank };
 }
 
 export class DrivePredictor {
@@ -103,7 +106,11 @@ export class DrivePredictor {
     let dvx = tx - this.vx;
     let dvz = tz - this.vz;
     const dv = Math.hypot(dvx, dvz);
-    const lim = m.aMax * dt;
+    // curva par-velocidad del motor (como RobotPhysics.drive)
+    const speed = Math.hypot(this.vx, this.vz);
+    const along = dv > 1e-5 && speed > 1e-3 ? (dvx * this.vx + dvz * this.vz) / (dv * speed) : 0;
+    const motor = 1 - 0.55 * Math.min(1, speed / Math.max(0.1, m.maxSpeed)) * Math.max(0, along);
+    const lim = (along > 0 ? m.aMax * motor : m.aBrake) * dt;
     if (dv > lim) {
       dvx *= lim / dv;
       dvz *= lim / dv;

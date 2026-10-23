@@ -71,6 +71,8 @@ export interface SessionConfig {
   /** Cámara compartida en multijugador. */
   sharedCamera?: boolean;
   playoff?: boolean;
+  /** Robots (índice) que traen una YELLOW CARD de un match anterior del torneo (§6.6.1). */
+  carriedYellows?: number[];
   /** Quién controla a cada HUMAN PLAYER. */
   humanPlayers?: Partial<Record<Alliance, 'ai' | 'player'>>;
   /** Precisión de la IA (0–1) según dificultad. */
@@ -194,6 +196,7 @@ export class GameSession {
     this.fuel = new FuelSystem(this.pw, cfg.fuelTotal, this.rng);
     this.fuel.stage(this.robots.map((r) => r.spec.preload));
     this.match = cfg.mode === 'practice' ? null : new Match(cfg.eventType, this.rng, cfg.playoff ?? false);
+    for (const i of cfg.carriedYellows ?? []) this.match?.carryYellow(i);
     this.humanPlayers = {
       red: new HumanPlayer('red', cfg.humanPlayers?.red ?? 'ai'),
       blue: new HumanPlayer('blue', cfg.humanPlayers?.blue ?? 'ai'),

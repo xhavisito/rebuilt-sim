@@ -57,7 +57,7 @@ export function matchInput(s: GameSession, now = Date.now()): MatchInput | null 
 const recorded = new WeakSet<GameSession>();
 
 /** Registra el match una sola vez por sesión; devuelve el registro del jugador. */
-export function recordSession(s: GameSession): { rec: MatchRecord | null; store: StatsStore } | null {
+export function recordSession(s: GameSession): { rec: MatchRecord | null; store: StatsStore; input: MatchInput } | null {
   if (recorded.has(s)) return null;
   const input = matchInput(s);
   if (!input) return null;
@@ -65,5 +65,5 @@ export function recordSession(s: GameSession): { rec: MatchRecord | null; store:
   const store = loadStats();
   const rec = recordMatch(store, input);
   saveStats(store);
-  return { rec, store };
+  return { rec, store, input };
 }

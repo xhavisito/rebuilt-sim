@@ -377,6 +377,16 @@ button { font-family: inherit; color: inherit; }
 .pin-layer { position: absolute; inset: 0; }
 .pin { position: absolute; left: 0; top: 0; margin: -14px 0 0 -32px; background: rgba(17, 18, 22, 0.9); border: 1px solid var(--line-2); color: #fff; padding: 3px 8px; border-radius: 6px; font: 700 12px/1.2 var(--font); }
 .pin.hot { background: var(--red); }
+/* Bandera del árbitro sobre el robot que cometió la falta */
+.ref-flag { position: absolute; left: 0; top: 0; max-width: 220px; text-align: center; pointer-events: none; padding: 3px 6px 4px; border-radius: 6px; background: rgba(17, 18, 22, 0.92); border: 2px solid var(--warn); color: #fff; font: 600 11px/1.2 var(--font); animation: ref-flag-in 0.25s ease-out; }
+.ref-flag b { display: block; white-space: nowrap; font-size: 13px; letter-spacing: 0.02em; }
+.ref-flag span { display: block; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-flag::after { content: ''; position: absolute; left: 50%; bottom: -8px; margin-left: -6px; border: 6px solid transparent; border-top-color: inherit; border-bottom: 0; }
+.ref-flag.major { border-color: var(--red); background: rgba(40, 10, 12, 0.95); }
+.ref-flag.card-yellow { border-color: #fff; background: #f5c518; color: #111; }
+.ref-flag.card-red { border-color: #fff; background: #c62828; }
+.ref-flag.fade { opacity: 0.4; transition: opacity 0.4s; }
+@keyframes ref-flag-in { from { opacity: 0; } }
 .hud.cb .sb-side.red { background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.14) 0 6px, transparent 6px 12px), linear-gradient(100deg, var(--red-deep), var(--red) 75%); }
 .hud.cb .sb-side.blue { background-image: radial-gradient(rgba(255, 255, 255, 0.2) 2px, transparent 2.5px), linear-gradient(260deg, var(--blue-deep), var(--blue) 75%); background-size: 10px 10px, auto; }
 .hud.cb .sb-side.red .sb-score::before { content: '▲ '; font-size: 0.45em; vertical-align: middle; }
@@ -1317,3 +1327,8 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .st-pub { display: flex; flex-direction: column; gap: 8px; }
 .st-reset { align-self: flex-start; }
 @media (max-width: 760px) { .st-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .st-rating b { font-size: 36px; } }
+.st-code summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.st-code[open] { display: flex; flex-direction: column; gap: 8px; }
+.st-coderow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.st-coderow code { font: 12px var(--mono); padding: 6px 8px; border-radius: 6px; background: var(--bg-2); word-break: break-all; flex: 1; min-width: 0; }
+.st-coderow input { flex: 1; min-width: 160px; }

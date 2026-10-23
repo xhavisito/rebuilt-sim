@@ -62,7 +62,11 @@ describe('predicción del robot propio', () => {
     const p = new DrivePredictor(model);
     p.reset({ x: 0, z: 0, h: 0 });
     p.step({ vx: 10, vz: 0, omega: 0 }, dt);
-    expect(p.vx).toBeCloseTo(model.aMax * dt, 6);
+    // desde parado (sin velocidad que seguir) limita la tracción; ya andando, el motor
+    expect(p.vx).toBeCloseTo(model.aBrake * dt, 6);
+    const v1 = p.vx;
+    p.step({ vx: 10, vz: 0, omega: 0 }, dt);
+    expect(p.vx - v1).toBeCloseTo(model.aMax * (1 - 0.55 * (v1 / 4.5)) * dt, 6);
     for (let i = 0; i < 120; i++) p.step({ vx: 10, vz: 0, omega: 0 }, dt);
     expect(p.vx).toBeCloseTo(4.5, 6);
   });

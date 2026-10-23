@@ -3,7 +3,7 @@
  * el GLB en base64. Al importarlo se completa con la plantilla (campos que falten de versiones
  * viejas) y recibe ids nuevos para no pisar robots existentes.
  */
-import { newRobotTemplate, type RobotSpec } from './robots';
+import { newRobotTemplate, resolveLook, type RobotSpec } from './robots';
 
 export const ROBOT_FILE_FORMAT = 'rebuilt-sim-robot';
 export const ROBOT_FILE_VERSION = 1;
@@ -91,6 +91,7 @@ export function sanitizeSpec(raw: unknown, newId: string, hasCad: boolean, cadId
   for (const k of ['lanes', 'laneSpacingIn', 'yawDeg'] as const) if (typeof sh[k] === 'number' && Number.isFinite(sh[k])) spec.shooter[k] = sh[k] as number;
   if (Array.isArray(sh.posIn) && sh.posIn.length === 2 && sh.posIn.every((x) => typeof x === 'number')) spec.shooter.posIn = sh.posIn as [number, number];
   if (typeof src.overhangIn === 'number') spec.overhangIn = src.overhangIn;
+  if (src.look !== undefined) spec.look = resolveLook(src.look);
   if (isObj(src.cad) && typeof src.cad.file === 'string' && /^[\w-]+\.glb$/.test(src.cad.file)) spec.cad = { file: src.cad.file };
   if (hasCad && isObj(src.customCad)) {
     const c = src.customCad;

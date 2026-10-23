@@ -287,7 +287,14 @@ export class RobotPhysics {
     let dvx = tx - v.x;
     let dvz = tz - v.z;
     const dv = Math.hypot(dvx, dvz);
-    const lim = aMax * dt;
+    // Curva par-velocidad del motor: al acelerar, el par disponible cae con la velocidad (a tope
+    // queda ~45 %), así que arranca fuerte y llega a la velocidad máxima en ~0.6 s en vez de
+    // pegarle de golpe. Frenar o cambiar de dirección (Δv contra la velocidad) solo lo limita la
+    // tracción: el swerve frena en seco hasta lo que aguanten las ruedas.
+    const speed = Math.hypot(v.x, v.z);
+    const along = dv > 1e-5 && speed > 1e-3 ? (dvx * v.x + dvz * v.z) / (dv * speed) : 0;
+    const motor = 1 - 0.55 * Math.min(1, speed / Math.max(0.1, s.maxSpeed)) * Math.max(0, along);
+    const lim = (along > 0 ? aMax * motor : Math.max(0, Math.min(mu * 9.81, s.maxAccel * 1.3))) * dt;
     if (dv > lim) {
       dvx *= lim / dv;
       dvz *= lim / dv;

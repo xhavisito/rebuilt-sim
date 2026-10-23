@@ -8,11 +8,15 @@
  *  - intake "over the bumper" de ancho completo con ruedas compliant (pivota al desplegarse);
  *  - shooter ancho de varias flywheels con hood curvo (fijo) o turret con su anillo;
  *  - climbers telescópicos, batería, electrónica y RSL.
+ * Estética (`RobotLook`, en todos los robots, también los de CAD): BUMPERS de tela con número
+ * grande con contorno, tira de LEDs en el marco que reacciona (intake, tiro, hopper lleno), luz
+ * bajo el chasis, inclinación del chasis al acelerar/frenar, polvo de las llantas y destellos al
+ * tirar y al recoger FUEL (`robotFx`). Acabado de la pintura solo en el robot procedural.
  * Ejes locales: +X adelante (lado intake), +Y arriba, origen en el piso. Diseños inventados.
  */
 import * as THREE from 'three';
 import { BUMPER_ZONE_LOW, FUEL_RADIUS, inch } from '../config/field';
-import type { CustomCad, RobotSpec } from '../config/robots';
+import { resolveLook, type CustomCad, type RobotLook, type RobotSpec } from '../config/robots';
 import type { Alliance } from '../core/types';
 import { ALLIANCE_COLOR } from './FieldView';
 import { mergeStaticChildren } from './merge';
@@ -21,6 +25,13 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { CAD_RIGS, CLEAR_MIN_OPACITY, hopperSlots, openingFor, shownFuel, type CadRig, type HopperSlot, type MechState } from './cadRigs';
 import { HopperFuelSim } from './hopperFuel';
 import { cadFrame, customModel } from './customCad';
+import type { Effects } from './Effects';
+
+/**
+ * Destino de las partículas de los robots del juego (lo conecta la app): `glow` = luz (destellos),
+ * `dust` = polvo de las llantas. `level`: 0 sin polvo (calidad baja), 1 normal, 2 más denso.
+ */
+export const robotFx: { glow: Effects | null; dust: Effects | null; level: number } = { glow: null, dust: null, level: 1 };
 
 export interface RobotVisualState {
   intakeDeploy: number; // 0–1
@@ -38,6 +49,7 @@ export interface RobotVisualState {
 }
 
 const BUMPER_TOP = inch(7.0);
+const WHITE = new THREE.Color(0xffffff);
 const MAX_SHOWN = 48;
 
 /** Materiales compartidos entre robots (menos programas/estados de GPU). */
@@ -62,6 +74,95 @@ const SHARED = (() => {
     fuel: m({ color: 0xf4c20d, roughness: 0.9 }),
   };
 })();
+
+/** Tejido de la tela de los BUMPERS (relieve en escala de grises, se repite). */
+let weaveTex: THREE.CanvasTexture | null = null;
+function weaveTexture(): THREE.CanvasTexture {
+  if (weaveTex) return weaveTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#808080';
+  g.fillRect(0, 0, 64, 64);
+  // sarga (diagonales) con un poco de ruido
+  for (let y = 0; y < 64; y += 4)
+    for (let x = 0; x < 64; x += 4) {
+      const on = ((x + y) >> 2) % 4 < 2;
+      const v = (on ? 170 : 90) + Math.floor(Math.random() * 30);
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.fillRect(x, y, 4, 4);
+    }
+  weaveTex = new THREE.CanvasTexture(c);
+  weaveTex.wrapS = weaveTex.wrapT = THREE.RepeatWrapping;
+  weaveTex.repeat.set(30, 30);
+  return weaveTex;
+}
+
+/** Fibra de carbono (color + relieve) para el acabado 'carbon'. */
+let carbonTex: THREE.CanvasTexture | null = null;
+function carbonTexture(): THREE.CanvasTexture {
+  if (carbonTex) return carbonTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  for (let y = 0; y < 64; y += 8)
+    for (let x = 0; x < 64; x += 8) {
+      const horiz = ((x + y) >> 3) % 2 === 0;
+      const grad = horiz ? g.createLinearGradient(x, y, x, y + 8) : g.createLinearGradient(x, y, x + 8, y);
+      grad.addColorStop(0, '#1b1d21');
+      grad.addColorStop(0.5, '#4a4f58');
+      grad.addColorStop(1, '#1b1d21');
+      g.fillStyle = grad;
+      g.fillRect(x, y, 8, 8);
+    }
+  carbonTex = new THREE.CanvasTexture(c);
+  carbonTex.colorSpace = THREE.SRGBColorSpace;
+  carbonTex.wrapS = carbonTex.wrapT = THREE.RepeatWrapping;
+  carbonTex.repeat.set(9, 9);
+  return carbonTex;
+}
+
+/** Halo de la luz bajo el chasis: rectángulo redondeado difuminado (blanco; el color va en el material). */
+let glowTex: THREE.CanvasTexture | null = null;
+function underglowTexture(): THREE.CanvasTexture {
+  if (glowTex) return glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  g.filter = 'blur(14px)';
+  g.fillStyle = '#ffffff';
+  g.beginPath();
+  g.roundRect(30, 30, 68, 68, 18);
+  g.fill();
+  glowTex = new THREE.CanvasTexture(c);
+  return glowTex;
+}
+
+/** Material de las placas según el acabado elegido. */
+function paintMaterial(color: string, finish: RobotLook['finish']): THREE.MeshStandardMaterial {
+  const side = THREE.DoubleSide;
+  switch (finish) {
+    case 'matte':
+      return new THREE.MeshStandardMaterial({ color, metalness: 0.05, roughness: 0.85, side });
+    case 'metallic':
+      return new THREE.MeshStandardMaterial({ color, metalness: 0.85, roughness: 0.22, side });
+    case 'candy':
+      return new THREE.MeshPhysicalMaterial({ color, metalness: 0.55, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.06, side });
+    case 'carbon':
+      // la fibra se tiñe ligeramente con el color del equipo
+      return new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.65),
+        map: carbonTexture(),
+        metalness: 0.2,
+        roughness: 0.45,
+        clearcoat: 0.8,
+        clearcoatRoughness: 0.1,
+        side,
+      });
+    default:
+      return new THREE.MeshStandardMaterial({ color, metalness: 0.35, roughness: 0.42, side });
+  }
+}
 
 /** Distancia de un punto a un segmento (2D). */
 function distSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -131,16 +232,21 @@ export function pocketPlate(outline: Array<[number, number]>, t: number, opts: {
   return g;
 }
 
-/** Textura del número de equipo (blanco sobre transparente) para los BUMPERS. */
+/** Textura del número de equipo (blanco con contorno oscuro, sobre transparente) para los BUMPERS. */
 function numberTexture(n: number): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 160;
   const g = c.getContext('2d')!;
-  g.fillStyle = '#ffffff';
-  g.font = `400 136px "Anton", "Arial Black", Impact, sans-serif`;
+  g.font = `400 148px "Anton", "Arial Black", Impact, sans-serif`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
+  // R410: numerales de al menos 4 in, blancos o negros; el contorno ayuda a leerlos de lejos
+  g.lineJoin = 'round';
+  g.lineWidth = 14;
+  g.strokeStyle = 'rgba(10,12,16,0.85)';
+  g.strokeText(String(n), 256, 86);
+  g.fillStyle = '#ffffff';
   g.fillText(String(n), 256, 86);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -171,6 +277,22 @@ export class RobotView {
   private rackDeploy = new THREE.Vector2();
   /** Indicador (anillo) sobre el robot del jugador. */
   readonly marker: THREE.Mesh;
+  /** Todo lo que se inclina con la suspensión (lo demás —anillo y luz inferior— queda en el piso). */
+  private body = new THREE.Group();
+  readonly look: RobotLook;
+  private underglow: THREE.Mesh;
+  private glowMat: THREE.MeshBasicMaterial;
+  private allianceColor: THREE.Color;
+  private accentColor: THREE.Color;
+  private glowColor: THREE.Color | null;
+  /** Destellos de los LEDs (1 → 0): al recoger FUEL y al tirar. */
+  private intakePulse = 0;
+  private shotFlash = 0;
+  private lastHopper = -1;
+  private tilt = new THREE.Vector2();
+  private speed = 0;
+  /** Robot del juego: emite partículas en `robotFx` (los de la vitrina no). */
+  fx = false;
   /** CAD articulado: rig y nodos que reciben la pose de cada componente (marco WPILib). */
   private rig: CadRig | null = null;
   private cadHolders: Array<THREE.Object3D | null> = [];
@@ -185,7 +307,8 @@ export class RobotView {
     const bt = inch(spec.bumperIn);
     const H = inch(spec.heightIn);
     const S = SHARED;
-    const primary = new THREE.MeshStandardMaterial({ color: spec.colors.primary, metalness: 0.35, roughness: 0.42, side: THREE.DoubleSide });
+    this.look = resolveLook(spec.look);
+    const primary = paintMaterial(spec.colors.primary, this.look.finish);
     const accent = new THREE.MeshStandardMaterial({ color: spec.colors.accent, metalness: 0.3, roughness: 0.45 });
     const g = this.group;
     const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D = g) => {
@@ -225,7 +348,16 @@ export class RobotView {
     profile.quadraticCurveTo(bt, by0 + bh, bt - rr, by0 + bh);
     profile.lineTo(0, by0 + bh);
     profile.closePath();
-    const fabric = new THREE.MeshStandardMaterial({ color: ALLIANCE_COLOR[alliance], roughness: 0.88 });
+    // Tela: brillo de tejido (sheen) y relieve de sarga
+    const fabric = new THREE.MeshPhysicalMaterial({
+      color: ALLIANCE_COLOR[alliance],
+      roughness: 0.86,
+      sheen: 0.35,
+      sheenRoughness: 0.5,
+      sheenColor: new THREE.Color(ALLIANCE_COLOR[alliance]).lerp(new THREE.Color(0xffffff), 0.2),
+      bumpMap: weaveTexture(),
+      bumpScale: 0.4,
+    });
     // Tramo recto a lo largo de X (sale hacia +Z) de largo `len`
     const straight = (len: number) => {
       const s = new THREE.ExtrudeGeometry(profile, { depth: len, bevelEnabled: false, curveSegments: 6 });
@@ -253,12 +385,13 @@ export class RobotView {
       add(new THREE.LatheGeometry(prof2, 6, phi, Math.PI / 2), fabric, cx, 0, cz);
     // Número de equipo en las 4 caras
     const numMat = new THREE.MeshStandardMaterial({ map: numberTexture(spec.teamNumber), transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2 });
-    const numH = (bh - 2 * rr) * 1.45;
+    // alto del número ≈ la cara plana más la mitad de los bordes redondeados
+    const numH = bh - rr * 0.6;
     for (const [w, rot, x, z] of [
-      [Math.min(2 * hl * 0.8, numH * 3.2), 0, 0, hw + bt + 0.001],
-      [Math.min(2 * hl * 0.8, numH * 3.2), Math.PI, 0, -hw - bt - 0.001],
-      [Math.min(2 * hw * 0.8, numH * 3.2), Math.PI / 2, hl + bt + 0.001, 0],
-      [Math.min(2 * hw * 0.8, numH * 3.2), -Math.PI / 2, -hl - bt - 0.001, 0],
+      [Math.min(2 * hl * 0.82, numH * 3.2), 0, 0, hw + bt + 0.001],
+      [Math.min(2 * hl * 0.82, numH * 3.2), Math.PI, 0, -hw - bt - 0.001],
+      [Math.min(2 * hw * 0.82, numH * 3.2), Math.PI / 2, hl + bt + 0.001, 0],
+      [Math.min(2 * hw * 0.82, numH * 3.2), -Math.PI / 2, -hl - bt - 0.001, 0],
     ] as Array<[number, number, number, number]>) {
       const p = new THREE.PlaneGeometry(w, w / 3.2);
       p.rotateY(rot);
@@ -266,13 +399,31 @@ export class RobotView {
       m.castShadow = false;
     }
 
+    // ---- Tira de LEDs sobre el marco, justo arriba de los BUMPERS (todos los robots); su color
+    //      cambia cada cuadro (`update`), por eso no se fusiona
+    this.allianceColor = new THREE.Color(ALLIANCE_COLOR[alliance]);
+    this.accentColor = new THREE.Color(spec.colors.accent);
+    this.led = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: this.allianceColor, emissiveIntensity: 2.2 });
+    const keep: THREE.Object3D[] = [];
+    if (this.look.leds !== 'off') {
+      const ly = BUMPER_TOP + inch(0.3);
+      for (const [w, d, x, z] of [
+        [2 * hl - inch(2), inch(0.3), 0, hw - inch(0.1)],
+        [2 * hl - inch(2), inch(0.3), 0, -hw + inch(0.1)],
+        [inch(0.3), 2 * hw - inch(2), hl - inch(0.1), 0],
+        [inch(0.3), 2 * hw - inch(2), -hl + inch(0.1), 0],
+      ] as Array<[number, number, number, number]>) {
+        const strip = box(w, inch(0.45), d, this.led, x, ly, z);
+        strip.castShadow = false;
+        keep.push(strip);
+      }
+    }
+
     // Robot con CAD real del equipo (o el propio del taller, si está en este dispositivo): solo
     // BUMPERS procedurales (color de alianza) + el modelo
-    const keep: THREE.Object3D[] = [];
     const custom = spec.customCad && customModel(spec.customCad.id) ? spec.customCad : null;
     if (spec.cad || custom) {
       this.rsl = new THREE.MeshStandardMaterial();
-      this.led = new THREE.MeshStandardMaterial();
       this.hopperBalls = new THREE.InstancedMesh(new THREE.BufferGeometry(), S.fuel, 1);
       this.hopperBalls.count = 0;
       this.ready = custom ? this.loadCustomCad(custom) : this.loadCad(spec.cad!.file);
@@ -414,7 +565,6 @@ export class RobotView {
 
       const plateT = inch(0.25);
       const rslPos = new THREE.Vector3();
-      this.led = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: ALLIANCE_COLOR[alliance], emissiveIntensity: 2.2 });
       {
         // ---- Placas laterales con pockets (color del equipo)
         const turret = spec.shooter.type === 'turret';
@@ -440,11 +590,13 @@ export class RobotView {
         // Tira de LEDs de alianza en el borde superior de las placas
         const ledLen = Math.hypot(px1 - pxm, hBack - hFront);
         const ledAng = Math.atan2(hBack - hFront, px1 - pxm);
-        for (const s of [-1, 1]) {
-          const l = box(ledLen * 0.9, inch(0.3), inch(0.4), this.led, (px1 + pxm) / 2, yF + (hFront + hBack) / 2 + inch(0.3), s * (pz + inch(0.3)));
-          l.rotation.z = -ledAng;
-          l.castShadow = false;
-        }
+        if (this.look.leds !== 'off')
+          for (const s of [-1, 1]) {
+            const l = box(ledLen * 0.9, inch(0.3), inch(0.4), this.led, (px1 + pxm) / 2, yF + (hFront + hBack) / 2 + inch(0.3), s * (pz + inch(0.3)));
+            l.rotation.z = -ledAng;
+            l.castShadow = false;
+            keep.push(l);
+          }
 
         // ---- Hopper: piso, frente de policarbonato y FUEL visible
         const hx0 = px0 + (turret ? inch(3) : inch(9));
@@ -548,10 +700,32 @@ export class RobotView {
     this.marker.visible = false;
     g.add(this.marker);
 
+    // ---- Luz bajo el chasis (underglow): halo aditivo en el piso, un poco más grande que el robot
+    const ug = this.look.underglow;
+    this.glowColor = ug === 'alliance' ? this.allianceColor.clone() : ug === 'off' ? null : new THREE.Color(ug);
+    this.glowMat = new THREE.MeshBasicMaterial({
+      map: underglowTexture(),
+      color: this.glowColor ?? 0x000000,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -4,
+    });
+    this.underglow = new THREE.Mesh(new THREE.PlaneGeometry(2 * (hl + bt) * 2.1, 2 * (hw + bt) * 2.1).rotateX(-Math.PI / 2), this.glowMat);
+    this.underglow.position.y = 0.012;
+    this.underglow.renderOrder = 2;
+    this.underglow.visible = !!this.glowColor;
+    g.add(this.underglow);
+
     // Fusiona lo estático por material (pocas draw calls)
-    mergeStaticChildren(g, new Set([this.marker, ...keep]));
+    mergeStaticChildren(g, new Set([this.marker, this.underglow, ...keep]));
     mergeStaticChildren(this.turret, new Set([...this.flywheels, this.hood]));
     mergeStaticChildren(this.intakeArm, new Set(this.intakeRollers));
+    // Lo que se inclina con la suspensión va dentro de `body`
+    for (const c of g.children.slice()) if (c !== this.marker && c !== this.underglow) this.body.add(c);
+    g.add(this.body);
   }
 
   /** Flywheels sobre un eje a lo largo de Z, hood curvo que pivota y rodillo indexer. */
@@ -673,7 +847,7 @@ export class RobotView {
         const box = new THREE.Box3();
         for (const [name, o] of nodes) if (/^(main|c\d+)$/.test(name)) box.expandByObject(o);
         if (!box.isEmpty() && Math.abs(box.min.y) > 0.005) root.position.y = -box.min.y;
-        this.group.add(root);
+        this.body.add(root);
         this.cadLoaded = true;
         this.applyMech();
       })
@@ -733,7 +907,7 @@ export class RobotView {
     this.customTurret = pivotFor(c.turretNode, true);
     // La intake no puede ir dentro de la turret (y al revés): se toma el primero que se pidió
     if (c.intakeNode !== c.turretNode) this.customIntake = pivotFor(c.intakeNode, false);
-    this.group.add(root);
+    this.body.add(root);
     this.cadLoaded = true;
   }
 
@@ -937,27 +1111,122 @@ export class RobotView {
     for (const c of this.climberInners) c.position.y = BUMPER_TOP + s.climbHeight;
     for (const w of this.wheels) w.rotation.y = this.spec.drivetrain === 'swerve' ? s.wheelYaw : 0;
     for (const w of this.wheelSpinners) w.rotation.z = -s.wheelSpin;
-    if (this.rig?.hopper) {
-      // aceleración del robot (posición interpolada del grupo), suavizada
-      const pos = this.group.getWorldPosition(new THREE.Vector3());
-      if (dt > 1e-4 && Number.isFinite(this.lastPos.x)) {
-        const vel = pos.clone().sub(this.lastPos).divideScalar(dt);
-        if (vel.lengthSq() > 100) vel.set(0, 0, 0); // teletransporte (reinicio)
-        const acc = vel.clone().sub(this.lastVel).divideScalar(dt);
-        acc.y = 0;
-        this.accel.lerp(acc, Math.min(1, dt * 12));
-        this.lastVel.copy(vel);
-      }
-      this.lastPos.copy(pos);
-      this.fillCadHopper(s.hopper, this.mech.intake, dt);
+    // velocidad y aceleración del robot (posición interpolada del grupo), suavizadas
+    const pos = this.group.getWorldPosition(this.tmpV);
+    if (dt > 1e-4 && Number.isFinite(this.lastPos.x)) {
+      const vel = this.tmpV2.copy(pos).sub(this.lastPos).divideScalar(dt);
+      if (vel.lengthSq() > 100) vel.set(0, 0, 0); // teletransporte (reinicio)
+      const acc = this.tmpV3.copy(vel).sub(this.lastVel).divideScalar(dt);
+      acc.y = 0;
+      this.accel.lerp(acc, Math.min(1, dt * 12));
+      this.lastVel.copy(vel);
     }
+    this.lastPos.copy(pos);
+    this.speed = Math.hypot(this.lastVel.x, this.lastVel.z);
+    if (this.rig?.hopper) this.fillCadHopper(s.hopper, this.mech.intake, dt);
     else {
       const n = shownFuel(s.hopper, this.hopperSlots.length, this.spec.hopperCapacity);
       if (this.hopperBalls.count !== n) this.hopperBalls.count = n;
     }
-    this.led.emissiveIntensity = s.enabled ? 2.4 : 0.7;
     // RSL: parpadea cuando está habilitado, fija cuando no
     this.rsl.emissiveIntensity = s.enabled ? (Math.floor(time * 2.5) % 2 ? 3 : 0.3) : 2;
+    this.updateLook(s, time, dt);
+  }
+
+  private tmpV = new THREE.Vector3();
+  private tmpV2 = new THREE.Vector3();
+  private tmpV3 = new THREE.Vector3();
+  private tmpQ = new THREE.Quaternion();
+  private tmpC = new THREE.Color();
+
+  /** Suspensión, LEDs, luz inferior y partículas (solo estética). */
+  private updateLook(s: RobotVisualState, time: number, dt: number): void {
+    // Cambios del hopper: subió = recogió FUEL; bajó = tiró
+    const dh = this.lastHopper < 0 ? 0 : s.hopper - this.lastHopper;
+    this.lastHopper = s.hopper;
+    if (dh > 0) this.intakePulse = 1;
+    if (dh < 0) this.shotFlash = 1;
+    this.intakePulse = Math.max(0, this.intakePulse - dt * 3.5);
+    this.shotFlash = Math.max(0, this.shotFlash - dt * 5);
+
+    // ---- Suspensión: el chasis se inclina hacia atrás al acelerar y hacia afuera en las curvas
+    const inv = this.tmpQ.copy(this.group.quaternion).invert();
+    const a = this.tmpV.copy(this.accel).applyQuaternion(inv); // marco local (+X adelante)
+    const ax = a.x;
+    const az = a.z;
+    const k = 0.0032;
+    const lim = 0.045;
+    const tx = THREE.MathUtils.clamp(ax * k, -lim, lim);
+    const tz = THREE.MathUtils.clamp(-az * k, -lim, lim);
+    const f = Math.min(1, dt * 10);
+    this.tilt.x += (tx - this.tilt.x) * f;
+    this.tilt.y += (tz - this.tilt.y) * f;
+    this.body.rotation.set(this.tilt.y, 0, this.tilt.x);
+    const hl = inch(this.spec.lengthIn) / 2;
+    const hw = inch(this.spec.widthIn) / 2;
+    this.body.position.y = Math.abs(Math.sin(this.tilt.x)) * hl + Math.abs(Math.sin(this.tilt.y)) * hw;
+
+    // ---- LEDs
+    const look = this.look;
+    const c = this.tmpC;
+    if (look.leds === 'rainbow') c.setHSL((time * 0.25 + this.spec.teamNumber * 0.013) % 1, 1, 0.5);
+    else {
+      c.copy(this.allianceColor);
+      const full = s.hopper >= this.spec.hopperCapacity && this.spec.hopperCapacity > 0;
+      // lleno: parpadea con el color de acento (como los equipos que avisan al driver)
+      if (full && Math.floor(time * 4) % 2) c.copy(this.accentColor);
+      if (this.intakePulse > 0) c.lerp(this.accentColor, this.intakePulse * 0.8);
+      if (this.shotFlash > 0) c.lerp(WHITE, this.shotFlash * 0.85);
+    }
+    if (look.leds !== 'off') {
+      this.led.emissive.copy(c);
+      this.led.emissiveIntensity = s.enabled ? 2.4 + 1.2 * this.shotFlash : 0.5;
+    } else this.led.emissiveIntensity = 0;
+
+    // ---- Luz inferior: sigue a los LEDs en arcoíris; respira con la velocidad y destella al tirar
+    if (this.glowColor) {
+      if (look.leds === 'rainbow' && look.underglow === 'alliance') this.glowMat.color.copy(c);
+      else this.glowMat.color.copy(this.glowColor);
+      const maxV = Math.max(1, this.spec.maxSpeed);
+      const pulse = s.enabled ? 0.55 + 0.25 * Math.min(1, this.speed / maxV) + 0.35 * this.shotFlash : 0.25;
+      this.glowMat.opacity = Math.min(1, pulse);
+    }
+
+    // ---- Partículas
+    if (!this.fx || dt <= 0) return;
+    const glow = robotFx.glow;
+    const g = this.group;
+    if (glow && dh < 0) {
+      const sh = this.spec.shooter;
+      const p = sh.posIn ? this.tmpV.set(inch(sh.posIn[0]), inch(sh.exitHeightIn), -inch(sh.posIn[1])) : this.tmpV.set(this.turret.position.x, inch(sh.exitHeightIn), 0);
+      g.localToWorld(p);
+      const n = Math.min(10, 3 * -dh);
+      glow.emit(p.x, p.y, p.z, n, { color: 0xfff0c0, speed: 1.4, up: 0.8, life: 0.22, size: 0.05, gravity: 1 });
+      glow.emit(p.x, p.y, p.z, Math.ceil(n / 2), { color: this.allianceColor, speed: 0.9, up: 0.4, life: 0.35, size: 0.06, gravity: 0.5 });
+    }
+    if (glow && dh > 0) {
+      const ext = inch(this.spec.intake.extensionIn);
+      const iw = inch(this.spec.intake.widthIn);
+      const p = this.tmpV.set(hl + inch(this.spec.bumperIn) + ext * 0.8, 0.1, (Math.random() - 0.5) * iw);
+      g.localToWorld(p);
+      glow.emit(p.x, p.y, p.z, 4, { color: this.accentColor, speed: 0.9, up: 0.6, life: 0.3, size: 0.035, gravity: 2 });
+    }
+    const dust = robotFx.dust;
+    if (dust && robotFx.level > 0 && s.enabled) {
+      // polvo de las llantas: al acelerar/frenar fuerte o a alta velocidad
+      const al = Math.hypot(ax, az);
+      const rate = Math.max(0, al - 3) * 0.6 + Math.max(0, this.speed - 1.5) * 1.2;
+      let n = rate * dt * robotFx.level * 4;
+      while (n > 0) {
+        if (n < 1 && Math.random() > n) break;
+        n -= 1;
+        const sx = Math.random() < 0.5 ? -1 : 1;
+        const sz = Math.random() < 0.5 ? -1 : 1;
+        const p = this.tmpV.set(sx * (hl - 0.06), 0.03, sz * (hw - 0.04));
+        g.localToWorld(p);
+        dust.emit(p.x, p.y, p.z, 1, { color: 0x9a968c, speed: 0.5, up: 0.25, spread: 1.4, life: 0.7, size: 0.07, gravity: 0.3 });
+      }
+    }
   }
 }
 
