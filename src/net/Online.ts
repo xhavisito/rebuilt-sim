@@ -373,7 +373,8 @@ export class HostRoom {
 }
 
 // ------------------------------------------------------------------ cliente
-export type JoinError = 'notFound' | 'full' | 'version' | 'started' | 'network';
+/** `p2p`: el host respondió pero la conexión directa no se pudo abrir (red que bloquea P2P). */
+export type JoinError = 'notFound' | 'full' | 'version' | 'started' | 'network' | 'p2p';
 
 export class ClientRoom {
   onLobby: (info: LobbyInfo) => void = () => {};
@@ -404,19 +405,27 @@ export class ClientRoom {
         sig.close();
         reject(new Error(e));
       };
-      const to = window.setTimeout(() => fail('notFound'), 15000);
+      // sin respuesta del host: la sala no existe; con respuesta pero sin canal: la red bloquea P2P
+      let answered = false;
+      let to = window.setTimeout(() => fail('notFound'), 12000);
       sig
         .open()
         .then(() => {
           const link = new PeerLink(sig, hostId(code), true);
           const room = new ClientRoom(code, sig, link);
           sig.onMessage = (src, msg) => {
-            if (src === hostId(code)) void link.handleSignal(msg);
+            if (src !== hostId(code)) return;
+            if (msg.kind === 'answer' && !answered) {
+              answered = true;
+              window.clearTimeout(to);
+              to = window.setTimeout(() => fail('p2p'), 20000);
+            }
+            void link.handleSignal(msg);
           };
           sig.onUnreachable = () => fail('notFound');
           link.onOpen = () => link.sendJson({ t: 'hello', v: NET.protocol, ...hello } satisfies ClientMsg);
           link.onClose = () => {
-            if (!done) fail('network');
+            if (!done) fail(answered ? 'p2p' : 'network');
             else room.onClosed();
           };
           link.onData = (d) => {
