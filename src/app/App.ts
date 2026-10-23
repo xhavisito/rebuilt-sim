@@ -700,6 +700,7 @@ export class App {
     const target = (c.match.kind === 'qual' ? c.tt.quals : c.tt.playoffs).find((x) => x.id === c.match.id);
     if (target && !target.result) target.result = simulateMatch(c.tt.teams, target, c.tt.eventType, new Rng((Math.random() * 2 ** 32) >>> 0));
     saveTournament(c.tt);
+    this.endSessionExtras();
     this.session?.dispose();
     this.session = null;
     this.tournamentCtx = null;
