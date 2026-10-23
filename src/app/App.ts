@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import * as F from '../config/field';
 import { CAD_ROBOTS, robotById, ROBOT_PRESETS, type RobotSpec } from '../config/robots';
 import { Rng } from '../core/rng';
-import { simulateMatch, type TeamPerf, type Tournament, type TMatch } from '../core/tournament';
+import { carriedYellows, recordCards, simulateMatch, type TeamPerf, type Tournament, type TMatch } from '../core/tournament';
 import { StrategyPlanner } from '../ui/StrategyPlanner';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
@@ -18,7 +18,7 @@ import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
 import { applyRows, COACH_PLAN_ID, rowsForMatch } from '../ui/StrategyDashboard';
 import { loadSettings, saveSettings, type Difficulty, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
-import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
+import { ALLIANCES, opponent, type Alliance, type StationNumber } from '../core/types';
 import { GameSession, type RobotSlotConfig, type SessionConfig } from '../game/GameSession';
 import type { Robot } from '../game/Robot';
 import { InputManager, type SlotDevice } from '../input/InputManager';
@@ -36,7 +36,7 @@ import { loadJSON, saveJSON } from '../config/settings';
 import { buildResults } from '../game/results';
 import { recordSession } from '../game/playerStats';
 import { StatsScreen, syncBoard } from '../ui/StatsScreen';
-import { RULES } from '../core/fouls';
+import { FOUL_POINTS, RULES } from '../core/fouls';
 import { Hud, PHASE_LABEL, type PlayerHudInfo } from '../ui/Hud';
 import { esc } from '../ui/forms';
 import { keyToNav, MenuNav, PadNav } from '../ui/nav';
@@ -733,6 +733,7 @@ export class App {
       eventType: tt.eventType,
       fouls: m.fouls,
       playoff: match.kind !== 'qual',
+      carriedYellows: carriedYellows(tt, match),
       seed: (Math.random() * 2 ** 32) >>> 0,
     });
     if (watch) this.session?.setCamera(watch);
@@ -784,6 +785,8 @@ export class App {
       };
     });
     if (target) target.result = { red: side('red'), blue: side('blue'), perf };
+    // YELLOW CARDS que se quedan para los siguientes matches de Qualifications
+    recordCards(c.tt, c.match, s.robots.flatMap((r, k) => (mm.cards.some((x) => x.robot === r.index) ? [k] : [])));
     saveTournament(c.tt);
     this.tournamentCtx = null;
     if (open) this.openTournament();
@@ -849,13 +852,12 @@ export class App {
       case 'foul': {
         const f = e.foul;
         const team = this.session?.robots[f.robot]?.spec.teamNumber;
-        this.toast(`${f.rule} – ${RULES[f.rule].title} · ${f.severity} FOUL${team ? ` (${team})` : ''}`, f.severity === 'MAJOR' ? 'major' : 'minor');
+        // Regla, qué pasó (en el idioma del jugador), severidad y a quién van los puntos
+        const pts = t('foulFor', { n: FOUL_POINTS[f.severity], a: t(opponent(f.offender)).toUpperCase() });
+        this.toast(`${f.rule} · ${tx(RULES[f.rule])} · ${f.severity} FOUL${team ? ` (${team})` : ''} · ${pts}`, f.severity === 'MAJOR' ? 'major' : 'minor');
         this.audio.whistle();
         const fr = f.robot >= 0 ? this.session?.robots[f.robot] : undefined;
-        if (fr?.isPlayer) {
-          this.input.haptic(localSlot(fr, this.session?.localCount ?? 1), 'foul');
-          this.toast(tx(RULES[f.rule]));
-        }
+        if (fr?.isPlayer) this.input.haptic(localSlot(fr, this.session?.localCount ?? 1), 'foul');
         break;
       }
       case 'card': {
@@ -1368,6 +1370,39 @@ export class App {
     }
   }
 
+  /**
+   * Banderas del árbitro: faltas de los últimos 3 s y tarjetas de los últimos 4 s, sobre el robot
+   * que las cometió (se leen del Match, así que también salen en línea y en repeticiones).
+   */
+  private refFlags(s: GameSession, cam: THREE.Camera): Array<{ x: number; y: number; title: string; sub: string; cls: string }> {
+    const m = s.match;
+    if (!m) return [];
+    const out: Array<{ x: number; y: number; title: string; sub: string; cls: string }> = [];
+    const stack = new Map<number, number>();
+    const put = (robot: number, age: number, life: number, title: string, sub: string, cls: string) => {
+      const r = s.robots[robot];
+      if (!r || age < 0 || age > life) return;
+      const n = stack.get(robot) ?? 0;
+      stack.set(robot, n + 1);
+      if (n >= 2) return; // a lo más dos por robot (la más reciente arriba)
+      const v = r.view.group.position.clone();
+      v.y += 1.35;
+      v.project(cam);
+      if (v.z >= 1) return;
+      const x = Math.min(window.innerWidth - 112, Math.max(112, ((v.x + 1) / 2) * window.innerWidth));
+      out.push({ x, y: ((1 - v.y) / 2) * window.innerHeight - 10 - n * 46, title, sub, cls: `${cls}${age > life - 0.5 ? ' fade' : ''}` });
+    };
+    for (let i = m.cards.length - 1; i >= 0; i--) {
+      const c = m.cards[i];
+      put(c.robot, m.t - c.time, 4, `${c.card === 'RED' ? t('redCard') : t('yellow')}`, `${c.rule} · ${tx(RULES[c.rule])}`, c.card === 'RED' ? 'card-red' : 'card-yellow');
+    }
+    for (let i = m.fouls.length - 1; i >= 0 && m.t - m.fouls[i].time <= 3; i--) {
+      const f = m.fouls[i];
+      put(f.robot, m.t - f.time, 3, `${f.rule} · ${f.severity} · ${t('foulFor', { n: FOUL_POINTS[f.severity], a: t(opponent(f.offender)).toUpperCase() })}`, tx(RULES[f.rule]), f.severity === 'MAJOR' ? 'major' : 'minor');
+    }
+    return out;
+  }
+
   private updateHud(s: GameSession, views: Viewport[]): void {
     // Contadores de PIN (G418) encima del robot pineado
     const pins = s.pins();
@@ -1382,6 +1417,7 @@ export class App {
         })
         .filter((p) => p.z < 1),
     );
+    this.hud.setFlags(this.refFlags(s, cam));
     const r0 = s.playerRobot(0);
     if (r0) this.touch.setActive('intake', r0.intakeOn);
     const phase = s.phase;

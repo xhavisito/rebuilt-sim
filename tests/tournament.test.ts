@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import {
   advancePlayoffs,
+  carriedYellows,
+  recordCards,
   aiAccepts,
   allianceIndexOf,
   bracketState,
@@ -55,6 +57,22 @@ describe('torneo', () => {
     }
     // RS redondeado a 2 decimales
     for (const row of r) expect(Math.round(row.rs * 100) / 100).toBe(row.rs);
+  });
+
+  it('YELLOW CARDS: se acumulan en Qualifications y no pasan a los Playoffs', () => {
+    const player: TeamEntry = { team: 9999, specId: 'x', name: 'P', strength: 0.5, isPlayer: true };
+    const t = createTournament(player, pool, 12, 4, 'regional', new Rng(1), 1);
+    const [q1] = t.quals;
+    const team = q1.blue[1];
+    recordCards(t, q1, [4]); // posición 4 = azul 2
+    expect(t.yellows).toEqual([team]);
+    const next = t.quals.find((m) => m !== q1 && [...m.red, ...m.blue].includes(team))!;
+    expect(carriedYellows(t, next)).toEqual([[...next.red, ...next.blue].indexOf(team)]);
+    // en Playoffs ni se cargan ni se anotan
+    const po: TMatch = { ...next, kind: 'playoff' } as TMatch;
+    expect(carriedYellows(t, po)).toEqual([]);
+    recordCards(t, po, [0]);
+    expect(t.yellows).toEqual([team]);
   });
 
   it('alianzas serpentina y bracket hasta campeón (final al mejor de 3)', () => {

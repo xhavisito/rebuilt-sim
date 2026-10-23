@@ -219,6 +219,12 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     el código (1678 y 6328 hacia atrás, 190 hacia la derecha) desde su posición en el robot.
     El hopper de 971 sobresale 11 in al frente sobre los BUMPERS (colisionador incluido).
     Rendimiento de sus tech binders / Robot Study Dashboard (estimado si no se publicó).
+    La velocidad libre del drivetrain (`maxSpeed`) sale del código de cada equipo
+    (`kSpeedAt12Volts` de TunerConstants o su equivalente, citado en robots.ts); 1757, 8214,
+    9410, 2363 y 3478 no la publican y conservan la estimada. 3847 (Spectrum) y 1425 (Error Code
+    Xero) se armaron con su simulación publicada (RobotSim / MapleSimUtil, Mechanism3d): carriles,
+    cadencia, altura y posición del tiro, rango del hood y extensión de la intake. `clear` en
+    sources.mjs dibuja translúcido el policarbonato que el CAD trae opaco (hopper de 3847).
 15. **FUEL contra el perímetro**: el barandal (3 cm) y la ALLIANCE WALL tienen un respaldo
     invisible de 0.3–0.6 m (fuera de las aberturas del CORRAL y de la CHUTE), `shoveFuel` nunca
     saca un FUEL hacia afuera del campo (se escurre a lo largo de la pared) y un FUEL metido en
@@ -307,6 +313,17 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     público de la galería (`hubCadUrlAllowed`). En línea, el host y los clientes bajan el CAD de
     los robots de la galería antes de empezar (hasta 5 s; si no, diseño del simulador). Borrar
     exige el token guardado al publicar; con 3 reportes el robot deja de listarse.
+
+31. **YELLOW CARDS en el torneo** (§6.6.1): se acumulan de un match de Qualifications al siguiente
+    (`Tournament.yellows`; el robot llega con la tarjeta y la siguiente YELLOW es RED). Supuesto, el
+    manual no está en el repo (verificar con TU22 §6.6/§11): no pasan a los Playoffs, y en Playoffs la
+    tarjeta sigue siendo por robot (RED → la alianza queda en 0).
+32. **Avisos del árbitro**: además del aviso (regla, qué pasó, severidad y a quién van los puntos),
+    una bandera sobre el robot que cometió la falta (3 s; tarjetas 4 s) y los puntos por faltas en el
+    marcador de cada alianza. Se leen del `Match`, así que salen igual en línea y en repeticiones.
+33. **Manejo** (`RobotPhysics.drive`): al acelerar, el par del motor cae con la velocidad (a tope
+    queda ~45 % de la aceleración: llega a la máxima en ~0.6 s); frenar o cambiar de dirección solo
+    lo limita la tracción (μ·g, a lo más 1.3 × `maxAccel`).
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
