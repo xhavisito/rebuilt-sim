@@ -1,5 +1,6 @@
 // Modo en línea: dos pestañas del mismo navegador (señalización local por BroadcastChannel, la
-// conexión sí es WebRTC). El host crea la sala, el cliente entra con el enlace, el host arranca;
+// conexión sí es WebRTC). El host crea una sala pública, el cliente la encuentra en la lista y
+// entra, el host arranca;
 // el cliente ve el campo del host y su robot se mueve con sus controles.
 import { chromium } from 'playwright';
 import { startServer } from './_server.mjs';
@@ -29,7 +30,14 @@ await host.click('[data-create]');
 await host.waitForSelector('[data-roomcode]');
 const code = await host.textContent('[data-roomcode]');
 check('sala creada', /^[A-Z2-9]{5}$/.test(code), code);
-await guest.goto(`http://localhost:4190/?signal=local&quality=low&join=${code}`);
+// sala pública: el cliente la encuentra en la lista y entra desde ahí
+await host.click('[data-seg="vis"] [data-v="public"]');
+await guest.goto('http://localhost:4190/?signal=local&quality=low');
+await waitFor(guest, () => !document.getElementById('loading'), 30000);
+await guest.click('[data-go="online"]');
+await guest.waitForSelector(`[data-room="${code}"]`, { timeout: 10000 });
+check('la sala pública aparece en la lista', true);
+await guest.click(`[data-room="${code}"]`);
 await guest.waitForSelector('.net-wait', { timeout: 20000 });
 await waitFor(host, () => document.querySelectorAll('.net-p').length === 2, 10000);
 check('lobby con 2 jugadores', true);
@@ -70,11 +78,12 @@ const diff = await guest.evaluate(() => {
   return { x: r.phys.curPos.x, z: r.phys.curPos.z, fuelShown: s.fuel.state.filter((v) => v === 0).length };
 });
 check('el cliente ve su robot donde está en el host', Math.hypot(diff.x - end.x, diff.z - end.z) < 0.3, JSON.stringify(diff));
-// mismo marcador (el estado lento llega a 4 Hz: se frena el host y se espera)
-await host.evaluate(() => { window.app.session.timeScale = 1; });
+// mismo marcador (el estado lento llega a 4 Hz: se congela el host y se espera)
+await host.evaluate(() => { window.app.session.timeScale = 0; });
 const score = () => `${window.app.session.match.score('red')}-${window.app.session.match.score('blue')}`;
 for (let k = 0; k < 10; k++) if ((await host.evaluate(score)) === (await guest.evaluate(score))) break; else await host.waitForTimeout(300);
-const scores = await Promise.all([host, guest].map((p) => p.evaluate(() => `${window.app.session.match.score('red')}-${window.app.session.match.score('blue')}`)));
+const scores = await Promise.all([host, guest].map((p) => p.evaluate(score)));
+await host.evaluate(() => { window.app.session.timeScale = 1; });
 check('mismo marcador', scores[0] === scores[1], scores.join(' / '));
 await guest.screenshot({ path: 'shots/online-guest.png' });
 await host.screenshot({ path: 'shots/online-host.png' });

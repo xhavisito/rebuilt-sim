@@ -26,6 +26,7 @@ import {
   type NetEvent,
 } from './protocol';
 import { captureFuel, captureRobots, captureSlow, Replica } from './Replica';
+import { RoomAnnouncer } from './directory';
 import { LocalSignaling, PeerJsSignaling, type Signaling } from './signaling';
 
 export function makeSignaling(id: string): Signaling {
@@ -64,6 +65,8 @@ export class HostRoom {
   fillAi = true;
   difficulty = 'normal';
   fuel = 0;
+  /** Pública: aparece en la lista de salas; privada: solo con el código. */
+  private announcer: RoomAnnouncer | null = null;
   /** Robots de la IA para los lugares libres. */
   aiPool: () => RobotSpec[] = () => CAD_ROBOTS;
   onLobby: () => void = () => {};
@@ -180,7 +183,36 @@ export class HostRoom {
     };
   }
 
+  get isPublic(): boolean {
+    return !!this.announcer;
+  }
+
+  /** Hace la sala pública (la anuncia en el directorio) o privada. Falla si no hay directorio. */
+  async setPublic(on: boolean): Promise<void> {
+    if (on === this.isPublic) return;
+    if (!on) {
+      this.announcer?.stop();
+      this.announcer = null;
+      return;
+    }
+    const a = new RoomAnnouncer(this.code);
+    this.announcer = a;
+    this.announce();
+    try {
+      await a.start();
+    } catch (e) {
+      if (this.announcer === a) this.announcer = null;
+      a.stop();
+      throw e;
+    }
+  }
+
+  private announce(): void {
+    this.announcer?.update({ name: this.me.name || 'Host', players: this.lobby().players.length, started: this.started });
+  }
+
   lobbyChanged(): void {
+    this.announce();
     const info = this.lobby();
     for (const r of this.joined()) this.send(r, { t: 'lobby', info });
     this.onLobby();
@@ -221,6 +253,7 @@ export class HostRoom {
   /** La sesión del host ya existe: manda a cada cliente su copia de la configuración. */
   begin(s: GameSession): void {
     this.session = s;
+    this.announce();
     this.sent = newFuelSnap(s.fuel.count);
     this.fuelNow = newFuelSnap(s.fuel.count);
     this.snapAcc = 1;
@@ -327,6 +360,8 @@ export class HostRoom {
   }
 
   close(): void {
+    this.announcer?.stop();
+    this.announcer = null;
     for (const r of this.remotes.values()) {
       this.send(r, { t: 'close' });
       r.link.onClose = () => {};

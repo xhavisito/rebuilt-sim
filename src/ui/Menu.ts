@@ -20,6 +20,7 @@ import { RULES_CONTENT } from './rulesContent';
 import type { Showroom } from '../render/Showroom';
 import type { ClientRoom, HostRoom } from '../net/Online';
 import { parseRoomCode, type LobbyInfo } from '../net/protocol';
+import { RoomBrowser, type PublicRoom } from '../net/directory';
 
 export type SetupMode = 'practice' | 'match';
 
@@ -800,6 +801,8 @@ export class Screens {
         <label>${t('robot')}</label>${select('rb', robots, m.robotId)}
         <h3>${t('net_create')}</h3>
         <label></label><div class="row"><button class="btn primary" data-nav data-create>${t('net_create')}</button></div>
+        <h3>${t('net_public')}</h3>
+        <div class="net-rooms" data-rooms><div class="msg warn">${t('net_searching')}</div></div>
         <h3>${t('net_join')}</h3>
         <label>${t('net_code')}</label><div class="row"><input type="text" class="net-code-in" maxlength="7" data-code value="${esc(code)}" placeholder="ABCDE" autocapitalize="characters" autocomplete="off" spellcheck="false"/>
           <button class="btn" data-nav data-join>${t('net_join')}</button></div>
@@ -844,6 +847,32 @@ export class Screens {
         .catch((e: Error) => busy(t(`net_err_${e.message}` as TKey) || t('net_err_network'), true));
     };
     r.querySelector('[data-join]')!.addEventListener('click', join);
+    // Salas públicas en vivo
+    const roomsEl = r.querySelector<HTMLElement>('[data-rooms]')!;
+    const showRooms = (list: PublicRoom[]) => {
+      roomsEl.innerHTML = list.length
+        ? list
+            .map(
+              (x) => `<div class="net-room"><b>${esc(x.name || 'Host')}</b><span>${x.code} · ${x.players}/6${x.started ? ` · ${t('net_inGame')}` : ''}</span>
+                <button class="btn" data-nav data-room="${x.code}" ${x.started || x.players >= 6 ? 'disabled' : ''}>${t('net_join')}</button></div>`,
+            )
+            .join('')
+        : `<div class="msg warn">${t('net_noRooms')}</div>`;
+      roomsEl.querySelectorAll<HTMLElement>('[data-room]').forEach((b) =>
+        b.addEventListener('click', () => {
+          codeIn.value = b.dataset.room!;
+          join();
+        }),
+      );
+      this.nav?.refresh();
+    };
+    const browser = new RoomBrowser();
+    browser.onChange = showRooms;
+    browser
+      .start()
+      .then(() => showRooms(browser.list))
+      .catch(() => (roomsEl.innerHTML = `<div class="msg bad">${t('net_noDirectory')}</div>`));
+    this.cleanup.push(() => browser.stop());
     codeIn.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') join();
     });
@@ -870,6 +899,8 @@ export class Screens {
         <div class="panel form">
           <label>${t('net_room')}</label><div class="row"><span class="net-code" data-roomcode>${room.code}</span><button class="chipbtn" data-copy>⧉ ${t('net_copyLink')}</button></div>
           <label></label><div class="msg ok">${t('net_shareHint')}</div>
+          <label>${t('net_visibility')}</label>${seg('vis', [{ value: 'private', label: t('net_private') }, { value: 'public', label: t('net_publicOne') }], room.isPublic ? 'public' : 'private')}
+          <label></label><div class="msg ${room.isPublic ? 'ok' : 'warn'}">${room.isPublic ? t('net_publicHint') : t('net_privateHint')}</div>
           <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], room.me.alliance)}
           <label>${t('robot')}</label>${select('rb', robots, room.me.spec.id)}
           <label>${t('fillAi')}</label>${seg('fill', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], room.fillAi ? '1' : '0')}
@@ -885,6 +916,14 @@ export class Screens {
       if (this.nav) this.nav.refresh();
       else this.enableNav({ onBack: () => this.leaveLobby() });
       bind(this.root, (name, v) => {
+        if (name === 'vis') {
+          room
+            .setPublic(v === 'public')
+            .catch(() => this.app.toast(t('net_noDirectory'), 'major'))
+            .finally(render);
+          render();
+          return;
+        }
         if (name === 'al') room.me.alliance = v as Alliance;
         else if (name === 'rb') room.me.spec = robotById(String(v));
         else if (name === 'fill') room.fillAi = v === '1';

@@ -1031,3 +1031,7 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .net-p em { font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; padding: 1px 5px; border-radius: 4px; background: rgba(255, 213, 79, 0.18); color: #ffd54f; }
 .net-wait { animation: net-pulse 1.6s ease-in-out infinite; }
 @keyframes net-pulse { 50% { opacity: 0.55; } }
+.net-rooms { grid-column: 1 / -1; display: grid; gap: 6px; }
+.net-room { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.net-room span { font-size: 12px; opacity: 0.75; letter-spacing: 0.05em; }
+@media (max-width: 560px) { .net-room { grid-template-columns: 1fr auto; } .net-room span { grid-column: 1; } }

@@ -16,6 +16,8 @@ export const NET = {
   interpDelay: 0.1,
   /** Prefijo de los ids en el broker (el código de sala va después). */
   idPrefix: 'rebuiltsim',
+  /** Directorio de salas públicas: broker MQTT público y gratuito (WebSocket). */
+  directoryUrl: 'wss://broker.hivemq.com:8884/mqtt',
 };
 
 export function iceServers(): RTCIceServer[] {
