@@ -29,10 +29,11 @@ import { captureFuel, captureRobots, captureSlow, Replica } from './Replica';
 import { RoomAnnouncer } from './directory';
 import { QUICK, nextAutoStart } from './quickMatch';
 import { T } from '../core/clock';
-import { LocalSignaling, PeerJsSignaling, type Signaling } from './signaling';
+import { LocalSignaling, MqttSignaling, PeerJsSignaling, type Signaling } from './signaling';
 
 export function makeSignaling(id: string): Signaling {
-  return new URLSearchParams(location.search).get('signal') === 'local' ? new LocalSignaling(id) : new PeerJsSignaling(id);
+  const kind = new URLSearchParams(location.search).get('signal');
+  return kind === 'local' ? new LocalSignaling(id) : kind === 'peerjs' ? new PeerJsSignaling(id) : new MqttSignaling(id);
 }
 
 const hostId = (code: string) => `${NET.idPrefix}${code}`;
@@ -571,10 +572,12 @@ export class ClientRoom {
       };
       // sin respuesta del host: la sala no existe; con respuesta pero sin canal: la red bloquea P2P
       let answered = false;
-      let to = window.setTimeout(() => fail('notFound'), 12000);
+      // (el tiempo empieza ya conectado al broker: conectarse en un celular puede tardar)
+      let to = 0;
       sig
         .open()
         .then(() => {
+          to = window.setTimeout(() => fail('notFound'), 12000);
           const link = new PeerLink(sig, hostId(code), true);
           const room = new ClientRoom(code, sig, link);
           sig.onMessage = (src, msg) => {

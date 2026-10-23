@@ -51,7 +51,9 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
 - `auto/` rutinas de AUTO (marco azul, se reflejan para rojo) y su ejecutor.
 - `net/` modo en línea: host autoritativo (su sesión simula; los remotos son slots de jugador
   con cámara virtual) y clientes que dibujan el estado (`Replica`). WebRTC P2P; señalización por
-  el broker gratuito de PeerJS (`?signal=local` = BroadcastChannel entre pestañas, para e2e).
+  el mismo broker MQTT público del directorio (`MqttSignaling`, tema `rebuilt-sim/v1/sig/<id>`,
+  se reconecta sola; `?signal=peerjs` = broker de PeerJS, `?signal=local` = BroadcastChannel
+  entre pestañas, para e2e; `?broker=ws://…` cambia el broker MQTT, p. ej. uno local).
   TURN opcional al compilar (`VITE_TURN_URL/USER/PASS`, ver `config/net.ts`).
   Salas públicas: anuncio "retained" por sala en un broker MQTT público (`net/directory.ts`,
   cliente mínimo en `net/mqtt.ts`); las privadas solo con código.

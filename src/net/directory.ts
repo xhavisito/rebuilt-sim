@@ -4,7 +4,7 @@
  * y gratuito (se borra al cerrar la sala o, si el host se cae, con su "last will"). Las privadas no
  * se anuncian: solo se entra con el código. `?signal=local` usa BroadcastChannel (pruebas).
  */
-import { NET } from '../config/net';
+import { NET, brokerUrl } from '../config/net';
 import { MqttClient } from './mqtt';
 import { parseRoomCode } from './protocol';
 
@@ -53,11 +53,15 @@ export interface Transport {
   publish(topic: string, payload: string, retain: boolean): void;
   subscribe(filter: string, on: (topic: string, payload: string) => void): void;
   close(): void;
+  /** La conexión se cayó sola (no por `close`). */
+  onClose?: () => void;
 }
 
 class MqttTransport implements Transport {
-  private c = new MqttClient(NET.directoryUrl);
+  private c = new MqttClient(brokerUrl());
+  onClose?: () => void;
   open(will?: { topic: string; payload: string; retain: boolean }) {
+    this.c.onClose = () => this.onClose?.();
     return this.c.connect(will);
   }
   publish(topic: string, payload: string, retain: boolean) {
@@ -111,6 +115,7 @@ export class RoomAnnouncer {
 
   async start(): Promise<void> {
     if (this.t) return;
+    this.stopped = false;
     const t = transport();
     this.t = t;
     // si el host se cae, el broker borra el anuncio (payload vacío retenido)
@@ -118,6 +123,25 @@ export class RoomAnnouncer {
     if (this.t !== t) return;
     this.send();
     this.timer = window.setInterval(() => this.send(), REFRESH_MS);
+    // si el broker corta la conexión, la sala se vuelve a anunciar (si no, deja de salir en la lista)
+    t.onClose = () => {
+      if (this.t !== t) return;
+      window.clearInterval(this.timer);
+      this.t = null;
+      this.restart(1);
+    };
+  }
+
+  private stopped = false;
+
+  private restart(n: number): void {
+    window.setTimeout(() => {
+      if (this.stopped || this.t) return;
+      this.start().catch(() => {
+        this.t = null;
+        this.restart(n + 1);
+      });
+    }, Math.min(15000, 1000 * 2 ** n));
   }
 
   update(info: Omit<PublicRoom, 'ts' | 'code'>): void {
@@ -130,6 +154,7 @@ export class RoomAnnouncer {
   }
 
   stop(): void {
+    this.stopped = true;
     window.clearInterval(this.timer);
     const t = this.t;
     this.t = null;

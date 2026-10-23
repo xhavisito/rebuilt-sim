@@ -2,7 +2,10 @@
  * Señalización para WebRTC: solo sirve para que dos navegadores intercambien la oferta, la
  * respuesta y los candidatos ICE; después el juego va directo por el DataChannel (P2P).
  *
- * - `PeerJsSignaling`: el broker público y gratuito de PeerJS (0.peerjs.com) por WebSocket. No usa
+ * - `MqttSignaling` (la de siempre): el mismo broker MQTT público del directorio de salas. Cada id
+ *   escucha su tema `rebuilt-sim/v1/sig/<id>` y los demás le publican ahí. Es el que ya se probó
+ *   entre dispositivos (la lista de salas públicas llega), así que unirse no depende de otro servicio.
+ * - `PeerJsSignaling` (`?signal=peerjs`): el broker público y gratuito de PeerJS (0.peerjs.com) por WebSocket. No usa
  *   la librería `peerjs`: el servidor solo reenvía mensajes `{type, dst, payload}` entre ids
  *   conectados, así que basta con hablar su protocolo (OPEN / OFFER / ANSWER / CANDIDATE / EXPIRE…).
  * - `LocalSignaling`: BroadcastChannel entre pestañas del mismo navegador (pruebas e2e y desarrollo
@@ -26,6 +29,75 @@ export interface Signaling {
   /** El broker no encontró a `dst` (la sala no existe o el host se fue). */
   onUnreachable: (dst: string) => void;
   close(): void;
+}
+
+import { brokerUrl } from '../config/net';
+import { MqttClient } from './mqtt';
+
+const SIG_TOPIC = 'rebuilt-sim/v1/sig';
+
+/**
+ * Señalización por el broker MQTT público. Si la conexión se cae (el broker la corta, el celular
+ * cambia de red), se reconecta sola con el mismo id y se vuelve a suscribir: la sala sigue viva.
+ */
+export class MqttSignaling implements Signaling {
+  onMessage: (src: string, msg: SignalMessage) => void = () => {};
+  onUnreachable: (dst: string) => void = () => {};
+  private c: MqttClient | null = null;
+  private closed = false;
+  private retry = 0;
+  private timer = 0;
+
+  constructor(
+    readonly id: string,
+    private url = brokerUrl(),
+  ) {}
+
+  async open(): Promise<void> {
+    const c = new MqttClient(this.url);
+    this.c = c;
+    c.onMessage = (_topic, payload) => {
+      let m: { src?: unknown; kind?: unknown; data?: unknown };
+      try {
+        m = JSON.parse(payload);
+      } catch {
+        return;
+      }
+      if (typeof m.src !== 'string' || typeof m.kind !== 'string' || !(m.kind in TYPE)) return;
+      this.onMessage(m.src, { kind: m.kind as SignalKind, data: m.data });
+    };
+    c.onClose = () => {
+      if (this.closed || this.c !== c) return;
+      console.info('[net] señalización desconectada, reconectando…');
+      this.reconnect();
+    };
+    await c.connect();
+    c.subscribe(`${SIG_TOPIC}/${this.id}`);
+    this.retry = 0;
+  }
+
+  private reconnect(): void {
+    window.clearTimeout(this.timer);
+    const wait = Math.min(10000, 1000 * 2 ** this.retry++);
+    this.timer = window.setTimeout(() => {
+      if (this.closed) return;
+      this.open().then(
+        () => console.info('[net] señalización reconectada'),
+        () => this.reconnect(),
+      );
+    }, wait);
+  }
+
+  send(dst: string, msg: SignalMessage): void {
+    this.c?.publish(`${SIG_TOPIC}/${dst}`, JSON.stringify({ src: this.id, kind: msg.kind, data: msg.data ?? null }), false);
+  }
+
+  close(): void {
+    this.closed = true;
+    window.clearTimeout(this.timer);
+    this.c?.close();
+    this.c = null;
+  }
 }
 
 const TYPE: Record<SignalKind, string> = { offer: 'OFFER', answer: 'ANSWER', ice: 'CANDIDATE', bye: 'LEAVE' };
