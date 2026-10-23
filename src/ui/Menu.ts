@@ -16,6 +16,7 @@ import type { SlotDevice } from '../input/InputManager';
 import { openControllerScreen, padButtonLabel } from './ControllerScreen';
 import { bind, esc, range, seg, select, type Opt } from './forms';
 import { getLang, setLang, t, type TKey } from './i18n';
+import { brandbar, ic } from './chrome';
 import { keyToNav, MenuNav, PadNav, type NavOptions } from './nav';
 import { RULES_CONTENT } from './rulesContent';
 import type { Showroom } from '../render/Showroom';
@@ -113,7 +114,7 @@ export class Screens {
 
   /** Barra superior con la marca. */
   private brandbar(ctx = '', right = ''): string {
-    return `<div class="brandbar"><div class="brand"><i class="logo" aria-hidden="true"></i>REBUILT<span>SIM</span></div>${ctx ? `<div class="ctx">${ctx}</div>` : ''}<div class="grow"></div>${right}</div>`;
+    return brandbar(ctx, right);
   }
 
   // ------------------------------------------------------------------ principal
@@ -142,8 +143,8 @@ export class Screens {
         `${t('season2026')} · ${t('mm_fan')}`,
         `<button class="chipbtn ${getLang() === 'es' ? 'on' : ''}" data-lang="es">ES</button>
          <button class="chipbtn ${getLang() === 'en' ? 'on' : ''}" data-lang="en">EN</button>
-         <button class="chipbtn" data-fs title="${t('fullscreen')}">⛶</button>
-         <button class="chipbtn" data-install style="display:${this.app.installPrompt ? '' : 'none'}">⬇ ${t('install')}</button>`,
+         <button class="chipbtn" data-fs title="${t('fullscreen')}">${ic.expand}</button>
+         <button class="chipbtn" data-install style="display:${this.app.installPrompt ? '' : 'none'}">${ic.download}${t('install')}</button>`,
       )}
       <div class="mm">
         <div class="mm-left">
@@ -291,11 +292,11 @@ export class Screens {
               <span class="rp-score"><b class="red ${win === 'red' ? 'w' : ''}">${m.score.red}</b><i>–</i><b class="blue ${win === 'blue' ? 'w' : ''}">${m.score.blue}</b></span>
               <span class="rp-info"><b>${m.teams.red.join(' · ')} <em>vs</em> ${m.teams.blue.join(' · ')}</b>
                 <small>${esc(mode(m.mode))}${m.clip ? ` · ${t('rp_clip')}` : ''}${m.partial ? ` · ${t('rp_partial')}` : ''} · ${fmtDate(m.date)} · ${dur(m.duration)} · ${size(r.size)}</small></span>
-              <span class="rp-play">▶</span>
+              <span class="rp-play">${ic.play}</span>
             </button>
-            <button class="chipbtn ${r.starred ? 'on' : ''}" data-star="${r.id}" title="${t('rp_star')}">★</button>
-            <button class="chipbtn" data-dl="${r.id}" title="${t('rp_download')}">⬇</button>
-            <button class="chipbtn" data-del="${r.id}" title="${t('rp_delete')}">✕</button>
+            <button class="chipbtn ${r.starred ? 'on' : ''}" data-star="${r.id}" title="${t('rp_star')}">${ic.star}</button>
+            <button class="chipbtn" data-dl="${r.id}" title="${t('rp_download')}">${ic.download}</button>
+            <button class="chipbtn" data-del="${r.id}" title="${t('rp_delete')}">${ic.x}</button>
           </div>`;
         })
         .join('');
@@ -544,7 +545,7 @@ export class Screens {
         </div>
         <div class="setup-right">
           <div class="mapwrap">
-            <div class="maphead"><span class="label">${t('startPos')}</span><button class="chipbtn" data-resetspot>↺ ${t('resetSpot')}</button></div>
+            <div class="maphead"><span class="label">${t('startPos')}</span><button class="chipbtn" data-resetspot>${ic.reset}${t('resetSpot')}</button></div>
             <div data-map></div>
             <div class="maphint"><span>${t('dragHint')}</span></div>
           </div>
@@ -720,7 +721,7 @@ export class Screens {
         <label>${t('aimGuide')}</label>${seg('aimguide', yn, onoff(s.drive.aimGuide))}
         <label>${t('mouseAim')}</label>${seg('mouseaim', yn, onoff(s.drive.mouseAim))}
         <h3>${t('gamepad')}</h3>
-        <label></label><div class="row" style="gap:10px;align-items:center"><button class="chipbtn" data-padscreen data-nav>🎮 ${t('padScreen')}</button><span class="msg" style="flex:1">${t('padScreenDesc')}</span></div>
+        <label></label><div class="row" style="gap:10px;align-items:center"><button class="chipbtn" data-padscreen data-nav>${ic.gamepad}${t('padScreen')}</button><span class="msg" style="flex:1">${t('padScreenDesc')}</span></div>
         <h3>${t('touch')}</h3>
         <label>${t('touchScale')}</label>${range('tscale', 0.6, 1.6, 0.05, s.touch.scale)}
         <label>${t('touchOpacity')}</label>${range('topacity', 0.15, 1, 0.05, s.touch.opacity)}
@@ -887,7 +888,7 @@ export class Screens {
         <div class="net-rooms" data-rooms><div class="msg warn">${t('net_searching')}</div></div>
         <h3>${t('net_join')}</h3>
         <label>${t('net_code')}</label><div class="row"><input type="text" class="net-code-in" maxlength="7" data-code value="${esc(code)}" placeholder="ABCDE" autocapitalize="characters" autocomplete="off" spellcheck="false"/>
-          <button class="btn" data-nav data-join>${t('net_join')}</button><button class="btn" data-nav data-watchroom>👁 ${t('net_watchCode')}</button></div>
+          <button class="btn" data-nav data-join>${t('net_join')}</button><button class="btn" data-nav data-watchroom>${ic.eye}${t('net_watchCode')}</button></div>
         <label></label><div class="msg ${error ? 'bad' : 'warn'}" data-status ${error ? '' : 'hidden'}>${esc(error)}</div>
       </div>
       <div class="actionbar"><button class="btn" data-back data-nav>${t('back')}</button></div>
@@ -938,7 +939,7 @@ export class Screens {
             .map(
               (x) => `<div class="net-room"><b>${esc(x.name || 'Host')}</b><span>${x.code} · ${x.players}/6${x.started ? ` · ${t('net_inGame')}` : ''}</span>
                 <span class="net-room-btns"><button class="btn" data-nav data-room="${x.code}" ${x.started || x.players >= 6 ? 'disabled' : ''}>${t('net_join')}</button>
-                <button class="btn" data-nav data-watch="${x.code}">👁 ${t('net_watch')}</button></span></div>`,
+                <button class="btn" data-nav data-watch="${x.code}">${ic.eye}${t('net_watch')}</button></span></div>`,
             )
             .join('')
         : `<div class="msg warn">${t('net_noRooms')}</div>`;
@@ -1046,7 +1047,7 @@ export class Screens {
           <label>${t('net_room')}</label><div class="row"><span class="net-code">${room.code}</span></div>
           ${
             watching
-              ? `<label></label><div class="msg ok">👁 ${t('net_watching')}</div>`
+              ? `<label></label><div class="msg ok">${ic.eye}${t('net_watching')}</div>`
               : `<label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
           <label>${t('robot')}</label>${select('rb', robots, m.robotId)}`
           }
@@ -1081,7 +1082,7 @@ export class Screens {
     const players: Array<LocalPlayer | null> = [null, null, null, null];
     const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: r.name }));
     const devLabel = (d: SlotDevice | undefined) =>
-      !d ? t('waiting') : d.type === 'keyboard' ? `⌨ ${t('keyboard')}` : d.type === 'gamepad' ? `🎮 ${t('gamepad')} ${d.index + 1}` : `👆 ${t('touch')}`;
+      !d ? t('waiting') : d.type === 'keyboard' ? `${ic.keyboard}${t('keyboard')}` : d.type === 'gamepad' ? `${ic.gamepad}${t('gamepad')} ${d.index + 1}` : `${ic.touch}${t('touch')}`;
     let first = true;
     const render = () => {
       const rows = Array.from({ length: count }, (_, i) => {
@@ -1101,7 +1102,7 @@ export class Screens {
           <label>${t('fillAi')}</label>${seg('fill', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], fill ? '1' : '0')}
           <h3>${t('assignDevices')}</h3>
           ${rows}
-          <label></label><div class="row"><button class="chipbtn" data-touchslot>👆 ${t('touch')}</button><button class="chipbtn" data-clear>${t('reset')}</button></div>
+          <label></label><div class="row"><button class="chipbtn" data-touchslot>${ic.touch}${t('touch')}</button><button class="chipbtn" data-clear>${t('reset')}</button></div>
         </div>
         <div class="actionbar"><button class="btn" data-back data-nav>${t('back')}</button><div class="grow"></div>
         <button class="btn primary" data-start ${players.slice(0, count).every(Boolean) ? '' : 'disabled'}>${t('start')}</button></div>
@@ -1166,7 +1167,7 @@ function lobbyList(info: LobbyInfo, me: string): string {
   return `<div class="net-players">${info.players
     .map(
       (p) => `<div class="net-p ${p.spectator ? 'spec' : p.alliance}"><i></i><b>${esc(p.name)}${p.id === me ? ` <small>(${t('net_you')})</small>` : ''}</b>
-        <span>${p.spectator ? `👁 ${t('net_spectator')}` : `${p.host ? '<em>HOST</em> ' : ''}${esc(p.robotName)}${p.team ? ` · ${p.team}` : ''}`}</span></div>`,
+        <span>${p.spectator ? `${ic.eye}${t('net_spectator')}` : `${p.host ? '<em>HOST</em> ' : ''}${esc(p.robotName)}${p.team ? ` · ${p.team}` : ''}`}</span></div>`,
     )
     .join('')}</div>`;
 }

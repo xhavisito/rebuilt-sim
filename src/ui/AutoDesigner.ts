@@ -14,6 +14,8 @@ import { defaultStart } from '../core/startRules';
 import type { StationNumber } from '../core/types';
 import { bind, esc, seg, select, type Opt } from './forms';
 import { t, type TKey } from './i18n';
+import { backBtn, brandbar, ic } from './chrome';
+import { alpha, box, CANVAS_FONT, FIELD_PAL } from './fieldStyle';
 
 const X0 = -F.HALF_L - 0.25;
 const X1 = 1.2;
@@ -147,13 +149,13 @@ export class AutoDesigner {
   private render(): void {
     this.stop();
     this.root.innerHTML = `<div class="inner">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      ${brandbar('2026 REBUILT', backBtn('data-back'))}
       <h1>${t('autoDesigner')}</h1>
       <div class="split">
         <div class="designer panel">
           <canvas></canvas>
           <div class="timeline">
-            <button class="chipbtn" data-play aria-label="play">▶</button>
+            <button class="chipbtn" data-play aria-label="play">${ic.play}</button>
             <input type="range" data-scrub min="0" max="1" step="0.01" value="0"/>
             <span data-clock>0.0 s</span>
           </div>
@@ -226,19 +228,19 @@ export class AutoDesigner {
         ${spline ? `<label>${t('stopHere')}</label>${seg('stop', yn, onoff(isStop(w, this.sel === this.cur.waypoints.length - 1)))}` : ''}
         <label></label><div class="row">
           ${spline && (w.hin || w.hout) ? `<button class="chipbtn" data-reset>${t('resetHandles')}</button>` : ''}
-          <button class="chipbtn" data-del>${t('delete')}</button><button class="chipbtn" data-desel>✓</button></div>`
+          <button class="chipbtn" data-del>${t('delete')}</button><button class="chipbtn" data-desel>${ic.check}</button></div>`
           : ''
       }
       <label></label><div class="row">
         <button class="chipbtn" data-new>${t('newRoutine')}</button>
         <button class="chipbtn" data-dup>${t('duplicate')}</button>
         ${ro ? '' : `<button class="chipbtn" data-save>${t('save')}</button><button class="chipbtn" data-delr>${t('delete')}</button>`}
-        <button class="chipbtn" data-undo ${this.undoStack.length ? '' : 'disabled'}>↶ ${t('undo')}</button>
+        <button class="chipbtn" data-undo ${this.undoStack.length ? '' : 'disabled'}>${ic.undo}${t('undo')}</button>
       </div>
       <label></label><div class="row">
-        <button class="chipbtn" data-export>⇩ ${t('exportJson')}</button>
-        <label class="chipbtn" style="cursor:pointer">⇧ ${t('importJson')}<input type="file" accept=".json,application/json" data-import hidden/></label>
-        <button class="chipbtn on" data-test>▶ ${t('test')}</button>
+        <button class="chipbtn" data-export>${ic.download}${t('exportJson')}</button>
+        <label class="chipbtn" style="cursor:pointer">${ic.upload}${t('importJson')}<input type="file" accept=".json,application/json" data-import hidden/></label>
+        <button class="chipbtn on" data-test>${ic.play}${t('test')}</button>
       </div>`;
     if (ro) side.querySelectorAll<HTMLButtonElement>('[data-seg] button').forEach((b) => (b.disabled = !b.closest('[data-seg="station"]')));
     bind(side, (name, v) => {
@@ -463,7 +465,7 @@ export class AutoDesigner {
     s.max = String(Math.max(0.01, this.total));
     s.value = String(this.playT);
     this.root.querySelector('[data-clock]')!.textContent = `${this.playT.toFixed(1)} / ${this.total.toFixed(1)} s`;
-    this.root.querySelector('[data-play]')!.textContent = this.playing ? '❚❚' : '▶';
+    this.root.querySelector('[data-play]')!.innerHTML = this.playing ? ic.pause : ic.play;
   }
 
   // ------------------------------------------------------------------ lienzo
@@ -606,17 +608,18 @@ export class AutoDesigner {
     if (!c || !c.width) return;
     const g = c.getContext('2d')!;
     const S = this.scale;
-    g.fillStyle = '#4b4f56';
+    const P = FIELD_PAL;
+    const lw = Math.max(1, S * 0.025);
+    g.fillStyle = P.bg;
     g.fillRect(0, 0, c.width, c.height);
-    const rect = (x0: number, z0: number, x1: number, z1: number, fill: string) => {
+    const rect = (x0: number, z0: number, x1: number, z1: number, fill: string | null, stroke: string | null = null) => {
       const [a, b] = this.toPx(Math.min(x0, x1), Math.min(z0, z1));
-      g.fillStyle = fill;
-      g.fillRect(a, b, Math.abs(x1 - x0) * S, Math.abs(z1 - z0) * S);
+      box(g, a, b, Math.abs(x1 - x0) * S, Math.abs(z1 - z0) * S, fill, stroke, lw);
     };
     // Campo y zonas (cuadrícula de 1 m como referencia)
-    rect(-F.HALF_L, -F.HALF_W, X1, F.HALF_W, '#5d6168');
-    rect(-F.HALF_L, -F.HALF_W, F.STARTING_LINE_X_BLUE, F.HALF_W, '#566070');
-    g.strokeStyle = 'rgba(255,255,255,.06)';
+    rect(-F.HALF_L, -F.HALF_W, X1, F.HALF_W, P.floor, P.edge);
+    rect(-F.HALF_L, -F.HALF_W, F.STARTING_LINE_X_BLUE, F.HALF_W, alpha(P.blue, 0.13));
+    g.strokeStyle = P.grid;
     g.lineWidth = 1;
     for (let x = Math.ceil(-F.HALF_L); x <= X1; x++) {
       const [a] = this.toPx(x, 0);
@@ -632,32 +635,38 @@ export class AutoDesigner {
       g.lineTo(this.toPx(X1, 0)[0], b);
       g.stroke();
     }
-    rect(F.STARTING_LINE_X_BLUE - F.TAPE_WIDTH, -F.HALF_W, F.STARTING_LINE_X_BLUE, F.HALF_W, '#1e88e5');
-    rect(-0.03, -F.HALF_W, 0.03, F.HALF_W, '#f0f0f0');
+    rect(F.STARTING_LINE_X_BLUE - F.TAPE_WIDTH, -F.HALF_W, F.STARTING_LINE_X_BLUE, F.HALF_W, P.blue);
+    g.strokeStyle = P.center;
+    g.setLineDash([S * 0.2, S * 0.14]);
+    g.beginPath();
+    g.moveTo(...this.toPx(0, -F.HALF_W));
+    g.lineTo(...this.toPx(0, F.HALF_W));
+    g.stroke();
+    g.setLineDash([]);
     // HUB, BUMPS, TRENCHES
     const hx = F.HUB_CENTER_X_BLUE;
-    rect(hx - F.HUB_SIZE / 2, -F.HUB_SIZE / 2, hx + F.HUB_SIZE / 2, F.HUB_SIZE / 2, '#d9dde2');
+    rect(hx - F.HUB_SIZE / 2, -F.HUB_SIZE / 2, hx + F.HUB_SIZE / 2, F.HUB_SIZE / 2, alpha(P.blue, 0.28), P.blue);
     for (const s of [-1, 1]) {
-      rect(hx - F.BUMP_DEPTH / 2, (s * F.HUB_SIZE) / 2, hx + F.BUMP_DEPTH / 2, s * (F.HUB_SIZE / 2 + F.BUMP_WIDTH), '#2c6cc4');
-      rect(hx - F.TRENCH_DEPTH / 2, s * F.TRENCH_INNER_Z, hx + F.TRENCH_DEPTH / 2, s * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), '#1b4f9c');
-      rect(hx - 0.08, s * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), hx + 0.08, s * F.HALF_W, '#9aa6b8');
+      rect(hx - F.BUMP_DEPTH / 2, (s * F.HUB_SIZE) / 2, hx + F.BUMP_DEPTH / 2, s * (F.HUB_SIZE / 2 + F.BUMP_WIDTH), alpha(P.blue, 0.12), P.blue);
+      rect(hx - F.TRENCH_DEPTH / 2, s * F.TRENCH_INNER_Z, hx + F.TRENCH_DEPTH / 2, s * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), null, P.blue);
+      rect(hx - 0.08, s * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), hx + 0.08, s * F.HALF_W, alpha(P.tower, 0.5));
     }
     // TOWER, DEPOT, OUTPOST
     const tw = F.towerInfo('blue');
-    rect(-F.HALF_L, tw.cz - F.TOWER_BASE_WIDTH / 2, -F.HALF_L + F.TOWER_BASE_DEPTH, tw.cz + F.TOWER_BASE_WIDTH / 2, '#3e4249');
-    rect(tw.uprightX - 0.05, tw.cz - F.UPRIGHT_GAP / 2 - 0.2, tw.uprightX + 0.05, tw.cz + F.UPRIGHT_GAP / 2 + 0.2, '#1e88e5');
+    rect(-F.HALF_L, tw.cz - F.TOWER_BASE_WIDTH / 2, -F.HALF_L + F.TOWER_BASE_DEPTH, tw.cz + F.TOWER_BASE_WIDTH / 2, alpha(P.blue, 0.1), P.blue);
+    rect(tw.uprightX - 0.05, tw.cz - F.UPRIGHT_GAP / 2 - 0.2, tw.uprightX + 0.05, tw.cz + F.UPRIGHT_GAP / 2 + 0.2, P.blue);
     const dp = F.depotCenter('blue');
-    rect(-F.HALF_L, dp.z - F.DEPOT_WIDTH / 2, -F.HALF_L + F.DEPOT_DEPTH, dp.z + F.DEPOT_WIDTH / 2, '#c9a400');
+    rect(-F.HALF_L, dp.z - F.DEPOT_WIDTH / 2, -F.HALF_L + F.DEPOT_DEPTH, dp.z + F.DEPOT_WIDTH / 2, alpha(P.fuel, 0.18), alpha(P.fuel, 0.6));
     const op = F.outpostInfo('blue');
-    rect(-F.HALF_L - 0.2, op.z - 0.42, -F.HALF_L, op.z + 0.42, '#1e88e5');
+    rect(-F.HALF_L - 0.2, op.z - 0.42, -F.HALF_L, op.z + 0.42, P.blue);
     // Etiquetas
-    g.fillStyle = '#fff';
-    g.font = `bold ${Math.round(S * 0.22)}px sans-serif`;
+    g.fillStyle = P.label;
+    g.font = `600 ${Math.round(S * 0.22)}px ${CANVAS_FONT}`;
     const label = (txt: string, x: number, z: number) => {
       const [a, b] = this.toPx(x, z);
       g.fillText(txt, a, b);
     };
-    label('HUB', hx - 0.3, 0.05);
+    label('HUB', hx - 0.3, 0.08);
     label('TOWER', -F.HALF_L + 0.05, tw.cz + 0.75);
     label('DEPOT', -F.HALF_L + 0.05, dp.z - 0.6);
     label('OUTPOST', -F.HALF_L + 0.05, op.z + 0.15);
@@ -668,7 +677,7 @@ export class AutoDesigner {
     if (this.mirrored(defaultStart('blue', this.station, this.halfL).z)) {
       // salida reflejada: la DS real queda del otro lado
       g.fillStyle = '#bfe0ff';
-      g.font = `bold ${Math.round(S * 0.3)}px sans-serif`;
+      g.font = `600 ${Math.round(S * 0.3)}px ${CANVAS_FONT}`;
       const [a, b] = this.toPx(st.x, st.z);
       g.fillText('⇅', a - S * 0.1, b + S * 0.1);
     }
@@ -721,7 +730,7 @@ export class AutoDesigner {
       }
       g.fill();
       g.fillStyle = '#111';
-      g.font = `bold ${Math.round(S * 0.2)}px sans-serif`;
+      g.font = `600 ${Math.round(S * 0.2)}px ${CANVAS_FONT}`;
       g.textAlign = 'center';
       g.fillText(String(i + 1), a, b + S * 0.07);
       g.textAlign = 'left';
@@ -737,7 +746,7 @@ export class AutoDesigner {
         .join(' ');
       if (tags) {
         g.fillStyle = '#fff';
-        g.font = `bold ${Math.round(S * 0.18)}px sans-serif`;
+        g.font = `600 ${Math.round(S * 0.18)}px ${CANVAS_FONT}`;
         g.fillText(tags, a + S * 0.22, b - S * 0.18);
       }
     });
