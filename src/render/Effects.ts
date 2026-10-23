@@ -60,6 +60,8 @@ export class Effects {
   private tmp = new THREE.Color();
   private material: THREE.ShaderMaterial;
   enabled = true;
+  /** Fracción de partículas que se emiten (calidad: `QualityPreset.particles`). */
+  density = 1;
 
   constructor(
     capacity = 1600,
@@ -102,6 +104,8 @@ export class Effects {
 
   emit(x: number, y: number, z: number, count: number, o: EmitOptions): void {
     if (!this.enabled) return;
+    // con densidad < 1 se redondea al azar (una ráfaga de 3 a 0.35 → 1 en promedio, no siempre 0)
+    if (this.density < 1) count = Math.floor(count * this.density + Math.random());
     this.tmp.set(o.color);
     const sp = o.speed ?? 2;
     const spread = o.spread ?? 1;

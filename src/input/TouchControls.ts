@@ -74,13 +74,31 @@ export class TouchControls {
     window.addEventListener('pointerup', (e) => this.up(e));
     window.addEventListener('pointercancel', (e) => this.up(e));
     for (const b of BUTTONS) this.makeButton(b);
+    // Guías de los joysticks (aparecen donde pones el dedo, así que al principio no se ven):
+    // se apagan cuando cada uno ya se usó
+    for (const [side, label] of [
+      ['left', 'touchMove'],
+      ['right', 'touchTurn'],
+    ] as const) {
+      const g = document.createElement('div');
+      g.className = `stick-hint sh-${side}`;
+      g.innerHTML = `<div class="knob"></div><span></span>`;
+      g.querySelector('span')!.textContent = t(label);
+      this.hints[side] = g;
+      this.root.appendChild(g);
+    }
     this.applyLayout();
   }
+
+  private hints: Record<'left' | 'right', HTMLElement | null> = { left: null, right: null };
+  /** Se usó cada joystick (en esta visita): su guía ya no aparece. */
+  private used = { left: false, right: false };
 
   setEnabled(on: boolean): void {
     this.enabled = on;
     this.root.style.display = on ? '' : 'none';
     if (!on) this.clear();
+    for (const side of ['left', 'right'] as const) this.hints[side]?.classList.toggle('gone', this.used[side]);
   }
 
   /** Muestra/oculta botones según el contexto (HP, climb…). */
@@ -121,6 +139,8 @@ export class TouchControls {
       const el = this.buttons.get(b.id);
       if (el) el.querySelector('span')!.textContent = t(b.label);
     }
+    this.hints.left!.querySelector('span')!.textContent = t('touchMove');
+    this.hints.right!.querySelector('span')!.textContent = t('touchTurn');
   }
 
   private makeButton(b: ButtonDef): void {
@@ -222,8 +242,12 @@ export class TouchControls {
     if (e.pointerType === 'mouse') return; // el mouse usa teclado/mouse
     e.preventDefault();
     const leftSide = e.clientX < window.innerWidth / 2;
+    const side = leftSide ? 'left' : 'right';
     if (leftSide && !this.left) this.left = this.makeStick(e);
     else if (!leftSide && !this.right) this.right = this.makeStick(e);
+    else return;
+    this.used[side] = true;
+    this.hints[side]?.classList.add('gone');
   }
 
   private move(e: PointerEvent): void {

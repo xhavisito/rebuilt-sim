@@ -31,6 +31,7 @@ import { QUALITY_ORDER, Renderer, type Quality, type Viewport } from '../render/
 import { Showroom } from '../render/Showroom';
 import { ensureCustomCads } from '../render/customCad';
 import { Stadium } from '../render/Stadium';
+import { robotLod } from '../render/robotLod';
 import { FLAG_SHOT, FuelState } from '../physics/FuelSystem';
 import { formatTimer, timerSeconds } from '../core/clock';
 import { loadJSON, saveJSON } from '../config/settings';
@@ -74,6 +75,13 @@ export class App {
   difficultyOf: Partial<Record<Alliance, Difficulty>> = {};
   /** Medición de FPS para la calidad "Auto". */
   private autoQ = { t: 0, frames: 0, steps: 0 };
+  /**
+   * Resolución dinámica: ventanas de medición, ventanas buenas seguidas y cuántas se necesitan
+   * para subir (se duplica si al subir vuelve a caer, para no oscilar).
+   */
+  private dyn = { t: 0, frames: 0, good: 0, need: 2, raised: false };
+  /** Último cuadro dibujado (límite de FPS). */
+  private lastDraw = 0;
   private clock = 0;
   private last = performance.now();
   private fpsEl: HTMLElement;
@@ -129,10 +137,20 @@ export class App {
     robotFx.dust = this.dust;
     this.renderer.onQualityChange.push((p) => {
       this.stadium.setDensity(p.crowd);
-      const vh = window.innerHeight * Math.min(window.devicePixelRatio || 1, p.maxPixelRatio) * p.renderScale;
+      const vh = window.innerHeight * this.renderer.pixelRatio;
       this.effects.setViewportHeight(vh);
       this.dust.setViewportHeight(vh);
+      this.effects.density = this.dust.density = p.particles;
       robotFx.level = this.renderer.quality === 'low' ? 0 : this.renderer.quality === 'medium' ? 1 : 2;
+      for (const r of this.session?.robots ?? []) r.view.setLite(robotFx.level === 0);
+      // calidad baja: sin desenfoque detrás de la interfaz (cada capa con blur vuelve a leer y
+      // difuminar el canvas en cada cuadro; en GPUs de celular cuesta tanto como la escena)
+      document.body.classList.toggle('lite-ui', this.renderer.quality === 'low');
+      // detalle de los CAD de robots (los nuevos lo toman al cargar; los del match se cambian aquí)
+      if (robotLod.ratio !== p.robotLod) {
+        robotLod.ratio = p.robotLod;
+        for (const r of this.session?.robots ?? []) void r.view.applyLod(p.robotLod);
+      }
     });
     this.input = new InputManager(this.settings, this.renderer.renderer.domElement);
     this.audio = new AudioEngine(this.settings);
@@ -372,15 +390,39 @@ export class App {
 
   applyQuality(): void {
     const q = this.settings.quality === 'auto' ? this.guessQuality() : this.settings.quality;
+    // la elección del usuario arranca de resolución completa (la dinámica vuelve a bajar si hace falta)
+    this.renderer.dynScale = 1;
+    this.dyn = { t: 0, frames: 0, good: 0, need: 2, raised: false };
     this.renderer.setQuality(q, this.session?.rigs[0]?.camera);
   }
 
-  /** Calidad inicial para "Auto": móviles → media, escritorio → alta. Luego se ajusta midiendo FPS. */
+  /**
+   * Calidad inicial para "Auto" según el equipo (memoria, núcleos, GPU por software, celular o
+   * Chromebook); luego se ajusta midiendo FPS y se recuerda.
+   */
   guessQuality(): Quality {
     const remembered = loadJSON<Quality | null>('rebuilt-sim.autoQuality', null);
     if (remembered && QUALITY_ORDER.includes(remembered)) return remembered;
-    const mobile = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
-    return mobile ? 'medium' : 'high';
+    const ua = navigator.userAgent;
+    const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8;
+    const cores = navigator.hardwareConcurrency || 4;
+    const mobile = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(ua);
+    if (mem <= 2 || cores <= 2 || this.softwareGpu()) return 'low';
+    if (mobile) return mem <= 4 || cores <= 4 ? 'low' : 'medium';
+    if (/CrOS/.test(ua) || mem <= 4 || cores <= 4) return 'medium';
+    return 'high';
+  }
+
+  /** GPU emulada por software (SwiftShader, llvmpipe…): todo lo dibuja el CPU. */
+  private softwareGpu(): boolean {
+    try {
+      const gl = this.renderer.renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+      return /swiftshader|llvmpipe|software|basic render/i.test(name);
+    } catch {
+      return false;
+    }
   }
 
   // ------------------------------------------------------------------ sesiones
@@ -1334,6 +1376,10 @@ export class App {
   start(): void {
     const loop = (now: number) => {
       requestAnimationFrame(loop);
+      // Límite de FPS (ahorro de batería): se salta cuadros de la pantalla (margen de 2 ms por el jitter)
+      const cap = this.settings.fpsCap;
+      if (cap > 0 && !this.video && now - this.lastDraw < 1000 / cap - 2) return;
+      this.lastDraw = now;
       const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
       this.tick(dt);
@@ -1354,6 +1400,7 @@ export class App {
       this.updateArenaScreen(s);
       this.emitTrails(s);
       this.autoQuality(dt, s);
+      this.dynamicRes(dt, s);
     }
     if (s?.paused && this.pauseNav) {
       const acts = this.pausePad.poll(dt);
@@ -1396,7 +1443,8 @@ export class App {
       this.fpsEl.style.display = this.settings.showFps ? '' : 'none';
       if (this.settings.showFps) {
         const info = this.renderer.info.render;
-        this.fpsEl.textContent = `${f.fps.toFixed(0)} FPS · ${this.renderer.quality} · ${info.calls} draws · ${(info.triangles / 1000).toFixed(0)}k tris · sim ${((window as unknown as { __perf: { sim: number } }).__perf?.sim ?? 0).toFixed(1)} ms · render ${((window as unknown as { __perf: { render: number } }).__perf?.render ?? 0).toFixed(1)} ms`;
+        const res = this.renderer.dynScale < 1 ? ` ${Math.round(this.renderer.dynScale * 100)}%` : '';
+        this.fpsEl.textContent = `${f.fps.toFixed(0)} FPS · ${this.renderer.quality}${res} · ${info.calls} draws · ${(info.triangles / 1000).toFixed(0)}k tris · sim ${((window as unknown as { __perf: { sim: number } }).__perf?.sim ?? 0).toFixed(1)} ms · render ${((window as unknown as { __perf: { render: number } }).__perf?.render ?? 0).toFixed(1)} ms`;
       }
     }
     (window as unknown as { __fps: number }).__fps = f.fps;
@@ -1435,7 +1483,7 @@ export class App {
    */
   private trailPrev = new Float32Array(0);
   private emitTrails(s: GameSession): void {
-    if (this.renderer.quality === 'low' || s.paused) return;
+    if (this.renderer.preset.particles < 0.5 || s.paused) return;
     const f = s.fuel;
     if (this.trailPrev.length < f.count * 4) this.trailPrev = new Float32Array(f.count * 4);
     const prev = this.trailPrev;
@@ -1476,7 +1524,9 @@ export class App {
     if (a.t < 6) return;
     const fps = a.frames / (a.t - 2);
     const i = QUALITY_ORDER.indexOf(this.renderer.quality);
-    if (fps < 42 && i > 0) {
+    // con límite de FPS la meta es relativa a él (a 30 FPS no hay que bajar la calidad)
+    const cap = this.settings.fpsCap;
+    if (fps < (cap > 0 ? cap * 0.8 : 42) && i > 0) {
       const q = QUALITY_ORDER[i - 1];
       this.renderer.setQuality(q, s.rigs[0].camera);
       saveJSON('rebuilt-sim.autoQuality', q);
@@ -1485,6 +1535,41 @@ export class App {
       a.t = 0;
       a.frames = 0;
     } else a.steps = 2;
+  }
+
+  /**
+   * Resolución dinámica: cada 1.5 s compara los FPS con la meta (50, o 90% del límite); abajo,
+   * baja la resolución de render (hasta 50%); con margen varias veces seguidas, la sube. Corre
+   * después de la calidad "Auto" (que primero elige el nivel) y no durante una exportación de video.
+   */
+  private dynamicRes(dt: number, s: GameSession): void {
+    if (!this.settings.dynamicRes || s.paused || this.video || this.countdown > 0) return;
+    if (this.settings.quality === 'auto' && this.autoQ.steps < 2) return;
+    const d = this.dyn;
+    d.t += dt;
+    d.frames++;
+    if (d.t < 1.5) return;
+    const fps = d.frames / d.t;
+    d.t = 0;
+    d.frames = 0;
+    const cap = this.settings.fpsCap;
+    const target = cap > 0 ? cap * 0.9 : 50;
+    const r = this.renderer;
+    if (fps < target) {
+      // si recién subió y volvió a caer, la próxima subida pide el doble de paciencia
+      if (d.raised) d.need = Math.min(16, d.need * 2);
+      d.raised = false;
+      d.good = 0;
+      if (r.setDynScale(r.dynScale - (fps < target * 0.7 ? 0.15 : 0.1))) this.effects.setViewportHeight(window.innerHeight * r.pixelRatio);
+    } else if (fps > target + (cap > 0 ? cap * 0.07 : 7) && r.dynScale < 1) {
+      if (++d.good < d.need) return;
+      d.good = 0;
+      d.raised = r.setDynScale(r.dynScale + 0.05);
+      if (d.raised) this.effects.setViewportHeight(window.innerHeight * r.pixelRatio);
+    } else {
+      d.raised = false;
+      d.good = 0;
+    }
   }
 
   /** Cuenta regresiva 3-2-1 antes de arrancar el match. */

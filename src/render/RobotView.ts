@@ -25,6 +25,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { CAD_RIGS, CLEAR_MIN_OPACITY, hopperSlots, openingFor, shownFuel, type CadRig, type HopperSlot, type MechState } from './cadRigs';
 import { HopperFuelSim } from './hopperFuel';
 import { cadFrame, customModel } from './customCad';
+import { lodReady, lodVariant, mergeable, mergedPart, partMeshes, registerLod, robotLod } from './robotLod';
 import type { Effects } from './Effects';
 
 /**
@@ -291,6 +292,24 @@ export class RobotView {
   private lastHopper = -1;
   private tilt = new THREE.Vector2();
   private speed = 0;
+  private fancy: Array<{ m: THREE.MeshPhysicalMaterial; sheen: number; clearcoat: number; bump: THREE.Texture | null }> = [];
+
+  /**
+   * Calidad baja: sin sheen, clearcoat ni relieve (con 0 three no compila esas partes del shader,
+   * así que cuestan como un material estándar).
+   */
+  setLite(lite: boolean): void {
+    for (const f of this.fancy) {
+      const sheen = lite ? 0 : f.sheen;
+      const clearcoat = lite ? 0 : f.clearcoat;
+      if (f.m.sheen === sheen && f.m.clearcoat === clearcoat) continue;
+      f.m.sheen = sheen;
+      f.m.clearcoat = clearcoat;
+      f.m.bumpMap = lite ? null : f.bump;
+      f.m.needsUpdate = true;
+    }
+  }
+
   /** Robot del juego: emite partículas en `robotFx` (los de la vitrina no). */
   fx = false;
   /** CAD articulado: rig y nodos que reciben la pose de cada componente (marco WPILib). */
@@ -720,6 +739,10 @@ export class RobotView {
     g.add(this.underglow);
 
     // Fusiona lo estático por material (pocas draw calls)
+    // Materiales caros (sheen de la tela, clearcoat del candy/carbono): se aligeran en calidad baja
+    for (const m of [fabric, primary] as THREE.MeshPhysicalMaterial[])
+      if (m.isMeshPhysicalMaterial) this.fancy.push({ m, sheen: m.sheen, clearcoat: m.clearcoat, bump: m.bumpMap });
+    this.setLite(robotFx.level === 0);
     mergeStaticChildren(g, new Set([this.marker, this.underglow, ...keep]));
     mergeStaticChildren(this.turret, new Set([...this.flywheels, this.hood]));
     mergeStaticChildren(this.intakeArm, new Set(this.intakeRollers));
@@ -801,6 +824,8 @@ export class RobotView {
           mesh.receiveShadow = true;
         });
         const main = nodes.get('main');
+        this.cadFile = file;
+        this.cadParts = [...nodes.values()];
         if (main) wpi.add(main);
         else wpi.add(m); // GLB viejo sin partes
         if (rig) {
@@ -850,6 +875,7 @@ export class RobotView {
         this.body.add(root);
         this.cadLoaded = true;
         this.applyMech();
+        if (this.useLod) void this.applyLod(robotLod.ratio);
       })
       .catch((e) => console.warn('robot model', file, e));
   }
@@ -909,6 +935,53 @@ export class RobotView {
     if (c.intakeNode !== c.turretNode) this.customIntake = pivotFor(c.intakeNode, false);
     this.body.add(root);
     this.cadLoaded = true;
+    if (this.useLod) void this.applyLod(robotLod.ratio);
+  }
+
+  /**
+   * Detalle del CAD (fracción de triángulos, ver robotLod.ts). Las versiones simplificadas se
+   * calculan la primera vez, en tramos cortos para no congelar la pantalla.
+   */
+  async applyLod(ratio: number): Promise<void> {
+    if (!this.cadLoaded) return;
+    const token = ++this.lodToken;
+    if (ratio < 0.999) await lodReady;
+    if (token !== this.lodToken) return;
+    const crease = (g: THREE.BufferGeometry) => creaseGeometry(g, CREASE);
+    // CAD del equipo: las piezas opacas de cada parte se fusionan (robotLod.ts); lo demás
+    // (policarbonato, CAD propio) solo cambia de geometría
+    const merge = !!this.cadFile && ratio < 0.999;
+    for (const m of this.lodMerged) m.removeFromParent();
+    this.lodMerged = [];
+    const meshes: THREE.Mesh[] = [];
+    this.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o.name !== 'lod-merged') meshes.push(o as THREE.Mesh);
+    });
+    const fused = new Set<THREE.Object3D>();
+    let slice = performance.now();
+    const pause = async () => {
+      if (performance.now() - slice < 12) return true;
+      await new Promise((r) => setTimeout(r, 0));
+      slice = performance.now();
+      return token === this.lodToken; // otro cambio de calidad mientras tanto
+    };
+    if (merge)
+      for (const part of this.cadParts) {
+        if (!(await pause())) return;
+        const own = partMeshes(part, mergeable);
+        if (!own.length) continue;
+        for (const m of mergedPart(`${this.cadFile}|${part.name}`, part, ratio, crease)) {
+          part.add(m);
+          this.lodMerged.push(m);
+        }
+        for (const m of own) fused.add(m);
+      }
+    for (const m of meshes) {
+      m.visible = !fused.has(m);
+      if (fused.has(m)) continue;
+      if (!(await pause())) return;
+      m.geometry = lodVariant(m.geometry, ratio, crease);
+    }
   }
 
   /** Lugares del FUEL en el hopper del CAD y una malla instanciada por caja. */
@@ -1066,6 +1139,13 @@ export class RobotView {
 
   /** El modelo real ya se cargó (los robots con CAD no tienen otra geometría). */
   cadLoaded = false;
+  /** Robot del juego: su CAD sigue el detalle de la calidad (`robotLod`); la vitrina, completo. */
+  useLod = false;
+  private lodToken = 0;
+  /** CAD del equipo (archivo) y sus partes `main`/`cN`, para fusionar por parte. */
+  private cadFile = '';
+  private cadParts: THREE.Object3D[] = [];
+  private lodMerged: THREE.Mesh[] = [];
   /** Se resuelve cuando el robot terminó de armarse (al instante si no usa CAD). */
   ready: Promise<void> = Promise.resolve();
 
@@ -1291,6 +1371,8 @@ function prepareCustom(scene: THREE.Object3D): Promise<void> {
  * ángulo de pliegue de 40° (superficies curvas suaves, aristas vivas), en tramos cortos para
  * no congelar la pantalla.
  */
+const CREASE = (40 * Math.PI) / 180;
+
 async function creaseNormals(scene: THREE.Object3D): Promise<void> {
   const meshes: THREE.Mesh[] = [];
   scene.traverse((o) => {
@@ -1304,9 +1386,11 @@ async function creaseNormals(scene: THREE.Object3D): Promise<void> {
       await new Promise((r) => setTimeout(r, 0));
       slice = performance.now();
     }
-    const g = creaseGeometry(m.geometry, (40 * Math.PI) / 180);
-    m.geometry.dispose();
+    // la malla soldada se conserva: de ella salen las versiones simplificadas (robotLod.ts)
+    const welded = m.geometry;
+    const g = creaseGeometry(welded, CREASE);
     m.geometry = g;
+    registerLod(welded, g);
     const mat = m.material as THREE.MeshStandardMaterial;
     if (mat.transparent) mat.depthWrite = false;
   }

@@ -98,6 +98,7 @@ export class Robot {
     this.phys = new RobotPhysics(pw, spec, index, x, z, heading);
     this.view = new RobotView(spec, alliance);
     this.view.fx = true;
+    this.view.useLod = true;
     this.view.marker.visible = control.type === 'player';
   }
 

@@ -34,13 +34,22 @@ export interface QualityPreset {
   maxSteps: number;
   /** Detalle de la esfera de FUEL (IcosahedronGeometry detail). */
   fuelDetail: number;
+  /** Fracción de triángulos de los CAD de robots (1 = completos; ver robotLod.ts). */
+  robotLod: number;
+  /** Partículas (0–1): ráfagas, chispas y estelas; 0 = sin estelas de tiros. */
+  particles: number;
+  /**
+   * Reflejos del entorno (IBL). Sin ellos cada pixel de PBR es bastante más barato (en GPUs
+   * lentas, ~+45% de FPS); se compensa con más luz ambiental.
+   */
+  ibl: boolean;
 }
 
 export const QUALITY: Record<Quality, QualityPreset> = {
-  low: { maxPixelRatio: 1, renderScale: 0.7, shadows: false, shadowMapSize: 512, fuelShadows: false, bloom: false, ao: false, aa: 'none', crowd: 0, physicsHz: 60, solverIterations: 2, maxSteps: 3, fuelDetail: 1 },
-  medium: { maxPixelRatio: 1.5, renderScale: 0.85, shadows: true, shadowMapSize: 1024, fuelShadows: false, bloom: true, ao: false, aa: 'fxaa', crowd: 0.35, physicsHz: 60, solverIterations: 2, maxSteps: 4, fuelDetail: 1 },
-  high: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, fuelShadows: true, bloom: true, ao: false, aa: 'msaa', crowd: 0.7, physicsHz: 120, solverIterations: 4, maxSteps: 6, fuelDetail: 2 },
-  ultra: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 4096, fuelShadows: true, bloom: true, ao: true, aa: 'msaa', crowd: 1, physicsHz: 120, solverIterations: 4, maxSteps: 6, fuelDetail: 2 },
+  low: { maxPixelRatio: 1, renderScale: 0.7, shadows: false, shadowMapSize: 512, fuelShadows: false, bloom: false, ao: false, aa: 'none', crowd: 0, physicsHz: 60, solverIterations: 2, maxSteps: 3, fuelDetail: 1, robotLod: 0.12, particles: 0.35, ibl: false },
+  medium: { maxPixelRatio: 1.5, renderScale: 0.85, shadows: true, shadowMapSize: 1024, fuelShadows: false, bloom: true, ao: false, aa: 'fxaa', crowd: 0.35, physicsHz: 60, solverIterations: 2, maxSteps: 4, fuelDetail: 1, robotLod: 0.4, particles: 0.7, ibl: true },
+  high: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 2048, fuelShadows: true, bloom: true, ao: false, aa: 'msaa', crowd: 0.7, physicsHz: 120, solverIterations: 4, maxSteps: 6, fuelDetail: 2, robotLod: 1, particles: 1, ibl: true },
+  ultra: { maxPixelRatio: 2, renderScale: 1, shadows: true, shadowMapSize: 4096, fuelShadows: true, bloom: true, ao: true, aa: 'msaa', crowd: 1, physicsHz: 120, solverIterations: 4, maxSteps: 6, fuelDetail: 2, robotLod: 1, particles: 1, ibl: true },
 };
 
 export interface Viewport {
@@ -66,6 +75,11 @@ export class Renderer {
   private aoPass: GTAOPass | null = null;
   private width = 1;
   private height = 1;
+  /**
+   * Resolución dinámica (0.5–1): multiplica la del preset cuando no se alcanzan los FPS
+   * (la ajusta App según el tiempo de cuadro; no cambia la calidad elegida).
+   */
+  dynScale = 1;
   /** Callbacks cuando cambia la calidad (p. ej. sombras de FUEL). */
   onQualityChange: Array<(p: QualityPreset) => void> = [];
 
@@ -87,7 +101,8 @@ export class Renderer {
     this.scene.background = new THREE.Color(0x0a0d14);
     this.scene.fog = new THREE.Fog(0x0a0d14, 40, 90);
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = this.envMap;
     this.scene.environmentIntensity = 0.32;
     pmrem.dispose();
 
@@ -115,6 +130,7 @@ export class Renderer {
   }
 
   private defaultCam = new THREE.PerspectiveCamera();
+  private envMap: THREE.Texture;
 
   setQuality(q: Quality, camera: THREE.Camera = this.defaultCam): void {
     this.quality = q;
@@ -127,6 +143,8 @@ export class Renderer {
       this.sun.shadow.map = null;
     }
     this.renderer.shadowMap.needsUpdate = true;
+    this.scene.environment = p.ibl ? this.envMap : null;
+    this.hemi.intensity = p.ibl ? 0.35 : 1.1;
     this.scene.traverse((o) => {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
@@ -168,11 +186,25 @@ export class Renderer {
     const h = this.container.clientHeight || window.innerHeight;
     this.width = w;
     this.height = h;
-    const pr = Math.min(window.devicePixelRatio || 1, this.preset.maxPixelRatio) * this.preset.renderScale;
+    const pr = this.pixelRatio;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, true);
     this.composer?.setPixelRatio(pr);
     this.composer?.setSize(w, h);
+  }
+
+  /** Píxeles de render por píxel CSS (preset × resolución dinámica). */
+  get pixelRatio(): number {
+    return Math.min(window.devicePixelRatio || 1, this.preset.maxPixelRatio) * this.preset.renderScale * this.dynScale;
+  }
+
+  /** Cambia la resolución dinámica; true si cambió. */
+  setDynScale(s: number): boolean {
+    const v = Math.round(Math.min(1, Math.max(0.5, s)) * 20) / 20;
+    if (v === this.dynScale) return false;
+    this.dynScale = v;
+    this.resize();
+    return true;
   }
 
   get aspect(): number {

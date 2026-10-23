@@ -215,6 +215,14 @@ button { font-family: inherit; color: inherit; }
 @keyframes wiggle { to { transform: rotate(3deg); } }
 .stick { position: absolute; width: 128px; height: 128px; margin: -64px 0 0 -64px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.05); pointer-events: none; }
 .stick .knob { position: absolute; left: 34px; top: 34px; width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); border: 2px solid rgba(255, 255, 255, 0.85); }
+/* Guía de dónde van los joysticks flotantes (hasta que se usan) */
+.stick-hint { position: absolute; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; border: 2px dashed rgba(255, 255, 255, 0.35); pointer-events: none; transition: opacity 0.4s; animation: stick-hint 2.4s ease-in-out infinite; }
+.stick-hint .knob { position: absolute; left: 31px; top: 31px; width: 46px; height: 46px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
+.stick-hint span { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 6px; font: 600 12px/1 var(--font-ui, sans-serif); letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255, 255, 255, 0.7); white-space: nowrap; text-shadow: 0 1px 3px #000; }
+.stick-hint.sh-left { left: 16%; top: 66%; }
+.stick-hint.sh-right { left: 58%; top: 66%; }
+.stick-hint.gone { opacity: 0; animation: none; }
+@keyframes stick-hint { 50% { opacity: 0.55; } }
 
 /* ===================================================================== HUD */
 /* Todo el HUD va en em: la letra base escala con la ventana, así que nada se sale de la pantalla
@@ -1332,3 +1340,11 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .st-coderow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .st-coderow code { font: 12px var(--mono); padding: 6px 8px; border-radius: 6px; background: var(--bg-2); word-break: break-all; flex: 1; min-width: 0; }
 .st-coderow input { flex: 1; min-width: 160px; }
+
+/* Calidad baja: sin backdrop-filter (ver App: lite-ui) */
+body.lite-ui *,
+body.lite-ui *::before,
+body.lite-ui *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
