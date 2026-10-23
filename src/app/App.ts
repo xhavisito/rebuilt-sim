@@ -225,7 +225,6 @@ export class App {
     this.session?.dispose();
     this.session = null;
     this.tournamentCtx = null;
-    this.audio.stopMusic();
     this.closeOverlay();
     this.hud.setVisible(false);
     this.touch.setEnabled(false);
@@ -378,7 +377,6 @@ export class App {
   startSession(cfg: SessionConfig, replay?: ReplayData): void {
     this.endSessionExtras();
     this.session?.dispose();
-    this.audio.stopMusic();
     this.screens.hide();
     this.doneLayoutBtn?.remove();
     if (cfg.mode !== 'local') this.input.slots = [{ type: 'any' }];
@@ -753,7 +751,6 @@ export class App {
     this.session?.dispose();
     this.session = null;
     this.tournamentCtx = null;
-    this.audio.stopMusic();
     this.closeOverlay();
     this.hud.setVisible(false);
     this.openTournament();
@@ -804,7 +801,6 @@ export class App {
         switch (e.phase) {
           case 'AUTO':
             this.audio.cavalryCharge();
-            this.audio.startMusic();
             break;
           case 'AUTO_PAUSE':
             this.audio.buzzer();
@@ -830,7 +826,6 @@ export class App {
             break;
           case 'POST':
             this.audio.buzzer();
-            this.audio.stopMusic();
             break;
         }
         break;

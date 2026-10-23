@@ -57,7 +57,7 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
   o como **video** MP4/WebM con el marcador. Lo mismo para ver IA vs IA en vivo y para entrar
   **como espectador a una sala en línea**, aunque el match ya haya empezado.
 - **Calidad** Baja / Media / Alta / Ultra / Auto (mide los FPS y se ajusta sola).
-- Español (México) e inglés; modo daltonismo; volumen separado de música, efectos y voces.
+- Español (México) e inglés; modo daltonismo; volumen separado de efectos y voces.
 
 ## Cómo correrlo
 
