@@ -4,7 +4,7 @@
 // de Repeticiones y el archivo del clip se vuelve a abrir.
 import { chromium } from 'playwright';
 import { startServer } from './_server.mjs';
-const server = await startServer(4191);
+const server = await startServer(4186);
 const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined, args: ['--use-angle=vulkan', '--enable-gpu', '--autoplay-policy=no-user-gesture-required'] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, acceptDownloads: true });
 const page = await ctx.newPage();
@@ -18,7 +18,7 @@ page.on('pageerror', (e) => {
   fail++;
 });
 page.on('console', (m) => m.type() === 'error' && console.log('CONSOLE', m.text()));
-await page.goto('http://localhost:4191/?mode=match&spectate=1&quality=low');
+await page.goto('http://localhost:4186/?mode=match&spectate=1&quality=low');
 await page.waitForFunction(() => !document.getElementById('loading'));
 check('espectador: barra con cámaras y robots', await page.isVisible('.spec-bar .sp-camsel'));
 await page.evaluate(() => {
@@ -26,13 +26,17 @@ await page.evaluate(() => {
   window.app.session.timeScale = 4;
 });
 await page.waitForFunction(() => window.app.session.match.phase === 'AUTO', null, { timeout: 15000 });
-// el director corta solo entre tomas
-// (sin GPU hay pocos FPS y el director avanza con el tiempo de cada frame: se espera hasta 40 s)
+// el director corta solo entre tomas (sin GPU hay pocos FPS y el director avanza con el tiempo de
+// cada frame: se adelanta su reloj para no esperar 9 s reales por toma)
 const modes = new Set();
-for (let k = 0; k < 80 && modes.size < 2; k++) {
-  modes.add(await page.evaluate(() => window.app.session.rigs[0].mode));
-  await page.waitForTimeout(500);
+for (let k = 0; k < 20 && modes.size < 2; k++) {
+  modes.add(await page.evaluate(() => {
+    window.app.session.director.held = 9;
+    return window.app.session.rigs[0].mode;
+  }));
+  await page.waitForTimeout(300);
 }
+modes.add(await page.evaluate(() => window.app.session.rigs[0].mode));
 check('el director usa varias cámaras', modes.size >= 2, [...modes].join(','));
 await page.screenshot({ path: 'shots/spectator-live.png' });
 // seguir a un robot: tercera persona detrás de él
@@ -52,19 +56,20 @@ check('la repetición abre con la línea de tiempo', await page.isVisible('.spec
 const pose = await page.evaluate(async () => {
   const p = window.app.replay.player;
   p.playing = false;
-  const t = p.start + (p.end - p.start) * 0.6;
-  p.seek(t);
   // (curPos = el cuadro siguiente; se dibuja interpolado entre los dos)
-  const snap = p.reader.get(p.reader.indexAt(t) + 1);
-  const r = window.app.session.robots[2].phys.curPos;
-  const s = snap.robots[2].p;
+  const at = (t) => {
+    p.seek(t);
+    const snap = p.reader.get(p.reader.indexAt(t) + 1);
+    const err = Math.max(...window.app.session.robots.map((r, i) => Math.hypot(r.phys.curPos.x - snap.robots[i].p[0], r.phys.curPos.z - snap.robots[i].p[2])));
+    return { err, pos: snap.robots.map((r) => [r.p[0], r.p[2]]) };
+  };
+  const a = at(p.start + (p.end - p.start) * 0.6);
   // y otra vez, hacia atrás
-  p.seek(p.start + 1);
-  const back = p.reader.get(p.reader.indexAt(p.start + 1) + 1).robots[2].p;
-  const r2 = window.app.session.robots[2].phys.curPos;
-  return { d1: Math.hypot(r.x - s[0], r.z - s[2]), d2: Math.hypot(r2.x - back[0], r2.z - back[2]), moved: Math.hypot(s[0] - back[0], s[2] - back[2]) };
+  const b = at(p.start + 1);
+  const moved = Math.max(...a.pos.map((q, i) => Math.hypot(q[0] - b.pos[i][0], q[1] - b.pos[i][1])));
+  return { d1: a.err, d2: b.err, moved };
 });
-check('saltar en la repetición pone los robots en su lugar', pose.d1 < 0.01 && pose.d2 < 0.01 && pose.moved > 0.3, JSON.stringify(pose));
+check('saltar en la repetición pone los robots en su lugar', pose.d1 < 0.01 && pose.d2 < 0.01 && pose.moved > 0.5, JSON.stringify(pose));
 // reproducir: avanza
 const t0 = await page.evaluate(() => window.app.replay.player.t);
 await page.click('.spec-bar [data-a="play"]');
@@ -80,12 +85,21 @@ await page.mouse.click(box.x + box.width * 0.25, box.y + box.height / 2);
 const frac = await page.evaluate(() => { const p = window.app.replay.player; return (p.t - p.start) / (p.end - p.start); });
 check('clic en la línea de tiempo salta', Math.abs(frac - 0.25) < 0.03, frac.toFixed(3));
 // cámaras del espectador en la repetición
-for (const c of ['broadcast', 'top', 'onboard', 'free', 'director']) {
-  await page.click('.spec-bar [data-a="cams"]');
-  await page.click(`.spec-bar [data-cam="${c}"]`);
-  await page.waitForTimeout(150);
-}
-check('cámaras de la repetición', (await page.evaluate(() => window.app.session.spectatorCam)) === 'director');
+// (sin GPU cada clic espera frames lentos: uno por el menú y los demás directo)
+await page.click('.spec-bar [data-a="cams"]');
+await page.click('.spec-bar [data-cam="top"]');
+const camTop = await page.evaluate(() => window.app.session.rigs[0].mode);
+const cams = await page.evaluate(async () => {
+  const s = window.app.session;
+  const out = [];
+  for (const c of ['broadcast', 'onboard', 'free', 'driver', 'director']) {
+    s.setSpectatorCam(c);
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    out.push(s.rigs[0].mode);
+  }
+  return out;
+});
+check('cámaras de la repetición', camTop === 'top' && cams.slice(0, 4).join() === 'broadcast,onboard,free,driver' && (await page.evaluate(() => window.app.session.spectatorCam)) === 'director', [camTop, ...cams].join(','));
 await page.evaluate(() => { window.app.replay.player.playing = true; });
 await page.waitForTimeout(600);
 await page.screenshot({ path: 'shots/replay.png' });
