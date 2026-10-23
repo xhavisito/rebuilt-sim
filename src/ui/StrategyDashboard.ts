@@ -19,6 +19,8 @@ import { teamAverages, type TMatch, type Tournament } from '../core/tournament';
 import type { Alliance, StationNumber } from '../core/types';
 import { esc } from './forms';
 import { t, type TKey } from './i18n';
+import { backBtn, brandbar, ic } from './chrome';
+import { alpha, box, CANVAS_FONT, FIELD_PAL } from './fieldStyle';
 
 export const COACH_PLAN_ID = 'coach-plan';
 
@@ -129,31 +131,39 @@ function drawPlanMap(c: HTMLCanvasElement, tab: Tab, rows: PhaseRow[], routines:
   const S = c.width / (X1 - X0);
   const g = c.getContext('2d')!;
   const px = (x: number, z: number): [number, number] => [(x - X0) * S, (z - Z0) * S];
-  const rect = (x0: number, z0: number, x1: number, z1: number, fill: string) => {
+  const P = FIELD_PAL;
+  const lw = Math.max(1, S * 0.025);
+  const rect = (x0: number, z0: number, x1: number, z1: number, fill: string | null, stroke: string | null = null) => {
     const [a, b] = px(Math.min(x0, x1), Math.min(z0, z1));
-    g.fillStyle = fill;
-    g.fillRect(a, b, Math.abs(x1 - x0) * S, Math.abs(z1 - z0) * S);
+    box(g, a, b, Math.abs(x1 - x0) * S, Math.abs(z1 - z0) * S, fill, stroke, lw);
   };
-  g.fillStyle = '#3c4048';
+  g.fillStyle = P.bg;
   g.fillRect(0, 0, c.width, c.height);
-  rect(-F.HALF_L, -F.HALF_W, X1 - 0.2, F.HALF_W, '#5d6168');
-  rect(-F.HALF_L, -F.HALF_W, F.STARTING_LINE_X_BLUE, F.HALF_W, '#566070');
-  rect(-0.03, -F.HALF_W, 0.03, F.HALF_W, '#f0f0f0');
+  rect(-F.HALF_L, -F.HALF_W, X1 - 0.2, F.HALF_W, P.floor, P.edge);
+  rect(-F.HALF_L, -F.HALF_W, F.STARTING_LINE_X_BLUE, F.HALF_W, alpha(P.blue, 0.13));
+  g.strokeStyle = P.center;
+  g.lineWidth = lw;
+  g.setLineDash([S * 0.2, S * 0.14]);
+  g.beginPath();
+  g.moveTo(...px(0, -F.HALF_W));
+  g.lineTo(...px(0, F.HALF_W));
+  g.stroke();
+  g.setLineDash([]);
   // HUBS (el rival solo fuera del AUTO), BUMPS, TRENCHES, TOWER y DEPOT
-  for (const [sx, col, dark] of (tab === 'auto' ? [[1, '#2c6cc4', '#1b4f9c']] : [[1, '#2c6cc4', '#1b4f9c'], [-1, '#c43c3c', '#8f2a2a']]) as Array<[number, string, string]>) {
+  for (const [sx, col] of (tab === 'auto' ? [[1, P.blue]] : [[1, P.blue], [-1, P.red]]) as Array<[number, string]>) {
     const hx = sx * F.HUB_CENTER_X_BLUE;
-    rect(hx - F.HUB_SIZE / 2, -F.HUB_SIZE / 2, hx + F.HUB_SIZE / 2, F.HUB_SIZE / 2, sx > 0 ? '#d9dde2' : '#e3c9c9');
+    rect(hx - F.HUB_SIZE / 2, -F.HUB_SIZE / 2, hx + F.HUB_SIZE / 2, F.HUB_SIZE / 2, alpha(col, 0.28), col);
     for (const sgn of [-1, 1]) {
-      rect(hx - F.BUMP_DEPTH / 2, (sgn * F.HUB_SIZE) / 2, hx + F.BUMP_DEPTH / 2, sgn * (F.HUB_SIZE / 2 + F.BUMP_WIDTH), col);
-      rect(hx - F.TRENCH_DEPTH / 2, sgn * F.TRENCH_INNER_Z, hx + F.TRENCH_DEPTH / 2, sgn * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), dark);
+      rect(hx - F.BUMP_DEPTH / 2, (sgn * F.HUB_SIZE) / 2, hx + F.BUMP_DEPTH / 2, sgn * (F.HUB_SIZE / 2 + F.BUMP_WIDTH), alpha(col, 0.12), col);
+      rect(hx - F.TRENCH_DEPTH / 2, sgn * F.TRENCH_INNER_Z, hx + F.TRENCH_DEPTH / 2, sgn * (F.HALF_W - F.TRENCH_CLEAR_WIDTH), null, col);
     }
   }
   const tw = F.towerInfo('blue');
-  rect(tw.cx, tw.cz - F.TOWER_BASE_WIDTH / 2, tw.cx + F.TOWER_BASE_DEPTH, tw.cz + F.TOWER_BASE_WIDTH / 2, '#22252b');
+  rect(tw.cx, tw.cz - F.TOWER_BASE_WIDTH / 2, tw.cx + F.TOWER_BASE_DEPTH, tw.cz + F.TOWER_BASE_WIDTH / 2, alpha(P.blue, 0.1), P.blue);
   const dp = F.depotCenter('blue');
-  rect(dp.x - F.DEPOT_DEPTH / 2, dp.z - F.DEPOT_WIDTH / 2, dp.x + F.DEPOT_DEPTH / 2, dp.z + F.DEPOT_WIDTH / 2, '#c9a400');
+  rect(dp.x - F.DEPOT_DEPTH / 2, dp.z - F.DEPOT_WIDTH / 2, dp.x + F.DEPOT_DEPTH / 2, dp.z + F.DEPOT_WIDTH / 2, alpha(P.fuel, 0.18), alpha(P.fuel, 0.6));
   // línea de salida
-  g.strokeStyle = tab === 'auto' ? '#fff' : 'rgba(255,255,255,.35)';
+  g.strokeStyle = tab === 'auto' ? P.blue : alpha(P.blue, 0.5);
   g.lineWidth = Math.max(1, S * 0.05);
   g.beginPath();
   g.moveTo(...px(F.STARTING_LINE_X_BLUE, -F.HALF_W));
@@ -162,13 +172,13 @@ function drawPlanMap(c: HTMLCanvasElement, tab: Tab, rows: PhaseRow[], routines:
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   const text = (s: string, x: number, z: number, size: number, color = '#fff') => {
-    g.font = `bold ${Math.round(S * size)}px sans-serif`;
+    g.font = `600 ${Math.round(S * size)}px ${CANVAS_FONT}`;
     g.fillStyle = color;
     g.fillText(s, ...px(x, z));
   };
   if (tab !== 'auto') {
-    text('NEUTRAL ZONE', -1.0, -F.HALF_W + 0.3, 0.2, 'rgba(255,255,255,.6)');
-    text('HUB', F.HUB_CENTER_X_BLUE, 0, 0.2, '#222');
+    text('NEUTRAL ZONE', -1.0, -F.HALF_W + 0.3, 0.2, P.label);
+    text('HUB', F.HUB_CENTER_X_BLUE, 0, 0.2, '#cfe0ff');
   }
   const robot = (r: PhaseRow, x: number, z: number, alpha: number) => {
     const [a, b] = px(x, z);
@@ -319,7 +329,7 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
   const theirTeams = plan.theirs.map((r) => r.team);
   const specOf = (team: number) => robotById(tt.teams.find((x) => x.team === team)!.specId);
   root.innerHTML = `<div class="inner dash">
-    <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">${t('dash_title')}</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+    ${brandbar(t('dash_title'), backBtn('data-back'))}
     <h1>${m.id} · ${t('dash_title')}</h1>
     <div class="panel dash-top">
       <div class="dsbadge ${me.alliance}"><small>DS</small><b>${me.station}</b></div>
@@ -424,19 +434,19 @@ export function renderDashboard(root: HTMLElement, tt: Tournament, m: TMatch, se
         : `<div class="maptools">
             <span class="dlabel">${t('dash_editDs')}</span>${ordered.map((r) => `<button class="chipbtn dsb ${r.station === selDs ? 'on' : ''}" data-selds="${r.station}" style="--c:${DS_COLOR[r.station - 1]}">${r.station}${r.isPlayer ? ` ${t('dash_you')}` : ''}</button>`).join('')}
             <span class="sep"></span>
-            <button class="chipbtn ${tool === 'route' ? 'on' : ''}" data-tool="route">✎ ${t('dash_toolRoute')}</button>
-            <button class="chipbtn ${tool === 'spot' ? 'on' : ''}" data-tool="spot" ${selKind ? '' : 'disabled'}>${selKind === 'pass' ? '◆' : '⊕'} ${t(selKind === 'pass' ? 'dash_spotPass' : 'dash_spotShoot')}</button>
+            <button class="chipbtn ${tool === 'route' ? 'on' : ''}" data-tool="route">${ic.pen}${t('dash_toolRoute')}</button>
+            <button class="chipbtn ${tool === 'spot' ? 'on' : ''}" data-tool="spot" ${selKind ? '' : 'disabled'}>${ic.target}${t(selKind === 'pass' ? 'dash_spotPass' : 'dash_spotShoot')}</button>
             <span class="sep"></span>
-            <button class="chipbtn" data-undo>↶ ${t('dash_undoPt')}</button>
+            <button class="chipbtn" data-undo>${ic.undo}${t('dash_undoPt')}</button>
             <button class="chipbtn" data-clear>${t('dash_clearRoute')}</button>
-            <button class="chipbtn" data-sugg>↺ ${t('dash_pathReset')}</button>
+            <button class="chipbtn" data-sugg>${ic.reset}${t('dash_pathReset')}</button>
           </div>`;
     const hint = tab === 'auto' ? t('dash_dragHint') : selKind ? t('dash_mapHint') : t('dash_mapHintDefend', { ds: selDs });
     box.innerHTML = `
       <div class="row strat-head"><b>${t('dash_strategy')}</b>${status}<span class="grow"></span>
-        <button class="btn primary" data-save>✓ ${t('dash_save')}</button>
-        <button class="btn" data-reset ${edited || dirty ? '' : 'disabled'}>↺ ${t('dash_reset')}</button>
-        <button class="btn" data-play>▶ ${t('play')} ${m.id}</button></div>
+        <button class="btn primary" data-save>${ic.check}${t('dash_save')}</button>
+        <button class="btn" data-reset ${edited || dirty ? '' : 'disabled'}>${ic.reset}${t('dash_reset')}</button>
+        <button class="btn" data-play>${ic.play}${t('play')} ${m.id}</button></div>
       <nav class="strat-nav">${TABS.map((ph, n) => `<button class="chipbtn ${ph === tab ? 'on' : ''}" data-tab="${ph}"><b>${n + 1}</b> ${t(`phase_${ph}_short` as TKey)}</button>`).join('')}</nav>
       <div class="dlabel" style="margin-top:4px">${t('dash_summary')}</div>
       <table class="ranktable psum"><tr><th>DS</th><th>${t('team')}</th>${TABS.map((ph, n) => `<th class="${ph === tab ? 'on' : ''}">${n + 1} · ${t(`phase_${ph}_short` as TKey)}</th>`).join('')}</tr>

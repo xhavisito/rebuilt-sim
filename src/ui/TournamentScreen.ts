@@ -39,6 +39,7 @@ import type { EventType } from '../core/types';
 import { bind, seg } from './forms';
 import { myStation, renderDashboard } from './StrategyDashboard';
 import { t, type TKey } from './i18n';
+import { backBtn, brandbar, ic } from './chrome';
 
 const KEY = 'rebuilt-sim.tournament.v1';
 
@@ -91,7 +92,7 @@ export class TournamentScreen {
 
   private setup(): void {
     this.root.innerHTML = `<div class="inner">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      ${brandbar('2026 REBUILT', backBtn('data-back'))}
       <h1>${t('tournament')}</h1>
       <div class="panel form">
         <label>${t('teams')}</label><div>${seg('teams', ['12', '18', '24', '32', '40'].map((v) => ({ value: v, label: v })), String(this.cfg.teams))}<div class="msg" data-fmt style="margin-top:4px">${this.formatNote()}</div></div>
@@ -260,7 +261,7 @@ export class TournamentScreen {
     const placeTag = (i: number) => {
       const p = tt.alliances ? places.get(i) : undefined;
       if (p === undefined) return '';
-      return `<span class="br-place ${p === 1 ? 'gold' : p === 2 ? 'silver' : ''}">${p === 1 ? '🏆 ' : ''}${t('placeN', { n: String(p) })}</span>`;
+      return `<span class="br-place ${p === 1 ? 'gold' : p === 2 ? 'silver' : ''}">${p === 1 ? ic.trophy : ''}${t('placeN', { n: String(p) })}</span>`;
     };
     const allianceList = alliancesNow
       ? alliancesNow.map((a, i) => `<div class="row"><b>A${i + 1}</b>${side(a)}${placeTag(i)}</div>`).join('')
@@ -271,7 +272,7 @@ export class TournamentScreen {
           .join('')}</div>`
       : '';
     const bracket = tt.alliances ? this.bracketHtml(tt) : '';
-    const champ = tt.champion !== null ? `<div class="msg ok" style="font-size:16px;text-align:center">🏆 ${t('champion')}: A${tt.champion + 1} ${side(tt.alliances![tt.champion])}</div>` : '';
+    const champ = tt.champion !== null ? `<div class="msg ok" style="font-size:16px;text-align:center">${ic.trophy}${t('champion')}: A${tt.champion + 1} ${side(tt.alliances![tt.champion])}</div>` : '';
     const inPlayoffs = tt.alliances?.some((a) => a.some((i) => tt.teams[i].isPlayer));
     const myA = tt.alliances?.findIndex((a) => a.some((i) => tt.teams[i].isPlayer)) ?? -1;
     const myPlace = myA >= 0 ? places.get(myA) : undefined;
@@ -283,10 +284,10 @@ export class TournamentScreen {
     // ---- Panel de lo que sigue
     let action = '';
     if (next?.kind === 'play')
-      action = `<div class="panel row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b>${this.matchLabel(tt, next.m)}</b> <span class="sw red"></span>${side(next.m.red)} <span style="color:var(--muted)">vs</span> <span class="sw blue"></span>${side(next.m.blue)} <span class="dsbadge mini ${myStation(tt, next.m).alliance}">${t('dash_nextDs', { ds: myStation(tt, next.m).station, a: t(myStation(tt, next.m).alliance) })}</span></div><div class="row" style="gap:8px"><button class="btn" data-dash>${t('dash_open')}</button><button class="btn primary" data-play>▶ ${t('play')} ${next.m.id}</button></div></div>`;
+      action = `<div class="panel row" style="justify-content:space-between;flex-wrap:wrap;gap:8px"><div><b>${this.matchLabel(tt, next.m)}</b> <span class="sw red"></span>${side(next.m.red)} <span style="color:var(--muted)">vs</span> <span class="sw blue"></span>${side(next.m.blue)} <span class="dsbadge mini ${myStation(tt, next.m).alliance}">${t('dash_nextDs', { ds: myStation(tt, next.m).station, a: t(myStation(tt, next.m).alliance) })}</span></div><div class="row" style="gap:8px"><button class="btn" data-dash>${ic.clipboard}${t('dash_open')}</button><button class="btn primary" data-play>${ic.play}${t('play')} ${next.m.id}</button></div></div>`;
     else if (next?.kind === 'watch')
       action = `<div class="panel" style="display:flex;flex-direction:column;gap:8px"><div><b>${this.matchLabel(tt, next.m)}</b> · ${t('otherTeamsMatch')} &nbsp;<span class="sw red"></span>${side(next.m.red)} <span style="color:var(--muted)">vs</span> <span class="sw blue"></span>${side(next.m.blue)}</div>
-        <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn primary" data-watch="broadcast">📺 ${t('watchBroadcast')}</button><button class="btn" data-watch="stands">🏟 ${t('watchStands')}</button><button class="chipbtn" data-skip>⏭ ${t('skipMatch')}</button><button class="chipbtn" data-skipall>⏩ ${t('skipToMine')}</button></div></div>`;
+        <div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn primary" data-watch="broadcast">${ic.tv}${t('watchBroadcast')}</button><button class="btn" data-watch="stands">${ic.field}${t('watchStands')}</button><button class="chipbtn" data-skip>${ic.skip}${t('skipMatch')}</button><button class="chipbtn" data-skipall>${ic.skipAll}${t('skipToMine')}</button></div></div>`;
     else if (next?.kind === 'pick') {
       const avail = availableTeams(tt).sort((a, b) => (rk.findIndex((r) => r.team === a) - rk.findIndex((r) => r.team === b)));
       action = `<div class="panel" style="display:flex;flex-direction:column;gap:8px"><b>${t('youPick', { a: `A${next.alliance + 1}` })}</b><div class="msg">${t('pickHelp')}</div>
@@ -303,7 +304,7 @@ export class TournamentScreen {
       const capt = sel!.alliances[next.alliance][0];
       action = `<div class="panel" style="display:flex;flex-direction:column;gap:8px"><b>${t('invitedBy', { team: String(num(capt)), a: `A${next.alliance + 1}` })}</b> <div>${side(sel!.alliances[next.alliance])}</div>
         <div class="msg">${mustAccept(tt, tt.teams.findIndex((x) => x.isPlayer)) ? t('mustAccept') : sel!.alliances.some((al) => tt.teams[al[0]].isPlayer) ? t('captainDeclineHelp') : t('declineHelp')}</div>
-        <div class="row" style="gap:8px"><button class="btn primary" data-accept>✓ ${t('accept')}</button>${mustAccept(tt, tt.teams.findIndex((x) => x.isPlayer)) ? '' : `<button class="btn" data-decline>✗ ${t('decline')}</button>`}</div></div>`;
+        <div class="row" style="gap:8px"><button class="btn primary" data-accept>${ic.check}${t('accept')}</button>${mustAccept(tt, tt.teams.findIndex((x) => x.isPlayer)) ? '' : `<button class="btn" data-decline>${ic.x}${t('decline')}</button>`}</div></div>`;
     } else if (tt.alliances && !inPlayoffs) action = `<div class="msg warn">${t('notPicked')}</div>`;
     else if (myPlace !== undefined && myPlace > 1) action = `<div class="msg warn">${myPlace === 2 ? t('finalist') : t('eliminatedPlace', { n: String(myPlace) })}</div>`;
     // ---- Ranking: general o por categoría
@@ -320,7 +321,7 @@ export class TournamentScreen {
               ${rows.map((r, i) => `<tr class="${tt.teams[r.team].isPlayer ? 'me' : ''}"><td>${i + 1}</td><td>${num(r.team)} <span style="color:var(--muted)">${tt.teams[r.team].name}</span></td><td>${fmt(c, r.value)}</td><td>${r.played}</td></tr>`).join('')}</table>`;
           })();
     this.root.innerHTML = `<div class="inner">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-new>${t('newTournament')}</button><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      ${brandbar('2026 REBUILT', `<button class="chipbtn" data-new>${t('newTournament')}</button>${backBtn('data-back')}`)}
       <h1>${t('tournament')} · ${t(`ev_${tt.eventType}` as TKey)}</h1>
       ${champ}
       ${action}

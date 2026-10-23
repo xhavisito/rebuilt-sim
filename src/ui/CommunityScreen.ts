@@ -10,6 +10,7 @@ import { ensureCustomCads, storeHubCad } from '../render/customCad';
 import type { Showroom } from '../render/Showroom';
 import { esc } from './forms';
 import { t } from './i18n';
+import { backBtn, brandbar, ic } from './chrome';
 
 export class CommunityScreen {
   private list: HubRobot[] = [];
@@ -52,7 +53,7 @@ export class CommunityScreen {
     const shown = this.list.filter((r) => !q || `${r.team} ${r.name} ${r.author}`.toLowerCase().includes(q));
     const mb = (b: number) => (b / 1024 / 1024).toFixed(1);
     this.root.innerHTML = `<div class="inner">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">${t('hub_title')}</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      ${brandbar(t('hub_title'), backBtn('data-back'))}
       <h1>${t('hub_title')}</h1>
       <div class="split">
         <div class="panel editprev" style="display:flex;flex-direction:column;gap:10px">
@@ -62,7 +63,7 @@ export class CommunityScreen {
               ? `<div class="rc-head" style="padding:0"><span class="rc-num">${c.team}</span><span class="rc-name"><b>${esc(c.name)}</b><small>${esc(c.author || t('hub_anon'))} · ${new Date(c.createdAt).toLocaleDateString()}</small></span></div>
                  <div class="msg">${c.spec.customCad ? `CAD ${mb(c.cadBytes)} MB` : t('hub_noCad')} · ${c.spec.maxSpeed} m/s · INTAKE ${c.spec.intake.rate} FUEL/s · SHOOTER ${c.spec.shooter.rate} FUEL/s · ${t('hopper')} ${c.spec.hopperCapacity} · ${c.spec.climb.maxLevel ? `L${c.spec.climb.maxLevel}` : '—'} · ⬇ ${c.downloads}</div>
                  <div class="row">
-                   <button class="chipbtn on" data-get>⬇ ${t('hub_download')}</button>
+                   <button class="chipbtn on" data-get>${ic.download}${t('hub_download')}</button>
                    ${mine[c.id] ? `<button class="chipbtn" data-del>${t('delete')}</button>` : `<button class="chipbtn" data-report ${this.reported.has(c.id) ? 'disabled' : ''}>⚑ ${t('hub_report')}</button>`}
                  </div>
                  <div data-msg></div>`
