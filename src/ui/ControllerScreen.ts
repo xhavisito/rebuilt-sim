@@ -10,6 +10,7 @@ import { padHaptics } from '../input/InputManager';
 import { buttonDown, matchPreset, PAD_PRESETS, readSticks, rebindPad, type PadPreset } from '../input/padMath';
 import { esc, type Opt } from './forms';
 import { t, type TKey } from './i18n';
+import { backBtn, brandbar, ic } from './chrome';
 import { MenuNav } from './nav';
 
 interface Ctx {
@@ -61,7 +62,7 @@ export function openControllerScreen(c: Ctx): () => void {
   const rotStick = p.sticks === 'southpaw' ? 'L' : 'R';
 
   root.innerHTML = `<div class="inner">
-    <div class="brandbar"><div class="brand"><i class="logo" aria-hidden="true"></i>REBUILT<span>SIM</span></div><div class="ctx">${t('settings')}</div><div class="grow"></div><button class="chipbtn" data-cback>← ${t('back')}</button></div>
+    ${brandbar(t('settings'), backBtn('data-cback'))}
     <h1>${t('padScreen')}</h1>
     <p class="msg">${t('padScreenDesc')}</p>
     <div class="split">
@@ -83,7 +84,7 @@ export function openControllerScreen(c: Ctx): () => void {
         <label>${t('vibStrength')}</label>${slider('vibStrength', 0.1, 1, 0.05, p.vibrationStrength)}
         <label>${t('triggerRumble')}</label>${seg('trig', onoff, p.triggerRumble ? '1' : '0')}
         ${HAPTIC_GROUPS.map((g) => `<label>${t('hapticEvents')}: ${t(`hg_${g}` as TKey)}</label>${seg(`hg-${g}`, onoff, p.haptics[g] ? '1' : '0')}`).join('')}
-        <label></label><div class="row"><button class="chipbtn" data-nav data-key="test" data-test>📳 ${t('testVibration')}</button></div>
+        <label></label><div class="row"><button class="chipbtn" data-nav data-key="test" data-test>${ic.vibrate}${t('testVibration')}</button></div>
         <h3>${t('sticks')}</h3>
         <label>${t('sticks')}</label>${seg('sticks', [{ value: 'standard', label: t('st_standard') }, { value: 'southpaw', label: t('st_southpaw') }], p.sticks)}
         <label>${t('invertRotate')}</label>${seg('invrot', onoff, p.invertRotate ? '1' : '0')}
@@ -258,7 +259,7 @@ export function openControllerScreen(c: Ctx): () => void {
     const list = pads
       .map((g) => {
         const h = padHaptics(g);
-        const caps = h.rumble ? `📳 ${t('padCanRumble')}${h.triggers ? ` · ${t('padTriggers')}` : ''}` : t('padNoRumble');
+        const caps = h.rumble ? `${t('padCanRumble')}${h.triggers ? ` · ${t('padTriggers')}` : ''}` : t('padNoRumble');
         return `<div class="row" style="gap:8px;align-items:center"><span class="kbd">${g.index + 1}</span><b>${STYLE_NAME[padStyle(g.id)]}</b><span class="msg" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(g.id)}">${esc(g.id)}</span><span class="msg">${caps}</span></div>`;
       })
       .join('');
