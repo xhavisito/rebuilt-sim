@@ -934,4 +934,40 @@ export const CAD_RIGS: Record<string, CadRig> = {
     },
     hopper: [{ min: [-0.28, -0.28, 0.12], max: [0.25, 0.28, 0.55], maxDeployed: [0.5, 0.28, 0.55] }],
   },
+
+  /**
+   * 3847 (Spectrum) "FM" — RobotSim.updateArticulatedMechanisms: c0 intake que sale 12 in en X
+   * (intakeExtension, con el frente del hopper), c1 hood que gira alrededor de
+   * SHOOTER_HOOD_PIVOT_POINT (−11, 0, 19.237 in) con pitch −(ángulo − 9°); el hood va de 9° a 49°
+   * desde la vertical (HoodConfig: 0.024–0.137 vueltas), así que el tiro más alto es 9°.
+   * Dumper fijo de 4 carriles hacia atrás (createSimBallLaunch: yaw π, x −5.5 in).
+   */
+  '3847.glb': {
+    poses(m) {
+      const hood = lerp(49, 9, m.hood);
+      return [pose([lerp(0, inch(12), m.intake), 0, 0]), rotateAround(IDENTITY, [inch(-11), 0, inch(19.237)], rot(0, -(hood - 9) * DEG, 0))];
+    },
+    hopper: [{ min: [-0.17, -0.3, 0.14], max: [0.3, 0.3, 0.5], maxDeployed: [0.3 + inch(12), 0.3, 0.5] }],
+  },
+
+  /**
+   * 1425 (Error Code Xero) "Relic" — util/Mechanism3d.periodic: c0 hood con pitch en hoodZero
+   * (−0.098, 0, 0.457), c1 intake con pitch en intakeZero (0.252, 0, 0.207): 5° guardada → 130°
+   * desplegada (IntakeConstants), c2 escudos del hopper, que la intake arrastra fuera del rango
+   * de "catch" de 0°–35° (sale 95° con la intake desplegada). Hood de servo: 5° para el tiro
+   * más alto (cerca) → 60° para el más bajo (lejos), deploy/tuning/arc.json. Shooter doble al
+   * frente desde x −8 in, carriles a ±3.7 in (MapleSimUtil.createProjectile).
+   */
+  '1425.glb': {
+    poses(m) {
+      const intake = lerp(5, 130, m.intake);
+      const hopper = Math.max(0, intake - 35);
+      return [
+        pose([-0.098, 0, 0.457], rot(0, lerp(60, 5, m.hood) * DEG, 0)),
+        pose([0.252, 0, 0.207], rot(0, intake * DEG, 0)),
+        pose([0.252, 0, 0.207], rot(0, hopper * DEG, 0)),
+      ];
+    },
+    hopper: [{ min: [-0.2, -0.28, 0.14], max: [0.2, 0.28, 0.45], maxDeployed: [0.45, 0.28, 0.45] }],
+  },
 };
