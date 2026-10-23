@@ -13,5 +13,6 @@ el estado relevante (y capturas en `shots/`).
 | `rules.mjs` | Climb L1 en AUTO, G403, PIN (G418), G420 + LEVEL 3, pantalla de resultados |
 | `offline.mjs` | PWA: tras la primera visita, el menú y un match funcionan sin red |
 | `modes.mjs` | Torneo (jugar → resultados → continuar) y multijugador local con 2 dispositivos |
+| `online.mjs` | En línea con 2 pestañas (WebRTC real, señalización local): lobby, match, controles remotos, marcador y la IA toma al que se va |
 
 Uso: `npm run e2e` (todos) o `node scripts/scenarios/rules.mjs`.

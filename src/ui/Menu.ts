@@ -1,6 +1,6 @@
 /**
  * Pantallas de menú: principal, configuración del match, ajustes (con reasignación de
- * controles) y multijugador local (asignación de dispositivos).
+ * controles), multijugador local (asignación de dispositivos) y en línea (salas y lobby).
  */
 import { aiMemory } from '../ai/memoryStore';
 import { loadStrategies } from '../ai/Strategy';
@@ -18,6 +18,8 @@ import { getLang, setLang, t, type TKey } from './i18n';
 import { keyToNav, MenuNav, PadNav, type NavOptions } from './nav';
 import { RULES_CONTENT } from './rulesContent';
 import type { Showroom } from '../render/Showroom';
+import type { ClientRoom, HostRoom } from '../net/Online';
+import { parseRoomCode, type LobbyInfo } from '../net/protocol';
 
 export type SetupMode = 'practice' | 'match';
 
@@ -112,6 +114,7 @@ export class Screens {
     const play: Array<[string, TKey, TKey]> = [
       ['practice', 'practice', 'practiceDesc'],
       ['local', 'local', 'localDesc'],
+      ['online', 'online', 'onlineDesc'],
       ['tournament', 'tournament', 'tournamentDesc'],
       ['spectate', 'spectate', 'spectateDesc'],
     ];
@@ -222,6 +225,7 @@ export class Screens {
         const go = b.dataset.go!;
         if (go === 'match' || go === 'practice') this.setup(go);
         else if (go === 'local') this.local();
+        else if (go === 'online') this.online();
         else if (go === 'settings') this.settings();
         else if (go === 'tournament') this.app.openTournament();
         else if (go === 'auto') this.app.openAutoDesigner();
@@ -782,6 +786,158 @@ export class Screens {
     );
   }
 
+  // ------------------------------------------------------------------ en línea
+  /** Crear una sala o entrar a una con su código (`code`: el del enlace `?join=`). */
+  online(code = '', error = ''): void {
+    const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: r.name }));
+    const m = this.s.match;
+    this.show(`
+      ${this.brandbar('2026 REBUILT')}
+      <h1>${t('online')}</h1>
+      <div class="panel form">
+        <label>${t('driverName')}</label><input type="text" maxlength="24" data-name value="${esc(this.s.driverName)}" placeholder="${t('driverPlaceholder')}"/>
+        <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
+        <label>${t('robot')}</label>${select('rb', robots, m.robotId)}
+        <h3>${t('net_create')}</h3>
+        <label></label><div class="row"><button class="btn primary" data-nav data-create>${t('net_create')}</button></div>
+        <h3>${t('net_join')}</h3>
+        <label>${t('net_code')}</label><div class="row"><input type="text" class="net-code-in" maxlength="7" data-code value="${esc(code)}" placeholder="ABCDE" autocapitalize="characters" autocomplete="off" spellcheck="false"/>
+          <button class="btn" data-nav data-join>${t('net_join')}</button></div>
+        <label></label><div class="msg ${error ? 'bad' : 'warn'}" data-status ${error ? '' : 'hidden'}>${esc(error)}</div>
+      </div>
+      <div class="actionbar"><button class="btn" data-back data-nav>${t('back')}</button></div>
+    `);
+    this.enableNav();
+    const r = this.root;
+    bind(r, (name, v) => {
+      if (name === 'al') m.alliance = v as Alliance;
+      else if (name === 'rb') m.robotId = String(v);
+      this.app.save();
+    });
+    const nameIn = r.querySelector<HTMLInputElement>('[data-name]')!;
+    nameIn.addEventListener('input', () => {
+      this.s.driverName = nameIn.value.trim();
+      this.app.save();
+    });
+    const status = r.querySelector<HTMLElement>('[data-status]')!;
+    const busy = (msg: string, bad = false) => {
+      status.hidden = false;
+      status.className = `msg ${bad ? 'bad' : 'warn'}`;
+      status.textContent = msg;
+      r.querySelectorAll<HTMLButtonElement>('[data-create], [data-join]').forEach((b) => (b.disabled = !bad));
+    };
+    r.querySelector('[data-create]')!.addEventListener('click', () => {
+      busy(t('net_connecting'));
+      this.app
+        .hostRoom()
+        .then((room) => this.onlineHost(room))
+        .catch(() => busy(t('net_err_network'), true));
+    });
+    const codeIn = r.querySelector<HTMLInputElement>('[data-code]')!;
+    const join = () => {
+      const c = parseRoomCode(codeIn.value);
+      if (!c) return busy(t('net_badCode'), true);
+      busy(t('net_connecting'));
+      this.app
+        .joinRoom(c, m.alliance, m.robotId)
+        .then((room) => this.onlineClient(room))
+        .catch((e: Error) => busy(t(`net_err_${e.message}` as TKey) || t('net_err_network'), true));
+    };
+    r.querySelector('[data-join]')!.addEventListener('click', join);
+    codeIn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') join();
+    });
+    if (code && !error) join();
+  }
+
+  /** Salir del lobby: cierra la sala (host) o sale de ella. */
+  private leaveLobby(): void {
+    this.app.leaveOnline();
+    this.online();
+  }
+
+  /** Lobby del host: código, jugadores y arrancar. */
+  private onlineHost(room: HostRoom): void {
+    const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: r.name }));
+    let first = true;
+    const render = () => {
+      if (this.app.netHost !== room || room.started) return;
+      const info = room.lobby();
+      this.show(
+        `
+        ${this.brandbar('2026 REBUILT')}
+        <h1>${t('online')}</h1>
+        <div class="panel form">
+          <label>${t('net_room')}</label><div class="row"><span class="net-code" data-roomcode>${room.code}</span><button class="chipbtn" data-copy>⧉ ${t('net_copyLink')}</button></div>
+          <label></label><div class="msg ok">${t('net_shareHint')}</div>
+          <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], room.me.alliance)}
+          <label>${t('robot')}</label>${select('rb', robots, room.me.spec.id)}
+          <label>${t('fillAi')}</label>${seg('fill', [{ value: '1', label: t('on') }, { value: '0', label: t('off') }], room.fillAi ? '1' : '0')}
+          <h3>${t('net_players', { n: info.players.length })}</h3>
+          ${lobbyList(info, 'host')}
+          <label></label><div class="msg warn">${t('net_hostHint')} ${t('net_seat')}</div>
+        </div>
+        <div class="actionbar"><button class="btn" data-nav data-leave>${t('net_leave')}</button><div class="grow"></div>
+        <button class="btn primary" data-nav data-start>${t('net_startMatch')}</button></div>`,
+        !first,
+      );
+      first = false;
+      if (this.nav) this.nav.refresh();
+      else this.enableNav({ onBack: () => this.leaveLobby() });
+      bind(this.root, (name, v) => {
+        if (name === 'al') room.me.alliance = v as Alliance;
+        else if (name === 'rb') room.me.spec = robotById(String(v));
+        else if (name === 'fill') room.fillAi = v === '1';
+        room.lobbyChanged();
+      });
+      this.root.querySelector('[data-leave]')!.addEventListener('click', () => this.leaveLobby());
+      this.root.querySelector('[data-copy]')!.addEventListener('click', () => {
+        const url = `${location.origin}${location.pathname}?join=${room.code}${location.search.includes('signal=local') ? '&signal=local' : ''}`;
+        void navigator.clipboard?.writeText(url).then(() => this.app.toast(t('net_copied'), 'good'));
+      });
+      this.root.querySelector('[data-start]')!.addEventListener('click', () => this.app.startOnlineMatch());
+    };
+    room.onLobby = render;
+    render();
+  }
+
+  /** Lobby del cliente: jugadores, tu alianza/robot y esperar al host. */
+  private onlineClient(room: ClientRoom): void {
+    const robots: Opt[] = allRobots().map((r) => ({ value: r.id, label: r.name }));
+    const m = this.s.match;
+    let first = true;
+    const render = (info: LobbyInfo | null) => {
+      if (this.app.netClient !== room || this.app.session) return;
+      this.show(
+        `
+        ${this.brandbar('2026 REBUILT')}
+        <h1>${t('online')}</h1>
+        <div class="panel form">
+          <label>${t('net_room')}</label><div class="row"><span class="net-code">${room.code}</span></div>
+          <label>${t('alliance')}</label>${seg('al', [{ value: 'blue', label: t('blue'), cls: 'blue' }, { value: 'red', label: t('red'), cls: 'red' }], m.alliance)}
+          <label>${t('robot')}</label>${select('rb', robots, m.robotId)}
+          <h3>${t('net_players', { n: info?.players.length ?? 1 })}</h3>
+          ${info ? lobbyList(info, room.id) : ''}
+          <label></label><div class="msg warn net-wait">${t('net_waitHost')}</div>
+        </div>
+        <div class="actionbar"><button class="btn" data-nav data-leave>${t('net_leave')}</button></div>`,
+        !first,
+      );
+      first = false;
+      if (this.nav) this.nav.refresh();
+      else this.enableNav({ onBack: () => this.leaveLobby() });
+      bind(this.root, (name, v) => {
+        if (name === 'al') m.alliance = v as Alliance;
+        else if (name === 'rb') m.robotId = String(v);
+        this.app.save();
+        room.pick(m.alliance, robotById(m.robotId));
+      });
+      this.root.querySelector('[data-leave]')!.addEventListener('click', () => this.leaveLobby());
+    };
+    room.onLobby = render;
+    render(room.lobby);
+  }
+
   // ------------------------------------------------------------------ multijugador local
   local(): void {
     let count = 2;
@@ -870,6 +1026,16 @@ export class Screens {
 
 type PickerTab = 'top' | 'custom';
 
+/** Lista de jugadores del lobby en línea. */
+function lobbyList(info: LobbyInfo, me: string): string {
+  return `<div class="net-players">${info.players
+    .map(
+      (p) => `<div class="net-p ${p.alliance}"><i></i><b>${esc(p.name)}${p.id === me ? ` <small>(${t('net_you')})</small>` : ''}</b>
+        <span>${p.host ? '<em>HOST</em> ' : ''}${esc(p.robotName)}${p.team ? ` · ${p.team}` : ''}</span></div>`,
+    )
+    .join('')}</div>`;
+}
+
 // ------------------------------------------------------------------ helpers de las pantallas
 
 /** "Swerve · Turret · Climb L2" */
@@ -946,6 +1112,8 @@ const MODE_ICON: Record<string, string> = {
   practice: svg('<path d="M12 2.8 20 7.4v9.2L12 21.2 4 16.6V7.4z"/><circle cx="12" cy="12" r="3.2"/>'),
   // dos controles
   local: svg('<rect x="2.5" y="8" width="9" height="7" rx="3.5"/><rect x="12.5" y="8" width="9" height="7" rx="3.5"/><path d="M5.5 11.5h3M7 10v3M17 11.5h1.6"/>'),
+  // globo con señal
+  online: svg('<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5s-1.2 6.1-3.8 8.5c-2.6-2.4-3.8-5.2-3.8-8.5s1.2-6.1 3.8-8.5z"/>'),
   // trofeo
   tournament: svg('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4"/>'),
   // ojo / transmisión
