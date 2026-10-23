@@ -34,6 +34,9 @@ import { inLane, inNeutral, routeDistance, type PathPhase, type PhasePath, type 
 import { passTarget, PASS_LANE_MIN } from '../game/Mechanisms';
 import type { AiMemory } from './Memory';
 import type { DynRole, RobotProfile } from './Scouting';
+import { DIFFICULTY, type DifficultyProfile } from './difficulty';
+import { blocked, defenseGoal, evadeSpot, passClear, pickThreat, type Candidate } from './Defense';
+import { fitsUnderTrench } from '../config/robots';
 
 export interface AiContext {
   robots: Robot[];
@@ -74,12 +77,7 @@ interface Episode {
 
 type State = 'pass' | 'collect' | 'score' | 'stage' | 'defend' | 'stockpile' | 'climb' | 'descend' | 'idle';
 
-export const DIFFICULTY: Record<Difficulty, { speed: number; think: number; accuracy: number; climbMargin: number; mistakes: number }> = {
-  easy: { speed: 0.68, think: 0.9, accuracy: 0.82, climbMargin: 7, mistakes: 0.25 },
-  normal: { speed: 0.84, think: 0.5, accuracy: 0.94, climbMargin: 5, mistakes: 0.1 },
-  hard: { speed: 0.94, think: 0.3, accuracy: 1.0, climbMargin: 4, mistakes: 0.04 },
-  einstein: { speed: 1.0, think: 0.18, accuracy: 1.06, climbMargin: 3, mistakes: 0 },
-};
+export { DIFFICULTY } from './difficulty';
 
 /** Centro aproximado de cada TOWER (UPRIGHTS y base). */
 const TOWERS = (['red', 'blue'] as const).map((a) => {
@@ -118,7 +116,12 @@ export class RobotAI {
   private episode: Episode | null = null;
   private lastEta = 3;
   private hazardEscapes = 0;
-  private readonly d: (typeof DIFFICULTY)[Difficulty];
+  private readonly d: DifficultyProfile;
+  /** Punto de tiro alterno para esquivar a un defensor (y desde cuándo). */
+  private dodge: Pt | null = null;
+  private dodgeT = 0;
+  /** Segundos que le quedan separándose de un rival al que le estaba haciendo PIN (G418). */
+  private unpinT = 0;
 
   constructor(
     private r: Robot,
@@ -129,6 +132,11 @@ export class RobotAI {
     this.d = DIFFICULTY[difficulty];
     // Nivel de climb al que aspira (los fáciles a veces se quedan abajo)
     this.climbLevel = Math.max(0, r.spec.climb.maxLevel - (difficulty === 'easy' ? 1 : 0));
+  }
+
+  /** Memoria de prueba y error (en Fácil no aprende: juega como principiante). */
+  private get mem(): AiMemory | undefined {
+    return this.d.memory ? this.ctx.memory : undefined;
   }
 
   /** Aplica el plan de la estrategia (lo asigna la sesión, después de crear la IA). */
@@ -269,7 +277,7 @@ export class RobotAI {
     const travel = dist / (this.r.spec.maxSpeed * this.d.speed * 0.6);
     // ¿Vale más trepar o seguir anotando? Con su ritmo real (memoria): si en lo que tarda en
     // trepar anota claramente más que los puntos del nivel, se queda anotando
-    const rate = this.ctx.memory?.rate(this.r.spec.id);
+    const rate = this.mem?.rate(this.r.spec.id);
     const pts = [0, 10, 20, 30][this.climbLevel];
     if (rate && rate * (need + travel) > pts * 1.5) return false;
     return T.teleopEnd - m.t <= need + travel + this.d.climbMargin;
@@ -293,7 +301,7 @@ export class RobotAI {
       this.hazardEscapes = this.nav.escapes;
       const p = r.phys.curPos;
       const pushed = others.some((o) => o !== r && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < o.phys.outerW + r.phys.outerW + 0.3);
-      if (!pushed) this.ctx.memory?.addHazard(r.spec.id, p.x, p.z);
+      if (!pushed) this.mem?.addHazard(r.spec.id, p.x, p.z);
     }
     switch (this.state) {
       case 'collect': {
@@ -354,9 +362,15 @@ export class RobotAI {
             cmd.drive = this.nav.follow(dt, others, { speed: speed * 0.8, heading: null, tol: 0.1 }).cmd;
           }
         }
-        cmd.pass = n > 0;
+        // con su HUB en medio del pase (G407 si cae adentro), primero se hace a un lado
+        const clear = passClear(r.alliance, p, goal);
+        if (!clear && inNeutral(p.x) && (r.spec.shooter.type === 'fixed' || this.targetBall < 0)) {
+          this.nav.plan({ x: p.x, z: (Math.sign(p.z) || 1) * 2.8 });
+          cmd.drive = this.nav.follow(dt, others, { speed: speed * 0.8, heading: null, tol: 0.3 }).cmd;
+        }
+        cmd.pass = n > 0 && clear;
         cmd.aim = { x: goal.x, z: goal.z };
-        if (r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x)), 0.03);
+        if (clear && r.spec.shooter.type === 'fixed') cmd.drive.omega = this.nav.omegaTo(chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x)), 0.03);
         break;
       }
       case 'stockpile': {
@@ -368,7 +382,7 @@ export class RobotAI {
         if (this.targetBall < 0 || this.targetAge > 1.5) this.pickBall();
         const p = r.phys.curPos;
         const goal = this.passGoal();
-        const passing = n >= r.spec.hopperCapacity - 2 && inNeutral(p.x) && this.timeUntilCounts() > this.lastEta + 4;
+        const passing = n >= r.spec.hopperCapacity - 2 && inNeutral(p.x) && this.timeUntilCounts() > this.lastEta + 4 && passClear(r.alliance, p, goal);
         // chasis hacia el pase si el shooter es fijo (swerve: se traslada igual)
         const passYaw = chassisYawFor(r, r.lastSolution?.yaw ?? Math.atan2(-(goal.z - p.z), goal.x - p.x));
         const heading = passing && r.spec.shooter.type === 'fixed' ? passYaw : null;
@@ -413,20 +427,38 @@ export class RobotAI {
         r.intakeOn = false;
         const v = this.ctx.robots[this.defendTarget];
         if (!v) break;
-        // Se interpone entre el rival y su HUB; suelta si va a cumplirse el conteo de PIN
-        if (this.ctx.pinSeconds(r.index) > 2.0) this.retreatT = 3.2;
-        const hub = F.hubCenter(v.alliance);
+        const ds = this.d.defense;
+        // Suelta antes de que se cumplan los 3 s de PIN (G418) y se mantiene separado > 3 s para
+        // que el conteo termine
+        if (this.ctx.pinSeconds(r.index) > ds.pinRelease) this.retreatT = 3.3;
+        const release = this.retreatT > 0;
+        if (release) this.retreatT -= dt;
+        const p = r.phys.curPos;
         const vp = v.phys.curPos;
-        const dx = hub.x - vp.x;
-        const dz = hub.z - vp.z;
-        const dd = Math.hypot(dx, dz) || 1;
-        let goal = { x: vp.x + (dx / dd) * 1.0, z: vp.z + (dz / dd) * 1.0 };
-        if (this.retreatT > 0) {
-          this.retreatT -= dt;
-          goal = { x: vp.x + (dx / dd) * 2.8, z: vp.z + (dz / dd) * 2.8 + 1.5 };
+        const vv = v.phys.velocity();
+        const standoff = r.phys.outerW + v.phys.outerW + 0.05;
+        let goal: Pt;
+        if (release && !ds.shadow) {
+          // se aleja del rival (y le deja el camino)
+          const ax = p.x - vp.x;
+          const az = p.z - vp.z;
+          const ad = Math.hypot(ax, az) || 1;
+          goal = { x: vp.x + (ax / ad) * 2.4, z: vp.z + (az / ad) * 2.4 };
+        } else {
+          // entre el rival y a donde va (con anticipación: lo espera en el BUMP/TRENCH por el que
+          // va a cruzar); al soltar un PIN, se queda enfrente sin tocarlo
+          goal = defenseGoal(v.alliance, { x: vp.x, z: vp.z, vx: vv.x, vz: vv.z }, fitsUnderTrench(v.spec), {
+            lead: ds.lead,
+            intercept: ds.intercept,
+            standoff,
+            shadow: release,
+          });
         }
         this.nav.plan(goal);
-        const res = this.nav.follow(dt, others.filter((o) => o !== v), { speed, heading: null, tol: 0.2, avoidRobots: this.retreatT > 0 });
+        // Llega al contacto despacio: no es una embestida (G416) y empuja igual
+        const near = Math.hypot(vp.x - p.x, vp.z - p.z) < standoff + 1.0;
+        const sp = near ? Math.min(speed, ds.contactSpeed / r.spec.maxSpeed) : speed;
+        const res = this.nav.follow(dt, release ? others : others.filter((o) => o !== v), { speed: sp, heading: null, tol: 0.2, avoidRobots: release });
         cmd.drive = res.cmd;
         break;
       }
@@ -457,6 +489,29 @@ export class RobotAI {
       }
       case 'idle':
         break;
+    }
+    // G418: en cualquier otro estado (recogiendo, tirando), si está haciendo PIN a un rival se
+    // separa antes de los 3 s (el defensor ya lo hace a su manera, arriba)
+    if (this.state !== 'defend') {
+      if (this.ctx.pinSeconds(r.index) > this.d.defense.pinRelease) this.unpinT = 1.6;
+      if (this.unpinT > 0) {
+        this.unpinT -= dt;
+        const p = r.phys.curPos;
+        let v: Robot | null = null;
+        let vd = Infinity;
+        for (const o of others) {
+          if (o.alliance === r.alliance) continue;
+          const d = Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z);
+          if (d < vd) {
+            vd = d;
+            v = o;
+          }
+        }
+        if (v && vd < 2.5) {
+          const k = (r.spec.maxSpeed * 0.6) / (vd || 1);
+          cmd.drive = { vx: (p.x - v.phys.curPos.x) * k, vz: (p.z - v.phys.curPos.z) * k, omega: 0 };
+        }
+      }
     }
     // G408: no agarrar FUEL recién salido del HUB (la intake se apaga mientras pasa)
     if (r.intakeOn && hubFuelNear(f, r)) r.intakeOn = false;
@@ -503,16 +558,72 @@ export class RobotAI {
     const m = this.ctx.match;
     const opp = opponent(this.r.alliance);
     if (!m || !m.isHubActive(opp)) return false;
-    const threat = (o: Robot) => (this.ctx.profile?.(o.index).scoring ?? 0.5) * (0.3 + this.ctx.fuel.robotCount(o.index) / o.spec.hopperCapacity);
-    const victims = this.ctx.robots.filter((o) => o.alliance === opp && !o.climbing);
-    victims.sort((a, b) => threat(b) - threat(a));
+    // Últimos 30 s: nada de acercarse a un rival junto a su TOWER (G420)
+    const late = m.t > T.endGame - 4;
+    const tw = F.towerInfo(opp);
+    const cands: Candidate[] = this.ctx.robots
+      .filter((o) => o.alliance === opp)
+      .map((o) => ({
+        index: o.index,
+        pos: o.phys.curPos,
+        scoring: this.ctx.profile?.(o.index).scoring ?? 0.5,
+        fill: this.ctx.fuel.robotCount(o.index) / o.spec.hopperCapacity,
+        off: o.climbing || o.disabled || (late && Math.hypot(o.phys.curPos.x - tw.cx, o.phys.curPos.z - tw.cz) < 2.6),
+      }));
     // el rival que le asignó la estrategia (o el drive coach), si está en la cancha
-    const assigned = this.coachVictim ?? this.plan?.defendTeam ?? null;
-    const marked = assigned !== null ? victims.find((o) => o.spec.teamNumber === assigned) : undefined;
-    if (marked) victims.unshift(marked);
-    if (!victims[0]) return false;
-    this.defendTarget = victims[0].index;
+    const team = this.coachVictim ?? this.plan?.defendTeam ?? null;
+    const assigned = team !== null ? (this.ctx.robots.find((o) => o.alliance === opp && o.spec.teamNumber === team)?.index ?? -1) : -1;
+    const cur = this.state === 'defend' ? this.defendTarget : -1;
+    const i = pickThreat(cands, this.r.phys.curPos, cur, assigned);
+    if (i < 0) return false;
+    this.defendTarget = i;
     return true;
+  }
+
+  /**
+   * Punto de tiro con esquive (Difícil y Einstein): si un defensor rival le tapa el camino o el
+   * punto, elige otro de su ALLIANCE ZONE que le quede libre; lo conserva un rato.
+   */
+  private aimSpot(base: Pt): Pt {
+    const m = this.ctx.match;
+    if (!this.d.evade || !m) return base;
+    const r = this.r;
+    const p = r.phys.curPos;
+    const opp = opponent(r.alliance);
+    const defenders = this.ctx.robots
+      .filter((o) => o.alliance === opp && !o.climbing && Math.min(Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z), Math.hypot(o.phys.curPos.x - base.x, o.phys.curPos.z - base.z)) < 3.5)
+      .map((o) => o.phys.curPos);
+    const cur = this.dodge && m.t - this.dodgeT < 6 ? this.dodge : null;
+    if (!defenders.length) {
+      this.dodge = null;
+      return base;
+    }
+    if (!blocked(p, cur ?? base, defenders)) return cur ?? base;
+    if (cur && m.t - this.dodgeT < 1.5) return cur; // recién eligió: no cambia de idea a cada rato
+    const hub = F.hubCenter(r.alliance);
+    const spots: Pt[] = [base];
+    for (const depth of [2.2, 2.9, 3.5])
+      for (const z of [-2.4, -1.2, 0, 1.2, 2.4]) {
+        const s = { x: hub.x + this.sgn * depth, z };
+        if (!TOWERS.some((t) => Math.hypot(s.x - t.x, s.z - t.z) < 1.4)) spots.push(s);
+      }
+    const s = evadeSpot(p, spots, defenders, cur);
+    if (s !== cur) {
+      this.dodge = s === base ? null : s;
+      this.dodgeT = m.t;
+    }
+    return s;
+  }
+
+  /**
+   * ¿Le da tiempo de seguir defendiendo? (Difícil y Einstein) Con el hopper casi vacío deja la
+   * defensa unos segundos antes de que su HUB vuelva a contar, para llegar con FUEL.
+   */
+  private defendTimeLeft(until: number, eta: number, n: number): boolean {
+    const lead = this.d.defense.leaveEarly;
+    if (lead <= 0 || until >= 99) return true;
+    const cap = this.r.spec.hopperCapacity;
+    return until - eta > (n >= cap - 2 ? 1.2 : lead + 2.5 * (1 - n / cap));
   }
 
   /** Duración (s) de la ventana activa que empieza en `until` segundos. */
@@ -536,14 +647,15 @@ export class RobotAI {
     const options: Tactic[] = until - this.lastEta <= 8 ? ['hold', 'stockpile'] : ['stockpile'];
     const mates = this.ctx.robots.filter((o) => o !== r && o.alliance === r.alliance);
     const someoneDefends = mates.some((o) => this.ctx.tactics?.get(o.index) === 'defend');
-    if (!someoneDefends && m.isHubActive(opponent(r.alliance))) options.push('defend');
+    // (en Fácil no se le ocurre defender por su cuenta)
+    if (!someoneDefends && this.d.defense.willing > 0 && m.isHubActive(opponent(r.alliance))) options.push('defend');
     const prof = this.ctx.profile?.(r.index);
     const heuristic: Record<string, number> = {
       hold: 0,
       stockpile: 3 + (long ? 3 : 0) + ((prof?.passing ?? 0.5) - 0.5) * 6,
-      defend: 1 + ((prof?.defense ?? 0.5) - 0.5) * 12,
+      defend: 1 + ((prof?.defense ?? 0.5) - 0.5) * 12 + (this.d.defense.willing - 1) * 4,
     };
-    const mem = this.ctx.memory;
+    const mem = this.mem;
     let t: Tactic;
     if (mem) t = mem.choose(r.spec.id, ctxKey, options, this.ctx.rng, heuristic, this.ctx.training ? 0.3 : 0.05) as Tactic;
     else t = options.reduce((a, b) => (heuristic[b] > heuristic[a] ? b : a));
@@ -580,7 +692,7 @@ export class RobotAI {
     }
     if (!counting || final) {
       const reward = (m.score(own) - ep.own1) / 3 - (ep.opp1 - ep.opp0) / 3;
-      this.ctx.memory?.record(this.r.spec.id, ep.ctx, ep.tactic, reward);
+      this.mem?.record(this.r.spec.id, ep.ctx, ep.tactic, reward);
       this.episode = null;
     }
   }
@@ -588,7 +700,7 @@ export class RobotAI {
   /** Fin del match: cierra el episodio pendiente y guarda lo aprendido. */
   finishMatch(activeSeconds: number): void {
     this.trackEpisode(true);
-    const mem = this.ctx.memory;
+    const mem = this.mem;
     if (!mem) return;
     mem.endMatch(this.r.spec.id, activeSeconds > 20 ? this.r.stats.fuelScored / activeSeconds : null);
   }
@@ -667,7 +779,7 @@ export class RobotAI {
       const nothingNear = this.state === 'collect' && this.targetBall < 0 && !this.route.length;
       if (n > 0 && worth && (n >= load || mustGo || nothingNear || this.state === 'score' || this.inShootZone())) {
         this.state = 'score';
-        this.target = spot;
+        this.target = this.aimSpot(spot);
         return;
       }
     } else if (willCount || n > 0) {
@@ -676,7 +788,7 @@ export class RobotAI {
       const until = this.timeUntilCounts();
       if (n > 0 && until <= eta + 1.2) {
         this.state = 'score';
-        this.target = spot;
+        this.target = this.aimSpot(spot);
         return;
       }
       // Con tiempo de sobra nunca se queda esperando todo el SHIFT en su zona: el defensor
@@ -684,7 +796,7 @@ export class RobotAI {
       // acaparan (pasan FUEL a su ALLIANCE ZONE) o defienden. Esperar solo si falta poco.
       const slack = until - eta;
       if (!endgame && slack > 4 && !this.feeding) {
-        if (this.defending && this.pickVictim()) {
+        if (this.defending && this.defendTimeLeft(until, eta, n) && this.pickVictim()) {
           this.state = 'defend';
           return;
         }
@@ -712,20 +824,20 @@ export class RobotAI {
       }
       if (n > 0 && full) {
         this.state = 'stage';
-        this.target = spot;
+        this.target = this.aimSpot(spot);
         return;
       }
     }
     // Defensor: con su HUB inactivo y el rival activo; marca al rival más peligroso (scouting:
     // qué tan bien anota por qué tan lleno viene)
     const opp = opponent(r.alliance);
-    if (this.defending && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && !endgame && this.pickVictim()) {
+    if (this.defending && m && !m.isHubActive(r.alliance) && m.isHubActive(opp) && !endgame && this.defendTimeLeft(this.timeUntilCounts(), eta, n) && this.pickVictim()) {
       this.state = 'defend';
       return;
     }
     if (full) {
       this.state = 'stage';
-      this.target = spot;
+      this.target = this.aimSpot(spot);
       return;
     }
     if (this.state !== 'collect') this.targetBall = -1;
@@ -763,7 +875,7 @@ export class RobotAI {
       const k = cellOf(f.pos[i * 3], f.pos[i * 3 + 2]);
       dens.set(k, (dens.get(k) ?? 0) + 1);
     }
-    const mem = this.ctx.memory;
+    const mem = this.mem;
     const route = this.route;
     // Poco antes de que se active su HUB: el FUEL camino a su punto de tiro vale más
     const until = this.timeUntilCounts();

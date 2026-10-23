@@ -3,6 +3,7 @@
  */
 import './ui/styles.css';
 import { App } from './app/App';
+import { isDifficulty } from './ai/difficulty';
 import { initRapier } from './physics/PhysicsWorld';
 import { t } from './ui/i18n';
 import { registerServiceWorker } from './pwa/register';
@@ -31,7 +32,12 @@ async function boot(): Promise<void> {
   }
   if (params.get('fps') === '1') app.settings.showFps = true;
   const diff = params.get('difficulty');
-  if (diff === 'easy' || diff === 'normal' || diff === 'hard' || diff === 'einstein') app.settings.match.difficulty = diff;
+  if (isDifficulty(diff)) app.settings.match.difficulty = diff;
+  // Dificultad por alianza (banco de pruebas IA vs IA: `npm run ai-bench`)
+  for (const a of ['red', 'blue'] as const) {
+    const d = params.get(a === 'red' ? 'difficultyRed' : 'difficultyBlue');
+    if (isDifficulty(d)) app.difficultyOf[a] = d;
+  }
   const mode = params.get('mode');
   if (mode === 'match') app.startMatch(params.get('spectate') === '1');
   else if (mode === 'practice') app.startPractice();

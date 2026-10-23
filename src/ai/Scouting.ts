@@ -90,6 +90,8 @@ export interface BrainSituation {
   endgame: boolean;
   /** Amenaza del mejor anotador rival (0–1: su `scoring` por qué tan lleno viene). */
   oppThreat: number;
+  /** Ganas de defender según la dificultad (1 = normal, 0 = nunca; ver `difficulty.ts`). */
+  defenseWilling?: number;
 }
 
 /**
@@ -109,11 +111,13 @@ export function assignRoles(members: BrainMember[], s: BrainSituation): Map<numb
   const best = Math.max(...members.map((m) => m.profile.scoring));
   const taken = (r: DynRole) => members.some((m) => out.get(m.index) === r);
   // Defensa: solo con el HUB propio apagado y el rival activo
-  if (!s.ownActive && s.oppActive && !taken('defender') && members.length >= 3) {
+  const w = s.defenseWilling ?? 1;
+  if (w > 0 && !s.ownActive && s.oppActive && !taken('defender') && members.length >= 3) {
     const value = (m: BrainMember) => m.profile.defense * 1.2 - m.profile.scoring;
     const cand = [...free].sort((a, b) => value(b) - value(a))[0];
     const scorersLeft = members.filter((m) => m !== cand && (out.get(m.index) ?? 'scorer') === 'scorer').length;
-    if (cand && scorersLeft >= 2 && s.oppThreat > cand.profile.scoring * 0.8 && cand.profile.defense >= 0.45) out.set(cand.index, 'defender');
+    // más dificultad: defiende con menos amenaza y con robots que empujan menos
+    if (cand && scorersLeft >= 2 && s.oppThreat > (cand.profile.scoring * 0.8) / w && cand.profile.defense >= 0.45 / w) out.set(cand.index, 'defender');
   }
   // Alimentador: el que anota claramente menos que el mejor y pasa bien
   if (!taken('feeder')) {

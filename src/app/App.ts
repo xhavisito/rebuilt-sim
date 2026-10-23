@@ -15,7 +15,7 @@ import { Screens, type LocalPlayer } from '../ui/Menu';
 import { RobotEditor } from '../ui/RobotEditor';
 import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
 import { applyRows, COACH_PLAN_ID, rowsForMatch } from '../ui/StrategyDashboard';
-import { loadSettings, saveSettings, type Settings } from '../config/settings';
+import { loadSettings, saveSettings, type Difficulty, type Settings } from '../config/settings';
 import type { MatchEvent } from '../core/match';
 import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
 import { GameSession, type RobotSlotConfig, type SessionConfig } from '../game/GameSession';
@@ -53,6 +53,8 @@ export class App {
   readonly effects = new Effects();
   readonly stadium = new Stadium();
   session: GameSession | null = null;
+  /** Dificultad de la IA por alianza en los matches (URL `?difficultyRed=`/`?difficultyBlue=`; banco de pruebas). */
+  difficultyOf: Partial<Record<Alliance, Difficulty>> = {};
   /** Medición de FPS para la calidad "Auto". */
   private autoQ = { t: 0, frames: 0, steps: 0 };
   private clock = 0;
@@ -392,14 +394,16 @@ export class App {
     const m = this.settings.match;
     const robots: RobotSlotConfig[] = [];
     const pool = aiRobotPool(m.difficulty, spectate ? '' : m.robotId);
+    const mirror = spectate && new URLSearchParams(location.search).has('mirror');
     let k = 0;
     for (const a of ALLIANCES)
       for (const ds of [1, 2, 3] as StationNumber[]) {
         const isPlayer = !spectate && a === m.alliance && ds === m.station;
-        const spec = isPlayer ? robotById(m.robotId) : structuredClone(pool[k++ % pool.length]);
+        // `?mirror=1` (banco de pruebas): los mismos robots en las dos alianzas
+        const spec = isPlayer ? robotById(m.robotId) : structuredClone(pool[(mirror ? ds - 1 : k++) % pool.length]);
         if (!isPlayer) {
           if (!spec.real) spec.teamNumber = 100 + Math.floor(Math.random() * 9800);
-          spec.shooter.accuracy = Math.min(0.97, spec.shooter.accuracy * DIFFICULTY[m.difficulty].accuracy);
+          spec.shooter.accuracy = Math.min(0.97, spec.shooter.accuracy * DIFFICULTY[this.difficultyOf[a] ?? m.difficulty].accuracy);
         }
         robots.push({
           spec,
@@ -417,8 +421,9 @@ export class App {
       mode: 'match',
       robots,
       humanPlayers: { [m.alliance]: m.humanPlayer },
-      aiAccuracy: { easy: 0.6, normal: 0.78, hard: 0.88, einstein: 0.95 }[m.difficulty],
+      aiAccuracy: DIFFICULTY[m.difficulty].hpAccuracy,
       aiDifficulty: m.difficulty,
+      aiDifficultyOf: this.difficultyOf,
       training: new URLSearchParams(location.search).has('train'),
       fuelTotal: m.fuel,
       eventType: m.eventType,
@@ -512,7 +517,7 @@ export class App {
       mode: 'online',
       robots,
       humanPlayers: {},
-      aiAccuracy: { easy: 0.6, normal: 0.78, hard: 0.88, einstein: 0.95 }[m.difficulty],
+      aiAccuracy: DIFFICULTY[m.difficulty].hpAccuracy,
       aiDifficulty: m.difficulty,
       fuelTotal: m.fuel,
       eventType: m.eventType,
