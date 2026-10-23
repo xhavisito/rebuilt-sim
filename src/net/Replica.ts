@@ -3,13 +3,17 @@
  * - Host: `captureRobots` / `captureFuel` / `captureSlow` leen la sesión que simula.
  * - Cliente: `Replica` guarda los estados que llegan y dibuja ~100 ms en el pasado, interpolando
  *   entre los dos que rodean ese instante (como la interpolación de paso fijo, pero con la red).
+ *   El robot propio no: va en el presente, predicho con los controles (`OwnPrediction`).
  */
 import { NET } from '../config/net';
+import { isTeleop } from '../core/clock';
 import type { FoulRecord, CardRecord } from '../core/fouls';
 import { ALLIANCES, type Phase } from '../core/types';
 import type { ClimbSlot } from '../game/Climber';
 import type { GameSession, SessionReplica } from '../game/GameSession';
+import type { PlayerInput } from '../input/actions';
 import { FuelState, type FuelSystem } from '../physics/FuelSystem';
+import { DrivePredictor, PREDICT, driveModel, type Pose2 } from './prediction';
 import { decodeSnapshot, newFuelSnap, qPos, RF, ROBOT_MECH, type FuelSnap, type RobotSnap, type SlowState, type Snapshot } from './protocol';
 
 // ------------------------------------------------------------------ host
@@ -209,10 +213,18 @@ export class Replica implements SessionReplica {
   /** Grabación de la repetición: cada estado y cada estado lento que llega. */
   onSnapshot: ((snap: Snapshot) => void) | null = null;
   onSlow: ((st: SlowState) => void) | null = null;
+  /** Ida y vuelta al host (s), medida por el cliente. */
+  rtt = 0.1;
+  /** Predicción del robot propio (null: espectador, o `?predict=0`). */
+  prediction: OwnPrediction | null = null;
 
-  constructor(private s: GameSession) {
+  constructor(
+    private s: GameSession,
+    own = -1,
+  ) {
     this.base = newFuelSnap(s.fuel.count);
     this.applier = new SnapshotApplier(s);
+    if (own >= 0 && s.robots[own] && new URLSearchParams(location.search).get('predict') !== '0') this.prediction = new OwnPrediction(s, own);
   }
 
   push(buf: ArrayBuffer): void {
@@ -236,7 +248,7 @@ export class Replica implements SessionReplica {
     return this.lastRecv ? (performance.now() - this.lastRecv) / 1000 : 0;
   }
 
-  update(frameDt: number): void {
+  update(frameDt: number, input?: PlayerInput): void {
     const b = this.buf;
     if (!b.length) return;
     const latest = b[b.length - 1].t;
@@ -252,5 +264,89 @@ export class Replica implements SessionReplica {
     const k = B.t > A.t ? Math.max(0, Math.min(1, (this.renderT - A.t) / (B.t - A.t))) : 1;
     if (i > 0) b.splice(0, i);
     this.applier.apply(A, B, k, this.renderT);
+    // el host va atrás lo que tardan los controles en llegarle más lo que tardó su último estado
+    if (this.prediction) this.prediction.update(frameDt, input, b[b.length - 1], k, this.silence, this.rtt + 1 / 60);
+  }
+}
+
+const yawQuat = (h: number) => ({ x: 0, y: Math.sin(h / 2), z: 0, w: Math.cos(h / 2) });
+/** Producto de cuaterniones a·b. */
+const qmul = (a: Quat, b: Quat): Quat => ({
+  x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+  y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+  z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+  w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+});
+type Quat = { x: number; y: number; z: number; w: number };
+const headingOf = (q: Quat) => Math.atan2(-2 * (q.x * q.z - q.w * q.y), 1 - 2 * (q.y * q.y + q.z * q.z));
+
+/**
+ * Robot propio del cliente en el presente (ver net/prediction): solo en TELEOP y manejando (en
+ * AUTO lo mueve su rutina, trepando o deshabilitado lo manda el host); al entrar y salir de la
+ * predicción se mezcla con la pose interpolada en ~0.25 s para que no brinque.
+ */
+export class OwnPrediction {
+  readonly pred: DrivePredictor;
+  /** Peso de la predicción (0 = la pose interpolada del host, 1 = la predicha). */
+  weight = 0;
+  /** Último error contra el host (m), para pruebas y depuración. */
+  error = 0;
+
+  constructor(
+    private s: GameSession,
+    readonly robot: number,
+  ) {
+    const r = s.robots[robot];
+    this.pred = new DrivePredictor(driveModel(r.spec, r.phys.halfL, r.phys.halfW));
+  }
+
+  /**
+   * `silence`: s desde el último estado del host; `lag`: lo que tardan los controles en llegarle y su
+   * estado en volver (ida y vuelta + un frame).
+   */
+  update(dt: number, input: PlayerInput | undefined, latest: Snapshot, k: number, silence: number, lag: number): void {
+    const s = this.s;
+    const r = s.robots[this.robot];
+    const now = latest.robots[this.robot];
+    if (!r || !now || dt <= 0) return;
+    const ph = r.phys;
+    const phase = s.match?.phase;
+    // (si el host se trabó, su robot tampoco se mueve: no se predice lo que no va a pasar)
+    // y quieto tampoco: parado se ve exactamente donde lo pone el host
+    const p = this.pred;
+    const driving = !!input && (Math.abs(input.moveX) + Math.abs(input.moveY) + Math.abs(input.rotate) > 0.05 || input.held.shoot || input.held.pass);
+    const moving = Math.hypot(p.vx, p.vz) > 0.05 || Math.abs(p.w) > 0.05;
+    const active = !!input && (driving || moving) && r.enabled && !r.climbing && !r.climb.slot && (!phase || isTeleop(phase)) && silence < PREDICT.maxSilence;
+    const tau = Math.min(PREDICT.maxLag, silence + lag);
+    const host: Pose2 = { x: now.p[0], z: now.p[2], h: headingOf({ x: now.q[0], y: now.q[1], z: now.q[2], w: now.q[3] }) };
+    if (this.weight === 0) this.pred.reset(host, now.v[0], now.v[1]);
+    this.weight = Math.max(0, Math.min(1, this.weight + (active ? dt : -dt) / 0.25));
+    if (this.weight === 0) return;
+    // pose interpolada (la que dejó SnapshotApplier)
+    const ix = ph.prevPos.x + (ph.curPos.x - ph.prevPos.x) * k;
+    const iy = ph.prevPos.y + (ph.curPos.y - ph.prevPos.y) * k;
+    const iz = ph.prevPos.z + (ph.curPos.z - ph.prevPos.z) * k;
+    const iq = ph.curRot;
+    const ih = headingOf(iq);
+    // el mando se calcula con el rumbo predicho (manejo relativo al robot, auto-aim)
+    ph.body.setRotation(yawQuat(this.pred.h), false);
+    ph.body.setTranslation({ x: this.pred.x, y: iy, z: this.pred.z }, false);
+    const cmd = active && input && !s.paused ? s.predictDrive(r, input) : { vx: 0, vz: 0, omega: 0 };
+    this.pred.step(cmd, dt);
+    this.error = this.pred.correct(host, tau, dt);
+    const w = this.weight;
+    const x = ix + (this.pred.x - ix) * w;
+    const z = iz + (this.pred.z - iz) * w;
+    const dh = Math.atan2(Math.sin(this.pred.h - ih), Math.cos(this.pred.h - ih)) * w;
+    // conserva la inclinación del host (BUMP) y cambia solo el rumbo
+    const q = qmul(yawQuat(dh), iq);
+    const pos = { x, y: iy, z };
+    ph.prevPos = pos;
+    ph.curPos = { ...pos };
+    ph.prevRot = q;
+    ph.curRot = { ...q };
+    ph.body.setTranslation(pos, false);
+    ph.body.setRotation(q, false);
+    ph.body.setLinvel({ x: this.pred.vx * w + now.v[0] * (1 - w), y: 0, z: this.pred.vz * w + now.v[1] * (1 - w) }, false);
   }
 }

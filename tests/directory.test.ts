@@ -35,7 +35,7 @@ describe('anuncios de salas públicas', () => {
   const now = 1_000_000;
   const ok = { v: NET.protocol, code: 'ABCDE', name: 'Bocho', players: 3, started: false, ts: now - 1000 };
   it('acepta un anuncio válido', () => {
-    expect(parseAnnouncement('ABCDE', JSON.stringify(ok), now)).toEqual({ code: 'ABCDE', name: 'Bocho', players: 3, started: false, ts: now - 1000 });
+    expect(parseAnnouncement('ABCDE', JSON.stringify(ok), now)).toEqual({ code: 'ABCDE', name: 'Bocho', players: 3, started: false, quick: false, open: true, left: 0, ts: now - 1000 });
   });
   it('descarta vacíos, viejos, de otra versión o con código que no coincide', () => {
     expect(parseAnnouncement('ABCDE', '', now)).toBeNull();

@@ -46,6 +46,8 @@ import { CAMERA_MODES, type CameraMode } from '../render/CameraRig';
 import { attachChartHover, renderResults } from '../ui/Results';
 import { ClientRoom, HostRoom } from '../net/Online';
 import type { NetEvent } from '../net/protocol';
+import { RoomBrowser, type PublicRoom } from '../net/directory';
+import { QUICK, mergeTarget, rankQuickRooms } from '../net/quickMatch';
 import { getLang, setLang, t, tx, type TKey } from '../ui/i18n';
 import { SPECTATOR_CAMS } from '../game/GameSession';
 import { SpectatorBar } from '../ui/SpectatorBar';
@@ -605,8 +607,8 @@ export class App {
   }
 
   // ------------------------------------------------------------------ en línea
-  /** Abre una sala (eres el host). */
-  async hostRoom(): Promise<HostRoom> {
+  /** Abre una sala (eres el host); `quick`: de partida rápida (pública, arranca sola). */
+  async hostRoom(quick = false): Promise<HostRoom> {
     this.leaveOnline();
     const room = await HostRoom.create();
     const m = this.settings.match;
@@ -616,7 +618,88 @@ export class App {
     room.aiPool = () => aiRobotPool(this.settings.match.difficulty, '');
     room.onLeft = (name) => this.toast(t('net_left', { n: name }));
     this.netHost = room;
+    if (quick) {
+      room.onAutoStart = () => void this.startOnlineMatch();
+      room.onLateJoin = (name) => this.toast(t('qm_lateJoined', { n: name }), 'good');
+      // sin directorio la sala igual sirve (con código), pero nadie la encuentra
+      await room.makeQuick().catch(() => this.toast(t('net_noDirectory'), 'major'));
+      if (this.netHost === room) this.watchQuickMerge(room);
+    }
     return room;
+  }
+
+  /**
+   * Partida rápida (botón Jugar): entra a la mejor sala rápida pública con lugar (en el lobby o a
+   * medio match, en lugar de un robot de la IA) o, si no hay, abre una propia. `status` va diciendo
+   * en qué va; la promesa da la sala (host o cliente) y se cancela con `signal`.
+   */
+  async quickMatch(status: (key: TKey) => void, signal: AbortSignal): Promise<HostRoom | ClientRoom> {
+    this.leaveOnline();
+    status('qm_searching');
+    const browser = new RoomBrowser();
+    let rooms: PublicRoom[] = [];
+    try {
+      await browser.start();
+      await new Promise((r) => setTimeout(r, QUICK.searchMs));
+      rooms = browser.list;
+    } catch {
+      // sin directorio: se abre una sala (se juega con la IA)
+    } finally {
+      browser.stop();
+    }
+    const m = this.settings.match;
+    const tried = new Set<string>();
+    for (let k = 0; k < QUICK.tries; k++) {
+      if (signal.aborted) throw new Error('cancel');
+      const best = rankQuickRooms(rooms, tried)[0];
+      if (!best) break;
+      tried.add(best.code);
+      status('qm_joining');
+      try {
+        const room = await this.joinRoom(best.code, m.alliance, m.robotId);
+        if (signal.aborted) {
+          this.leaveOnline();
+          throw new Error('cancel');
+        }
+        return room;
+      } catch (e) {
+        if ((e as Error).message === 'cancel') throw e;
+      }
+    }
+    if (signal.aborted) throw new Error('cancel');
+    status('qm_hosting');
+    const room = await this.hostRoom(true);
+    if (signal.aborted) {
+      this.leaveOnline();
+      throw new Error('cancel');
+    }
+    return room;
+  }
+
+  /**
+   * Host de un lobby rápido que sigue solo: si aparece otro lobby rápido al que le toca juntarse
+   * (quickMatch.mergeTarget), cierra el suyo y entra a ese.
+   */
+  private watchQuickMerge(room: HostRoom): void {
+    const browser = new RoomBrowser();
+    let moving = false;
+    const stop = () => browser.stop();
+    browser.onChange = (rooms) => {
+      if (this.netHost !== room || room.started) return stop();
+      const target = moving ? null : mergeTarget({ code: room.code, players: room.lobby().players.filter((p) => !p.spectator).length }, rooms);
+      if (!target) return;
+      moving = true;
+      stop();
+      const m = this.settings.match;
+      this.joinRoom(target.code, m.alliance, m.robotId)
+        .then((c) => this.screens.onlineClient(c))
+        .catch(() => {
+          // (si no se pudo, a buscar de nuevo)
+          if (!this.session) this.screens.quickPlay();
+        });
+    };
+    browser.start().catch(stop);
+    room.onClose = stop;
   }
 
   /** Entra a la sala de otro jugador. */
@@ -624,7 +707,7 @@ export class App {
     this.leaveOnline();
     const room = await ClientRoom.join(code, { name: this.settings.driverName, alliance, spec: robotById(robotId), spectate });
     this.netClient = room;
-    room.onStart = async (cfg) => {
+    room.onStart = async (cfg, _robot, late) => {
       // CAD de la galería de la comunidad de los robots de otros jugadores (si tarda, diseño del simulador)
       await ensureCustomCads(cfg.robots.map((r) => r.spec), 5000);
       if (this.netClient !== room) return;
@@ -634,6 +717,12 @@ export class App {
       const replica = room.attach(this.session);
       // la repetición del cliente: lo mismo que manda el host
       this.tap?.attach(replica);
+      // a medio match (partida rápida): sin cuenta regresiva, ya está jugando
+      if (late) {
+        this.countdown = -1;
+        this.field.setLeds(true);
+        this.toast(t('qm_tookOver'), 'good');
+      }
     };
     room.onEvent = (e) => this.onNetEvent(e);
     room.onClosed = () => {
@@ -641,6 +730,8 @@ export class App {
       this.netClient = null;
       this.toast(t('net_hostLeft'), 'major');
       if (this.session) this.quitToMenu();
+      // en el lobby de una partida rápida: a buscar otra
+      else if (room.lobby?.quick) this.screens.quickPlay();
       else this.screens.main();
     };
     return room;

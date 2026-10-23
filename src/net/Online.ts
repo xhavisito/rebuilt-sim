@@ -27,6 +27,8 @@ import {
 } from './protocol';
 import { captureFuel, captureRobots, captureSlow, Replica } from './Replica';
 import { RoomAnnouncer } from './directory';
+import { QUICK, nextAutoStart } from './quickMatch';
+import { T } from '../core/clock';
 import { LocalSignaling, PeerJsSignaling, type Signaling } from './signaling';
 
 export function makeSignaling(id: string): Signaling {
@@ -34,6 +36,9 @@ export function makeSignaling(id: string): Signaling {
 }
 
 const hostId = (code: string) => `${NET.idPrefix}${code}`;
+
+/** `?lag=200`: el cliente simula esa ida y vuelta (ms) para probar la predicción con dos pestañas. */
+const NET_LAG = typeof location === 'undefined' ? 0 : Math.max(0, Math.min(2000, Number(new URLSearchParams(location.search).get('lag')) || 0));
 
 /** Robot que pide un jugador: los del juego, de la copia local; los de su editor, tal cual. */
 function safeSpec(spec: RobotSpec | undefined): RobotSpec {
@@ -75,6 +80,19 @@ export class HostRoom {
   aiPool: () => RobotSpec[] = () => CAD_ROBOTS;
   onLobby: () => void = () => {};
   onLeft: (name: string) => void = () => {};
+  /** Partida rápida: lobby que arranca solo (ver `makeQuick`) y se puede entrar a medio match. */
+  quick = false;
+  /** Lobby rápido: hora de arranque (ms, performance.now) y cuándo se abrió. */
+  startAt = 0;
+  private openedAt = 0;
+  private quickTimer = 0;
+  /** Arrancar el match (la App arma la sesión); lo pide el lobby rápido al llegar la hora. */
+  onAutoStart: () => void = () => {};
+  /** Alguien entró a medio match (partida rápida). */
+  onLateJoin: (name: string) => void = () => {};
+  /** Al cerrar la sala. */
+  onClose: () => void = () => {};
+  private announceAcc = 0;
   private sent: FuelSnap | null = null;
   private fuelNow: FuelSnap | null = null;
   private snapAcc = 0;
@@ -134,8 +152,20 @@ export class HostRoom {
       const spectate = !!m.spectate;
       const players = this.players().length + 1;
       const watching = this.joined().filter((x) => x.spectator).length;
+      // partida rápida con el match empezado: entra en lugar de un robot de la IA
+      const late = !spectate && this.started && m.v === NET.protocol ? this.lateSeat(m.alliance) : -1;
       const reject =
-        m.v !== NET.protocol ? 'version' : spectate ? (watching >= NET.maxSpectators ? 'full' : null) : this.started ? 'started' : players >= NET.maxPlayers ? 'full' : null;
+        m.v !== NET.protocol
+          ? 'version'
+          : spectate
+            ? watching >= NET.maxSpectators
+              ? 'full'
+              : null
+            : this.started && late < 0
+              ? 'started'
+              : players >= NET.maxPlayers
+                ? 'full'
+                : null;
       if (reject) {
         this.send(r, { t: 'reject', reason: reject });
         setTimeout(() => r.link.close(), 500);
@@ -149,6 +179,8 @@ export class HostRoom {
       this.send(r, { t: 'welcome', id: r.id });
       // con el match empezado, el espectador entra directo a verlo
       if (spectate && this.session) this.startSpectator(r, this.session);
+      if (late >= 0 && this.session) this.startLate(r, this.session, late);
+      if (!spectate && this.quick && !this.started) this.startAt = nextAutoStart(performance.now(), this.openedAt, this.startAt, this.players().length + 1, true);
       this.lobbyChanged();
     } else if (m.t === 'pick' && r.joined && !r.spectator && !this.started) {
       r.alliance = m.alliance === 'blue' ? 'blue' : 'red';
@@ -159,7 +191,51 @@ export class HostRoom {
       // los flancos se juntan hasta el siguiente frame del host
       for (const a of r.input.pressed) r.pressed.add(a);
       if (m.cam) this.session?.setRemoteCamera(r.slot, m.cam);
-    } else if (m.t === 'bye') r.link.close();
+    } else if (m.t === 'ping') this.send(r, { t: 'pong', c: m.c });
+    else if (m.t === 'bye') r.link.close();
+  }
+
+  /**
+   * Robot de la IA que puede tomar quien llega a medio match (partida rápida): de su alianza si
+   * hay, si no de la otra; −1 si no se puede (sala normal, sin IA, o al match le queda poco).
+   */
+  private lateSeat(want: Alliance): number {
+    const s = this.session;
+    const m = s?.match;
+    if (!this.quick || !s || !m || T.teleopEnd - m.t < QUICK.lateJoinMin) return -1;
+    if (this.players().length + 1 >= NET.maxPlayers) return -1;
+    const free = s.robots.filter((r) => r.control.type === 'ai' && s.ais.has(r.index));
+    return (free.find((r) => r.alliance === want) ?? free[0])?.index ?? -1;
+  }
+
+  /** Entra a medio match: toma el robot `robot` de la IA y recibe el match como un espectador. */
+  private startLate(r: Remote, s: GameSession, robot: number): void {
+    const slot = s.rigs.length;
+    if (!s.takeOverFromAi(robot, slot)) return;
+    r.slot = slot;
+    r.robot = robot;
+    r.alliance = s.robots[robot].alliance;
+    r.spec = s.robots[robot].spec;
+    r.input = emptyInput();
+    r.pressed.clear();
+    r.needsKey = true;
+    this.send(r, { t: 'start', cfg: this.clientConfig(s, robot), robot, late: true });
+    this.slowAcc = 1;
+    this.onLateJoin(r.name);
+  }
+
+  /** La configuración del match para el cliente que maneja el robot `robot`. */
+  private clientConfig(s: GameSession, robot: number): SessionConfig {
+    return {
+      ...s.cfg,
+      net: { role: 'client', localPlayers: 1 },
+      robots: s.cfg.robots.map((rc, i) => ({
+        ...rc,
+        control: i === robot ? { type: 'player', slot: 0 } : { type: 'none' },
+        human: s.robots[i].control.type === 'player',
+        plan: undefined,
+      })),
+    };
   }
 
   private drop(r: Remote): void {
@@ -198,7 +274,29 @@ export class HostRoom {
       difficulty: this.difficulty,
       fillAi: this.fillAi,
       fuel: this.fuel,
+      quick: this.quick,
+      startsIn: this.quick && !this.started ? Math.max(0, (this.startAt - performance.now()) / 1000) : undefined,
     };
+  }
+
+  /**
+   * Sala de partida rápida: pública, la IA llena los lugares y arranca sola (el lobby espera a que
+   * entre gente unos segundos más, ver quickMatch.nextAutoStart).
+   */
+  async makeQuick(): Promise<void> {
+    this.quick = true;
+    this.fillAi = true;
+    this.openedAt = performance.now();
+    this.startAt = this.openedAt + QUICK.lobbySeconds * 1000;
+    let asked = false;
+    this.quickTimer = window.setInterval(() => {
+      if (this.started) asked = false;
+      else if (!asked && performance.now() >= this.startAt) {
+        asked = true;
+        this.onAutoStart();
+      }
+    }, 250);
+    await this.setPublic(true);
   }
 
   get isPublic(): boolean {
@@ -226,7 +324,12 @@ export class HostRoom {
   }
 
   private announce(): void {
-    this.announcer?.update({ name: this.me.name || 'Host', players: this.players().length + 1, started: this.started });
+    this.announceAcc = 0;
+    const players = this.players().length + 1;
+    const m = this.session?.match;
+    const left = m ? Math.max(0, Math.round(T.teleopEnd - m.t)) : 0;
+    const open = this.started ? this.quick && !!this.session && this.lateSeat('red') >= 0 : players < NET.maxPlayers;
+    this.announcer?.update({ name: this.me.name || 'Host', players, started: this.started, quick: this.quick, open, left });
   }
 
   lobbyChanged(): void {
@@ -281,15 +384,15 @@ export class HostRoom {
         this.startSpectator(r, s);
         continue;
       }
-      if (r.robot < 0) continue;
+      if (r.robot < 0) {
+        // (partida rápida: entró mientras se armaba el match; toma un robot de la IA)
+        const seat = this.quick ? this.lateSeat(r.alliance) : -1;
+        if (seat >= 0) this.startLate(r, s, seat);
+        continue;
+      }
       r.input = emptyInput();
       r.pressed.clear();
-      const cfg: SessionConfig = {
-        ...s.cfg,
-        net: { role: 'client', localPlayers: 1 },
-        robots: s.cfg.robots.map((rc, i) => ({ ...rc, control: i === r.robot ? { type: 'player', slot: 0 } : { type: 'none' }, human: rc.control.type === 'player', plan: undefined })),
-      };
-      this.send(r, { t: 'start', cfg, robot: r.robot });
+      this.send(r, { t: 'start', cfg: this.clientConfig(s, r.robot), robot: r.robot });
     }
   }
 
@@ -350,6 +453,9 @@ export class HostRoom {
       }
     }
     if (this.slowAcc >= 1 / NET.slowHz) this.sendSlow();
+    // el directorio sabe cuánto le queda al match (a quién le conviene entrar)
+    this.announceAcc += dt;
+    if (this.announceAcc >= 10) this.announce();
   }
 
   sendSlow(): void {
@@ -409,6 +515,8 @@ export class HostRoom {
   }
 
   close(): void {
+    this.onClose();
+    window.clearInterval(this.quickTimer);
     this.announcer?.stop();
     this.announcer = null;
     for (const r of this.remotes.values()) {
@@ -427,7 +535,7 @@ export type JoinError = 'notFound' | 'full' | 'version' | 'started' | 'network' 
 
 export class ClientRoom {
   onLobby: (info: LobbyInfo) => void = () => {};
-  onStart: (cfg: SessionConfig, robot: number) => void = () => {};
+  onStart: (cfg: SessionConfig, robot: number, late: boolean) => void = () => {};
   onEvent: (e: NetEvent) => void = () => {};
   onClosed: () => void = () => {};
   lobby: LobbyInfo | null = null;
@@ -438,6 +546,11 @@ export class ClientRoom {
   spectator = false;
   private lastSend = 0;
   private lastKey = '';
+  /** Ida y vuelta al host (s, promedio). */
+  rtt = 0.1;
+  private pingTimer = 0;
+  /** Cuándo llegó el último lobby (para la cuenta regresiva del lobby rápido). */
+  lobbyAt = 0;
 
   private constructor(
     readonly code: string,
@@ -477,9 +590,19 @@ export class ClientRoom {
           link.onOpen = () => link.sendJson({ t: 'hello', v: NET.protocol, ...hello } satisfies ClientMsg);
           link.onClose = () => {
             if (!done) fail(answered ? 'p2p' : 'network');
-            else room.onClosed();
+            else {
+              window.clearInterval(room.pingTimer);
+              room.onClosed();
+            }
           };
           link.onData = (d) => {
+            if (NET_LAG) {
+              window.setTimeout(() => onData(d), NET_LAG / 2);
+              return;
+            }
+            onData(d);
+          };
+          const onData = (d: LinkData) => {
             if (typeof d !== 'string') {
               room.replica?.push(d);
               return;
@@ -494,6 +617,7 @@ export class ClientRoom {
               done = true;
               room.spectator = !!hello.spectate;
               window.clearTimeout(to);
+              room.startPing();
               resolve(room);
             } else if (m.t === 'reject') {
               window.clearTimeout(to);
@@ -508,10 +632,15 @@ export class ClientRoom {
   private handle(m: HostMsg): void {
     if (m.t === 'lobby') {
       this.lobby = m.info;
+      this.lobbyAt = performance.now();
       this.onLobby(m.info);
     } else if (m.t === 'start') {
       this.robot = m.robot;
-      this.onStart(m.cfg, m.robot);
+      this.onStart(m.cfg, m.robot, !!m.late);
+    } else if (m.t === 'pong') {
+      const rtt = Math.max(0, (performance.now() - m.c) / 1000);
+      this.rtt = Math.min(1, this.rtt * 0.7 + rtt * 0.3);
+      if (this.replica) this.replica.rtt = this.rtt;
     } else if (m.t === 'slow') this.replica?.applySlow(m.s);
     else if (m.t === 'ev') this.onEvent(m.e);
     else if (m.t === 'close') this.link.close();
@@ -524,13 +653,14 @@ export class ClientRoom {
 
   /** La sesión del cliente ya existe: desde ahora recibe el estado del host. */
   attach(s: GameSession): Replica {
-    this.replica = new Replica(s);
+    this.replica = new Replica(s, this.robot);
+    this.replica.rtt = this.rtt;
     s.replica = this.replica;
     return this.replica;
   }
 
   pick(alliance: Alliance, spec: RobotSpec): void {
-    this.link.sendJson({ t: 'pick', alliance, spec } satisfies ClientMsg);
+    this.out({ t: 'pick', alliance, spec });
   }
 
   /** Controles y cámara (cada frame con algo nuevo; si no, a 15 Hz). */
@@ -541,10 +671,30 @@ export class ClientRoom {
     if (!i.pressed && key === this.lastKey && now - this.lastSend < 66) return;
     this.lastKey = key;
     this.lastSend = now;
-    this.link.sendJson({ t: 'in', i, cam } satisfies ClientMsg);
+    this.out({ t: 'in', i, cam });
+  }
+
+  /** Manda al host (con `?lag=`, tarde: la mitad de la ida y vuelta simulada). */
+  private out(m: ClientMsg): void {
+    if (NET_LAG) window.setTimeout(() => this.link.open && this.link.sendJson(m), NET_LAG / 2);
+    else this.link.sendJson(m);
+  }
+
+  private startPing(): void {
+    const ping = () => this.link.open && this.out({ t: 'ping', c: performance.now() });
+    ping();
+    this.pingTimer = window.setInterval(ping, 1000);
+  }
+
+  /** Segundos para que arranque el lobby rápido (null: sala normal o ya empezó). */
+  get startsIn(): number | null {
+    const l = this.lobby;
+    if (!l?.quick || l.startsIn === undefined) return null;
+    return Math.max(0, l.startsIn - (performance.now() - this.lobbyAt) / 1000);
   }
 
   close(): void {
+    window.clearInterval(this.pingTimer);
     this.link.onClose = () => {};
     this.link.sendJson({ t: 'bye' } satisfies ClientMsg);
     setTimeout(() => {

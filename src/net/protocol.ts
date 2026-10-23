@@ -30,6 +30,9 @@ export interface LobbyInfo {
   difficulty: string;
   fillAi: boolean;
   fuel: number;
+  /** Sala de partida rápida: arranca sola en `startsIn` s (contados desde que llega el mensaje). */
+  quick?: boolean;
+  startsIn?: number;
 }
 
 /** Pose de la cámara del cliente: posición, cuaternión, fov, aspecto y modo. */
@@ -45,6 +48,8 @@ export type ClientMsg =
   | { t: 'hello'; v: number; name: string; alliance: Alliance; spec: RobotSpec; spectate?: boolean }
   | { t: 'pick'; alliance: Alliance; spec: RobotSpec }
   | { t: 'in'; i: WireInput; cam: NetCamera }
+  /** Mide la ida y vuelta (el host contesta `pong` con el mismo `c`). */
+  | { t: 'ping'; c: number }
   | { t: 'bye' };
 
 /** Evento del host para efectos y sonidos del cliente. */
@@ -61,7 +66,9 @@ export type HostMsg =
   | { t: 'welcome'; id: string }
   | { t: 'reject'; reason: 'full' | 'version' | 'started' }
   | { t: 'lobby'; info: LobbyInfo }
-  | { t: 'start'; cfg: SessionConfig; robot: number }
+  /** `late`: entra a un match ya empezado (sin cuenta regresiva). */
+  | { t: 'start'; cfg: SessionConfig; robot: number; late?: boolean }
+  | { t: 'pong'; c: number }
   | { t: 'slow'; s: SlowState }
   | { t: 'ev'; e: NetEvent }
   | { t: 'close' };

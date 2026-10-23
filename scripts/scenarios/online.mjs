@@ -77,7 +77,9 @@ const diff = await guest.evaluate(() => {
   const r = s.playerRobot(0);
   return { x: r.phys.curPos.x, z: r.phys.curPos.z, fuelShown: s.fuel.state.filter((v) => v === 0).length };
 });
-check('el cliente ve su robot donde está en el host', Math.hypot(diff.x - end.x, diff.z - end.z) < 0.3, JSON.stringify(diff));
+// (contra donde quedó: con el host acelerado el robot sigue frenando después de soltar W)
+const still = await host.evaluate(() => { const r = window.app.session.robots.find((x) => x.control.type === 'player' && x.control.slot === 1); return { x: r.phys.curPos.x, z: r.phys.curPos.z }; });
+check('el cliente ve su robot donde está en el host', Math.hypot(diff.x - still.x, diff.z - still.z) < 0.3, `${JSON.stringify(diff)} vs ${JSON.stringify(still)}`);
 // mismo marcador (el estado lento llega a 4 Hz: se congela el host y se espera)
 await host.evaluate(() => { window.app.session.timeScale = 0; });
 const score = () => `${window.app.session.match.score('red')}-${window.app.session.match.score('blue')}`;
