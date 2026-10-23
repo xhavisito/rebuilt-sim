@@ -454,7 +454,7 @@ export class Screens {
             <div class="opt"><span>${t('station')}</span>${seg('station', ['1', '2', '3'].map((v) => ({ value: v, label: `DS ${v}` })), String(m.station))}</div>
             ${isMatch ? `<div class="opt"><span>${t('autoRoutine')}</span>${select('routine', routines, m.autoRoutine)}</div>` : ''}
             ${isMatch ? `<div class="opt wide"><span>${t('strategy')}</span><div class="row">${t('myStrategy')} ${select('strategy', strategies, m.strategy)} ${t('oppStrategy')} ${select('oppStrategy', strategies, m.oppStrategy)} <button class="chipbtn" data-plan>✎ ${t('strategyPlanner')}</button></div></div>` : ''}
-            ${isMatch ? `<div class="opt"><span>${t('difficulty')}</span>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}</div>` : ''}
+            ${isMatch ? `<div class="opt"><span>${t('difficulty')}</span>${seg('difficulty', (['easy', 'normal', 'hard', 'einstein'] as const).map((d) => ({ value: d, label: t(`d_${d}` as TKey) })), m.difficulty)}<small class="opt-hint" data-diffhint>${t(`dh_${m.difficulty}` as TKey)}</small></div>` : ''}
             <div class="opt"><span>${t('humanPlayer')}</span>${seg('hp', [{ value: 'ai', label: t('hp_ai') }, { value: 'player', label: t('hp_player') }], m.humanPlayer)}</div>
             <div class="opt"><span>${t('eventType')}</span>${seg('event', (['regional', 'districtChamp', 'champs'] as const).map((e) => ({ value: e, label: t(`evs_${e}` as TKey) })), m.eventType)}</div>
             <div class="opt"><span>FUEL</span>${seg('fuel', [{ value: '504', label: '504' }, { value: '600', label: '600' }], String(m.fuel))}</div>
@@ -525,7 +525,11 @@ export class Screens {
       if (name === 'strategy') m.strategy = String(v);
       if (name === 'oppStrategy') m.oppStrategy = String(v);
       if (name === 'hp') m.humanPlayer = v as 'ai' | 'player';
-      if (name === 'difficulty') m.difficulty = v as Settings['match']['difficulty'];
+      if (name === 'difficulty') {
+        m.difficulty = v as Settings['match']['difficulty'];
+        const hint = r.querySelector<HTMLElement>('[data-diffhint]');
+        if (hint) hint.textContent = t(`dh_${m.difficulty}` as TKey);
+      }
       if (name === 'event') m.eventType = v as Settings['match']['eventType'];
       if (name === 'fuel') m.fuel = Number(v) as 504 | 600;
       if (name === 'fouls') m.fouls = v === '1';

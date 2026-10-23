@@ -17,6 +17,7 @@ import { AutoExecutor } from '../auto/AutoExecutor';
 import { aiMemory } from '../ai/memoryStore';
 import { DriveCoach, type CoachMsg } from './DriveCoach';
 import { AllianceBrain } from '../ai/AllianceBrain';
+import { DIFFICULTY } from '../ai/difficulty';
 import type { DynRole } from '../ai/Scouting';
 import { assignAutos, routineById, routineZones } from '../auto/AutoRoutine';
 import type { Difficulty } from '../config/settings';
@@ -67,6 +68,8 @@ export interface SessionConfig {
   /** Precisión de la IA (0–1) según dificultad. */
   aiAccuracy?: number;
   aiDifficulty?: Difficulty;
+  /** Dificultad de la IA por alianza (manda sobre `aiDifficulty`; p. ej. aliados vs. rivales). */
+  aiDifficultyOf?: Partial<Record<Alliance, Difficulty>>;
   /** Entrenamiento de la IA: explora más tácticas (matches de solo IA para el playbook). */
   training?: boolean;
   /**
@@ -225,16 +228,16 @@ export class GameSession {
       match: this.match,
       rng: this.rng,
       towerOcc: this.towerOcc,
-      pinSeconds: (i) => this.referee?.activePins().find((p) => p.pinner === i)?.seconds ?? 0,
+      pinSeconds: (i) => Math.max(0, ...(this.referee?.activePins() ?? []).filter((p) => p.pinner === i).map((p) => p.seconds)),
       claims: new Map(),
       profile: (i) => this.brain.profile(i),
-      // Memoria de prueba y error (en Fácil no: juegan como principiantes)
-      memory: (cfg.aiDifficulty ?? 'normal') === 'easy' ? undefined : aiMemory,
+      // Memoria de prueba y error (cada IA decide si la usa: en Fácil no aprende)
+      memory: aiMemory,
       tactics: new Map(),
       training: cfg.training,
     });
     // (el cliente en línea no tiene IA: sus robots se mueven con el estado del host)
-    if (cfg.net?.role !== 'client') for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, cfg.aiDifficulty ?? 'normal'));
+    if (cfg.net?.role !== 'client') for (const r of this.robots) if (r.control.type === 'ai') this.ais.set(r.index, new RobotAI(r, aiCtx, this.difficultyOf(r.alliance)));
     // Cerebro de alianza (fuera de Fácil reparte roles): scouting de los 6 robots y, en cada
     // momento, quién anota, quién alimenta y quién defiende
     const fixedRole = (r: Robot): DynRole | undefined => {
@@ -242,7 +245,14 @@ export class GameSession {
       const role = cfg.robots[r.index].plan?.role;
       return role && role !== 'auto' ? role : undefined;
     };
-    this.brain = new AllianceBrain(this.robots, this.ais, this.fuel, fixedRole, (cfg.aiDifficulty ?? 'normal') === 'easy' ? [] : ALLIANCES);
+    this.brain = new AllianceBrain(
+      this.robots,
+      this.ais,
+      this.fuel,
+      fixedRole,
+      ALLIANCES.filter((a) => DIFFICULTY[this.difficultyOf(a)].brain),
+      (a) => DIFFICULTY[this.difficultyOf(a)].defense.willing,
+    );
     // Estrategia de alianza: el plan de cada DRIVER STATION manda sobre lo automático
     cfg.robots.forEach((rc, i) => {
       if (rc.plan) this.ais.get(i)?.setPlan(rc.plan);
@@ -406,7 +416,7 @@ export class GameSession {
       time: m?.t ?? this.simTime,
       hubWillCount,
       robotNearChute: near,
-      accuracy: hp.control === 'player' ? 0.85 : (this.cfg.aiAccuracy ?? 0.8),
+      accuracy: hp.control === 'player' ? 0.85 : this.cfg.aiDifficultyOf?.[a] ? DIFFICULTY[this.cfg.aiDifficultyOf[a]!].hpAccuracy : (this.cfg.aiAccuracy ?? 0.8),
     };
   }
 
@@ -421,6 +431,11 @@ export class GameSession {
     if (e.type === 'evalAutoTower') this.evaluateTower('auto');
     if (e.type === 'evalTeleopTower') this.evaluateTower('teleop');
     this.hooks.matchEvent?.(e);
+  }
+
+  /** Dificultad de la IA de una alianza. */
+  difficultyOf(a: Alliance): Difficulty {
+    return this.cfg.aiDifficultyOf?.[a] ?? this.cfg.aiDifficulty ?? 'normal';
   }
 
   players(): Robot[] {
@@ -443,7 +458,7 @@ export class GameSession {
   handOverToAi(index: number): void {
     const r = this.robots[index];
     if (!r || this.ais.has(index) || this.replica) return;
-    this.ais.set(index, new RobotAI(r, this.aiCtx, this.cfg.aiDifficulty ?? 'normal'));
+    this.ais.set(index, new RobotAI(r, this.aiCtx, this.difficultyOf(r.alliance)));
     r.view.marker.visible = false;
   }
 

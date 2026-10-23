@@ -20,6 +20,10 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   Opciones: `--query "mode=match&spectate=1"`, `--eval "app.openRobotEditor()"`, `--throttle 4`.
 - `npm run e2e` — escenarios en navegador real (`scripts/scenarios/*.mjs`): táctil, flujo del
   match, mecanismos, HUMAN PLAYER, reglas del árbitro, modos y PWA offline.
+- `npm run ai-bench -- --a hard --b normal --matches 6` — matches de solo IA (mismos robots en
+  ambas alianzas, una dificultad por alianza): victorias, puntos, faltas y tiempo defendiendo.
+  `--tweakA '{"defense":{"willing":0}}'` prueba variantes del perfil (`src/ai/difficulty.ts`).
+  Requiere `npm run build`; en la nube, `CHROMIUM_PATH=/opt/pw-browsers/chromium`.
 - FPS/tiempos en pantalla: tecla F3 o `?fps=1` (muestra ms de simulación y de render).
 - Node está instalado en `~/.local/bin` (v24); si `node` no aparece, agrega
   `~/.local/bin` al PATH.

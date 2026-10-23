@@ -27,6 +27,8 @@ export class AllianceBrain {
     private fixed: (robot: Robot) => DynRole | undefined,
     /** Alianzas que reparte (las de solo jugadores no). */
     private alliances: readonly Alliance[] = ALLIANCES,
+    /** Ganas de defender de cada alianza (según su dificultad). */
+    private defenseWilling: (a: Alliance) => number = () => 1,
   ) {
     this.base = robots.map((r) => profileFromSpec(r.spec));
     this.learned = this.base.map((p) => ({ ...p }));
@@ -62,7 +64,7 @@ export class AllianceBrain {
       const oppThreat = Math.max(0, ...opp.map((r) => this.learned[r.index].scoring * (0.4 + this.fuel.robotCount(r.index) / r.spec.hopperCapacity)));
       const roles = assignRoles(
         mine.map((r) => ({ index: r.index, profile: this.learned[r.index], free: this.ais.has(r.index), fixed: this.fixed(r) })),
-        { ownActive: m.isHubActive(a), oppActive: m.isHubActive(opponent(a)), endgame: m.phase === 'END_GAME', oppThreat },
+        { ownActive: m.isHubActive(a), oppActive: m.isHubActive(opponent(a)), endgame: m.phase === 'END_GAME', oppThreat, defenseWilling: this.defenseWilling(a) },
       );
       for (const [i, role] of roles) {
         this.roles.set(i, role);

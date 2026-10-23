@@ -85,6 +85,13 @@ scripts/screenshot.mjs     verificación con Playwright
   prueba y error (UCB1 por diseño de robot y situación, peligros del campo, ritmo real) y lo guarda
   en localStorage; arranca de `src/ai/playbook.json`, generado con matches de entrenamiento
   (`?train=1`, matches de solo IA; la memoria exportada se resume por robot y en `*`).
+- **Dificultad de la IA** (`ai/difficulty.ts`): además de velocidad, reacción y puntería, cada
+  nivel define cómo defiende (`ai/Defense.ts`: a quién marca, anticipación, esperar en el
+  BUMP/TRENCH por el que cruza el rival, margen de PIN G418, velocidad de contacto para no
+  embestir G416, dejar la defensa a tiempo) y si esquiva defensores al tirar. Fácil no aprende,
+  no reparte roles y no defiende por su cuenta. Se puede fijar por alianza (`?difficultyRed=`,
+  `?difficultyBlue=`); `npm run ai-bench` compara niveles con los mismos robots en las dos
+  alianzas (`?mirror=1`).
 - **AUTO a prueba de choques**: el navegador detecta falta de progreso (mínimo local atracción /
   repulsión), el ejecutor tiene vigilante por waypoint y, al terminar, juego libre sin cruzar la
   CENTER LINE (pared virtual, G403).

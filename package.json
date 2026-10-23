@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "shots": "node scripts/screenshot.mjs",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "ai-bench": "node scripts/ai-bench.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.21.0",
