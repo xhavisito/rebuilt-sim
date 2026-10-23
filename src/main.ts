@@ -7,6 +7,8 @@ import { isDifficulty } from './ai/difficulty';
 import { initRapier } from './physics/PhysicsWorld';
 import { t } from './ui/i18n';
 import { registerServiceWorker } from './pwa/register';
+import { loadCustomRobots } from './config/robots';
+import { preloadCustomCads } from './render/customCad';
 
 const bar = document.getElementById('loading-bar') as HTMLElement;
 const text = document.getElementById('loading-text') as HTMLElement;
@@ -18,7 +20,8 @@ const progress = (p: number, msg: string) => {
 async function boot(): Promise<void> {
   progress(0.15, t('loadingPhysics'));
   // Las texturas de números (BUMPERS) usan la fuente display: cárgala antes de dibujarlas
-  await Promise.all([initRapier(), document.fonts?.load('400 64px Anton').catch(() => undefined)]);
+  // …y los CAD propios del taller (IndexedDB), para que cada robot los tenga al armarse
+  await Promise.all([initRapier(), document.fonts?.load('400 64px Anton').catch(() => undefined), preloadCustomCads(loadCustomRobots())]);
   progress(0.55, t('loadingField'));
   await new Promise((r) => setTimeout(r, 0));
   const app = new App(document.getElementById('app')!, document.getElementById('ui')!);

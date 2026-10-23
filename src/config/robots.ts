@@ -77,6 +77,8 @@ export interface RobotSpec {
   preload: number;
   /** Modelo 3D real del equipo (public/robots/<file>), ver scripts/robots/ y src/render/cadRigs.ts. */
   cad?: { file: string };
+  /** Modelo 3D propio importado en el editor (GLB guardado en IndexedDB, ver src/render/customCad.ts). */
+  customCad?: CustomCad;
   /** Superestructura que sobresale del chasis hacia el frente, arriba de los BUMPERS (pulgadas). */
   overhangIn?: number;
   /**
@@ -86,6 +88,57 @@ export interface RobotSpec {
   deployedHopperIn?: [number, number];
   /** Robot real de la temporada: fuente de los datos (para la galería). */
   real?: { team: string; robot: string; note: { es: string; en: string } };
+}
+
+/**
+ * CAD propio (.glb / .gltf) importado en el taller. Solo es visual: la física usa el marco, la
+ * intake y el shooter de la ficha. Se centra sobre el marco y se apoya en el piso.
+ */
+export interface CustomCad {
+  /** Clave del archivo en IndexedDB. */
+  id: string;
+  /** Nombre del archivo original. */
+  name: string;
+  /** Metros por unidad del modelo (1 = m, 0.01 = cm, 0.001 = mm, 0.0254 = in). */
+  unit: number;
+  /** Ajuste fino de escala (%). */
+  scalePct: number;
+  /** Eje "arriba" del modelo: glTF usa Y; los assets de AdvantageScope y muchos CAD, Z. */
+  upAxis: 'y' | 'z';
+  /** Giro para que el frente del modelo quede al frente del robot (0/90/180/270°). */
+  yawDeg: number;
+  /** Corrimiento (pulgadas): adelante, a la izquierda y arriba. */
+  offsetIn: [number, number, number];
+  /** Nodo del modelo que gira como turret (sobre su eje vertical). */
+  turretNode?: string;
+  /** Nodo del modelo que sale con la intake (se desliza hacia el frente `intake.extensionIn`). */
+  intakeNode?: string;
+}
+
+export const CAD_UNITS = [1, 0.01, 0.001, 0.0254] as const;
+
+/**
+ * Unidad más probable de un modelo: la que deja su lado horizontal más largo (en unidades del
+ * modelo) más cerca del tamaño del marco. Los exportadores de CAD suelen dejar mm o pulgadas.
+ */
+export function guessCadUnit(modelSpan: number, frameSpanM: number): number {
+  if (!(modelSpan > 0) || !(frameSpanM > 0)) return 1;
+  let best = 1;
+  let err = Infinity;
+  for (const u of CAD_UNITS) {
+    const e = Math.abs(Math.log((modelSpan * u) / frameSpanM));
+    if (e < err) {
+      err = e;
+      best = u;
+    }
+  }
+  return best;
+}
+
+/** Escala (%) para que la huella del modelo (largo × ancho, en metros con escala 100%) quepa en el marco. */
+export function fitScalePct(lengthM: number, widthM: number, frameLengthM: number, frameWidthM: number): number {
+  const r = Math.min(frameLengthM / Math.max(1e-6, lengthM), frameWidthM / Math.max(1e-6, widthM));
+  return Math.round(r * 1000) / 10;
 }
 
 export interface ValidationIssue {

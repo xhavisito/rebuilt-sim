@@ -262,6 +262,15 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     rojo como en el diagrama oficial. **Empates**: se desempata con el orden de la Tabla 10-1
     (puntos sin faltas, FUEL de AUTO, puntos de TOWER); si persiste, el match se repite
     (`M5-R1`). Sin robots de respaldo (backup) ni timeouts entre matches.
+29. **CAD propio en el taller**: el GLB / glTF autocontenido se guarda en IndexedDB
+    (`src/render/customCad.ts`; localStorage no alcanza) y se lee al arrancar, antes de armar
+    robots. Es solo visual: la física usa la ficha. Se adivina la unidad (m/cm/mm/in) por el
+    tamaño del marco y el eje Z si el modelo sale "acostado"; el usuario ajusta escala, eje,
+    frente, corrimiento y qué nodos son turret (gira) e intake (se desliza `extensionIn`). Sin
+    Draco (no se incluye el decodificador). Si el archivo no está en el dispositivo (otro equipo,
+    robot llegado por la red) se dibuja el diseño del simulador. Los archivos que ningún robot
+    guardado usa se borran al arrancar. El robot se exporta como `.rebuilt-robot.json` (ficha +
+    GLB en base64, `src/config/robotFile.ts`).
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
