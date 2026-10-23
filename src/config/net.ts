@@ -24,6 +24,12 @@ export const NET = {
   directoryUrl: 'wss://broker.hivemq.com:8884/mqtt',
 };
 
+/** Broker MQTT del directorio y de la señalización (`?broker=ws://…` lo cambia: pruebas con uno local). */
+export function brokerUrl(): string {
+  const q = typeof location === 'undefined' ? null : new URLSearchParams(location.search).get('broker');
+  return q && /^wss?:\/\//.test(q) ? q : NET.directoryUrl;
+}
+
 export function iceServers(): RTCIceServer[] {
   const out: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
   const env = import.meta.env;

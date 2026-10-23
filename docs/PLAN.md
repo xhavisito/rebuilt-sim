@@ -136,6 +136,11 @@ scripts/screenshot.mjs     verificación con Playwright
 - **Espectador en línea**: entra con `hello.spectate` (protocolo 2), no ocupa lugar de jugador
   (hasta 8) y puede entrar a medio match: el host le manda un cuadro con todo el FUEL antes de
   incluirlo en los envíos en delta.
+- **Señalización por MQTT**: la oferta/respuesta/ICE de WebRTC va por el mismo broker MQTT
+  público que la lista de salas (cada id escucha `rebuilt-sim/v1/sig/<id>`). Con el broker de
+  PeerJS la sala salía en la lista pero unirse desde otro dispositivo daba "no encontré esa sala"
+  (el host nunca contestaba); la lista ya demostraba que MQTT llega a ambos equipos. La conexión
+  del host (señalización y anuncio) se reconecta sola si el broker la corta.
 - **Partida rápida en línea** (botón "Jugar en línea", sin servidor propio): el directorio de
   salas públicas (MQTT) anuncia también `quick`, `open` (puede recibir a un jugador ya) y `left`
   (segundos que le quedan al match). Quien pica Jugar junta anuncios 1.6 s y entra a la mejor sala
