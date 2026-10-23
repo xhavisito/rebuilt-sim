@@ -270,6 +270,20 @@ export class AudioEngine {
     this.tone(1760, t + 0.05, 0.14, { gain: 0.05, attack: 0.002 });
   }
 
+  /** FUEL propio que entró: campanita más clara que `score()`; cada acierto seguido (< 1.5 s) sube un semitono. */
+  myScore(): void {
+    const t = this.now();
+    if (t === null) return;
+    this.streak = t - this.lastMyScore < 1.5 ? Math.min(this.streak + 1, 7) : 0;
+    this.lastMyScore = t;
+    const f = 1047 * Math.pow(2, this.streak / 12);
+    this.tone(f, t, 0.1, { gain: 0.08, attack: 0.002 });
+    this.tone(f * 1.5, t + 0.045, 0.18, { gain: 0.07, attack: 0.002 });
+    this.tone(f * 2, t + 0.045, 0.12, { wave: 'triangle', gain: 0.025, attack: 0.002 });
+  }
+  private streak = 0;
+  private lastMyScore = -10;
+
   intakeTick(): void {
     const t = this.now();
     if (t === null) return;

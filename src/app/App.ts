@@ -410,9 +410,17 @@ export class App {
         }
       },
       matchEvent: (e) => this.onMatchEvent(e),
-      fuelScored: (hub, counted) => {
+      fuelScored: (hub, counted, _x, _y, _z, shooter = -1) => {
         if (!counted) return;
-        this.audio.score();
+        // FUEL del jugador que cuenta para su alianza: sonido propio (sube de tono en racha) y un
+        // tic en el control, para saber sin mirar el marcador que el tiro entró. −2 = robot propio
+        // de un cliente en línea (el host ya filtró por índice).
+        const r = shooter >= 0 ? s.robots[shooter] : undefined;
+        const slot = r && r.alliance === hub ? localSlot(r, s.localCount) : -1;
+        if (slot >= 0 || shooter === -2) {
+          this.audio.myScore();
+          this.input.haptic(Math.max(0, slot), 'score');
+        } else this.audio.score();
         const c = F.hubCenter(hub);
         this.effects.emit(c.x, F.HUB_RIM_HEIGHT + 0.1, c.z, 14, { color: ALLIANCE_COLOR[hub], speed: 2.4, up: 1.5, life: 0.7, size: 0.07, gravity: 4 });
         this.effects.emit(c.x, F.HUB_RIM_HEIGHT + 0.1, c.z, 6, { color: 0xffd54f, speed: 2, up: 2, life: 0.8, size: 0.06, gravity: 4 });
@@ -788,7 +796,7 @@ export class App {
       if (m && e.e.type === 'phase') m.phase = e.e.phase;
       if (m && e.e.type === 'firstInactive') m.firstInactive = e.e.alliance;
       h.matchEvent?.(e.e);
-    } else if (e.k === 'score') h.fuelScored?.(e.hub, e.counted, e.x, e.y, e.z);
+    } else if (e.k === 'score') h.fuelScored?.(e.hub, e.counted, e.x, e.y, e.z, e.by !== undefined && e.by >= 0 && e.by === own ? -2 : -1);
     else if (e.k === 'launch' && s.robots[e.robot]) h.launch?.(s.robots[e.robot], e.kind, e.robot === own);
     else if (e.k === 'hp') h.hpAction?.(e.a, e.what);
     else if (e.k === 'impact') h.impact?.(e.s, e.robots.includes(own) ? 0 : -1, e.x, e.y, e.z, e.robots);

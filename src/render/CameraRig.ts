@@ -33,6 +33,8 @@ export class CameraRig {
   station: StationNumber = 2;
   shakeEnabled = true;
   private shake = 0;
+  /** Fase de la sacudida: senos de frecuencias distintas por eje, en vez de ruido blanco por cuadro. */
+  private shakeT = 0;
   private look = new THREE.Vector3();
   private pos = new THREE.Vector3();
   private orbit: OrbitControls | null = null;
@@ -73,7 +75,7 @@ export class CameraRig {
   }
 
   addShake(amount: number): void {
-    if (this.shakeEnabled) this.shake = Math.min(0.25, this.shake + amount);
+    if (this.shakeEnabled) this.shake = Math.min(0.15, this.shake + amount);
   }
 
   /** Base horizontal de la cámara (para manejo relativo a la cámara): adelante y derecha en XZ. */
@@ -185,11 +187,14 @@ export class CameraRig {
     }
     this.camera.position.copy(this.pos);
     if (this.shake > 0.001) {
-      const a = this.shake;
-      this.camera.position.x += (Math.random() - 0.5) * a;
-      this.camera.position.y += (Math.random() - 0.5) * a;
-      this.camera.position.z += (Math.random() - 0.5) * a;
-      this.shake *= Math.exp(-dt * 10);
+      // Oscilación suave y amortiguada (~20 Hz): se siente como golpe, no como imagen temblorosa
+      // que cambia de dirección cada cuadro (y no depende de los FPS).
+      const a = this.shake * 0.5;
+      const w = (this.shakeT += dt) * Math.PI * 2;
+      this.camera.position.x += Math.sin(w * 19) * a;
+      this.camera.position.y += Math.sin(w * 23 + 1.3) * a * 0.7;
+      this.camera.position.z += Math.sin(w * 17 + 2.1) * a;
+      this.shake *= Math.exp(-dt * 9);
     }
     this.camera.lookAt(this.look);
   }
