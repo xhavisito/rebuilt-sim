@@ -1,7 +1,9 @@
 /**
- * Red del modo en línea. STUN público y gratuito (descubre la IP pública); un relay TURN es
- * opcional y solo se usa si se define al compilar (VITE_TURN_URL, VITE_TURN_USER, VITE_TURN_PASS),
- * p. ej. el de Cloudflare: sin él, algunas redes muy cerradas (NAT simétrico) no conectan.
+ * Red del modo en línea. STUN público y gratuito (descubre la IP pública) y un relay TURN para las
+ * redes que no dejan conectar directo (datos móviles, NAT simétrico, Wi-Fi sin "hairpinning"):
+ * por defecto el TURN público y gratuito de freeturn.net (sin cuenta; el tráfico va cifrado con
+ * DTLS de punta a punta, el relay no lo puede leer). Uno propio, p. ej. el de Cloudflare, se
+ * define al compilar (VITE_TURN_URL, VITE_TURN_USER, VITE_TURN_PASS) y reemplaza al público.
  */
 export const NET = {
   /** Versión del protocolo: host y clientes deben coincidir. */
@@ -24,5 +26,6 @@ export function iceServers(): RTCIceServer[] {
   const out: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
   const env = import.meta.env;
   if (env.VITE_TURN_URL) out.push({ urls: String(env.VITE_TURN_URL).split(','), username: env.VITE_TURN_USER, credential: env.VITE_TURN_PASS });
+  else out.push({ urls: ['turn:freeturn.net:3478', 'turns:freeturn.net:5349'], username: 'free', credential: 'free' });
   return out;
 }

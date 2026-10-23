@@ -23,10 +23,17 @@ export class PeerLink {
   ) {
     this.pc = new RTCPeerConnection({ iceServers: iceServers() });
     this.pc.onicecandidate = (e) => {
-      if (e.candidate) this.sig.send(remoteId, { kind: 'ice', data: e.candidate.toJSON() });
+      if (e.candidate) {
+        console.info('[net] local candidate', e.candidate.type, e.candidate.protocol);
+        this.sig.send(remoteId, { kind: 'ice', data: e.candidate.toJSON() });
+      }
     };
+    // diagnóstico en la consola: estado de ICE y tipo de candidatos (host / srflx / relay)
+    this.pc.oniceconnectionstatechange = () => console.info('[net] ice', this.pc.iceConnectionState);
+    this.pc.onicecandidateerror = (e) => console.info('[net] ice error', (e as RTCPeerConnectionIceErrorEvent).url, (e as RTCPeerConnectionIceErrorEvent).errorText);
     this.pc.onconnectionstatechange = () => {
       const s = this.pc.connectionState;
+      console.info('[net] connection', s);
       if (s === 'failed' || s === 'closed') this.close();
     };
     if (initiator) {
