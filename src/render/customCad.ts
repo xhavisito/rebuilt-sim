@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { CustomCad, RobotSpec } from '../config/robots';
+import type { OptimizeResult, OptimizeStep } from './cadOptimize';
 
 const DB_NAME = 'rebuilt-sim';
 const STORE = 'cad';
@@ -123,4 +124,32 @@ export function cadNodeNames(scene: THREE.Object3D, max = 300): string[] {
     for (let p: THREE.Object3D | null = o; p && p !== scene && out.size < max; p = p.parent) if (p.name) out.add(p.name);
   });
   return [...out].sort((a, b) => a.localeCompare(b));
+}
+
+/** Aligera el CAD en un worker (src/render/cadOptimize.ts) para no congelar la página. */
+export function optimizeCad(buf: ArrayBuffer, onStep: (s: OptimizeStep) => void): Promise<OptimizeResult> {
+  return new Promise((res, rej) => {
+    const w = new Worker(new URL('./cadOptimize.worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<{ step?: OptimizeStep; done?: OptimizeResult; error?: string }>) => {
+      if (e.data.step) return onStep(e.data.step);
+      w.terminate();
+      if (e.data.done) res(e.data.done);
+      else rej(new Error(e.data.error ?? 'worker'));
+    };
+    w.onerror = (e) => {
+      w.terminate();
+      rej(new Error(e.message || 'worker'));
+    };
+    w.postMessage(buf, [buf]);
+  });
+}
+
+/** Triángulos de un modelo ya leído. */
+export function sceneTriangles(scene: THREE.Object3D): number {
+  let n = 0;
+  scene.traverse((o) => {
+    const g = (o as THREE.Mesh).isMesh ? (o as THREE.Mesh).geometry : null;
+    if (g) n += (g.index?.count ?? g.getAttribute('position')?.count ?? 0) / 3;
+  });
+  return Math.round(n);
 }

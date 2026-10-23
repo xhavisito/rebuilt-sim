@@ -9,7 +9,7 @@ import * as F from '../config/field';
 import { inch } from '../config/field';
 import { allRobots, DEFAULT_ROBOT_ID, fitScalePct, fitsUnderTrench, guessCadUnit, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type CustomCad, type RobotSpec } from '../config/robots';
 import { decodeRobotFile, encodeRobotFile, MAX_CAD_BYTES } from '../config/robotFile';
-import { cadNodeNames, cadSize, customModel, deleteCadFile, getCadFile, parseCad, putCadFile, registerCustomModel } from '../render/customCad';
+import { cadNodeNames, cadSize, customModel, deleteCadFile, getCadFile, optimizeCad, parseCad, putCadFile, registerCustomModel, sceneTriangles } from '../render/customCad';
 import { bind, esc, num, seg, select, type Opt } from './forms';
 import { t, tx } from './i18n';
 import type { Showroom } from '../render/Showroom';
@@ -21,6 +21,12 @@ const UNIT_OPTS: Opt[] = [
   { value: '0.0254', label: 'in' },
 ];
 const IN_PER_M = 1 / 0.0254;
+/** Lo más que se acepta al importar (se aligera antes de guardarlo; ver src/render/cadOptimize.ts). */
+const MAX_IMPORT_BYTES = 1024 * 1024 * 1024;
+/** Arriba de esto el CAD se aligera (archivo o triángulos). */
+const OPTIMIZE_ABOVE_BYTES = 12 * 1024 * 1024;
+const OPTIMIZE_ABOVE_TRIS = 400_000;
+const isGlb = (b: ArrayBuffer) => new TextDecoder().decode(new Uint8Array(b, 0, Math.min(4, b.byteLength))) === 'glTF';
 const round = (x: number, step: number) => Math.round(x / step) * step;
 const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
 
@@ -281,16 +287,36 @@ export class RobotEditor {
 
   private async importCad(f: File): Promise<void> {
     const msg = (cls: '' | 'ok' | 'warn' | 'bad', text: string) => this.say('[data-cadmsg]', cls, text);
-    if (f.size > MAX_CAD_BYTES) return msg('bad', t('cadErrBig', { max: MAX_CAD_BYTES / 1024 / 1024 }));
+    if (f.size > MAX_IMPORT_BYTES) return msg('bad', t('cadErrBig', { max: MAX_IMPORT_BYTES / 1024 / 1024 }));
     msg('', t('cadLoading'));
-    const buf = await f.arrayBuffer();
-    let scene;
-    try {
-      scene = await parseCad(buf);
-    } catch (e) {
+    const errMsg = (e: unknown) => {
       const code = (e as Error)?.message;
-      return msg('bad', code === 'external' ? t('cadErrExternal') : code === 'draco' ? t('cadErrDraco') : t('cadErrParse', { err: String(code ?? e) }));
+      return msg('bad', code === 'external' ? t('cadErrExternal') : code === 'draco' ? t('cadErrDraco') : t('cadErrParse', { err: String(code ?? e).slice(0, 200) }));
+    };
+    let buf = await f.arrayBuffer();
+    const sizeIn = buf.byteLength;
+    let scene: Awaited<ReturnType<typeof parseCad>> | undefined;
+    let report = '';
+    try {
+      // Los chicos se leen tal cual; si pesan o traen demasiados triángulos, se aligeran en un worker
+      if (sizeIn <= OPTIMIZE_ABOVE_BYTES) scene = await parseCad(buf);
+      if (!scene || sceneTriangles(scene) > OPTIMIZE_ABOVE_TRIS) {
+        if (!isGlb(buf) && /"uri"\s*:\s*"(?!data:)/.test(new TextDecoder().decode(buf))) throw new Error('external');
+        const r = await optimizeCad(buf, (step) => msg('', t('cadOptimizing', { step: t(`cadStep_${step}`) })));
+        buf = r.glb.buffer.slice(r.glb.byteOffset, r.glb.byteOffset + r.glb.byteLength) as ArrayBuffer;
+        scene = await parseCad(buf);
+        report = t('cadOptimized', {
+          inMb: (sizeIn / 1024 / 1024).toFixed(1),
+          outMb: (buf.byteLength / 1024 / 1024).toFixed(1),
+          trisIn: r.trianglesIn.toLocaleString(),
+          trisOut: r.trianglesOut.toLocaleString(),
+          parts: r.removedParts,
+        });
+      }
+    } catch (e) {
+      return errMsg(e);
     }
+    if (buf.byteLength > MAX_CAD_BYTES) return msg('bad', t('cadErrBig', { max: MAX_CAD_BYTES / 1024 / 1024 }));
     const id = `cad-${Date.now().toString(36)}`;
     try {
       await putCadFile(id, buf);
@@ -314,7 +340,7 @@ export class RobotEditor {
     s.customCad = c;
     delete s.cad; // reemplaza al CAD del equipo (en esta copia)
     this.render();
-    this.say('[data-cadmsg]', 'ok', t('cadLoaded', { size: (buf.byteLength / 1024 / 1024).toFixed(1) }));
+    this.say('[data-cadmsg]', 'ok', report || t('cadLoaded', { size: (buf.byteLength / 1024 / 1024).toFixed(1) }));
   }
 
   private async exportRobot(): Promise<void> {
