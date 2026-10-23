@@ -375,9 +375,9 @@ export class HostRoom {
         this.sendSlow();
         this.broadcastEvent({ k: 'match', e });
       },
-      fuelScored: (hub, counted, x, y, z) => {
-        h.fuelScored?.(hub, counted, x, y, z);
-        this.broadcastEvent({ k: 'score', hub, counted, x, y, z });
+      fuelScored: (hub, counted, x, y, z, by = -1) => {
+        h.fuelScored?.(hub, counted, x, y, z, by);
+        this.broadcastEvent({ k: 'score', hub, counted, x, y, z, by });
       },
       launch: (robot, kind, isPlayer) => {
         h.launch?.(robot, kind, isPlayer && isLocal(robot.index));

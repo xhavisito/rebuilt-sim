@@ -67,9 +67,9 @@ export class SessionTap {
         h.matchEvent?.(e);
         if (e.type !== 'evalAutoTower' && e.type !== 'evalTeleopTower') this.event({ k: 'match', e });
       },
-      fuelScored: (hub, counted, x, y, z) => {
-        h.fuelScored?.(hub, counted, x, y, z);
-        this.event({ k: 'score', hub, counted, x, y, z });
+      fuelScored: (hub, counted, x, y, z, by = -1) => {
+        h.fuelScored?.(hub, counted, x, y, z, by);
+        this.event({ k: 'score', hub, counted, x, y, z, by });
       },
       launch: (robot, kind, isPlayer) => {
         h.launch?.(robot, kind, isPlayer);

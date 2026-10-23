@@ -38,6 +38,9 @@ export class InputManager {
   onDeviceChange: Array<(d: DeviceKind) => void> = [];
   private globalKeys = new Map<string, () => void>();
   private prevHeld: Array<Record<ButtonAction, boolean>> = [];
+  /** Giro con teclado: dirección y momento en que se empezó a mantener (rampa, ver readKeyboard). */
+  private rotKeyDir = 0;
+  private rotKeySince = 0;
 
   constructor(
     private settings: Settings,
@@ -118,7 +121,15 @@ export class InputManager {
     const len = Math.hypot(x, y);
     into.moveX += len > 1 ? x / len : x;
     into.moveY += len > 1 ? y / len : y;
-    into.rotate += r;
+    // Las teclas son 0/1: girar siempre a fondo hace imposible apuntar fino. Un toque gira al 35 %
+    // y se llega al 100 % tras ~0.3 s de mantenerla (como mover un stick poco a poco).
+    const now = performance.now();
+    if (r !== this.rotKeyDir) {
+      this.rotKeyDir = r;
+      this.rotKeySince = now;
+    }
+    const ramp = Math.min(1, 0.35 + ((now - this.rotKeySince) / 300) * 0.65);
+    into.rotate += r * ramp;
     for (const a of BUTTON_ACTIONS) if (this.keyHeld(k[a])) into.held[a] = true;
     if (this.settings.drive.mouseAim && this.mouseNdc) into.mouseNdc = this.mouseNdc;
   }

@@ -100,7 +100,8 @@ export interface SessionHooks {
   toast?(key: 'gyroReset' | 'fieldRel' | 'robotRel', robot: number): void;
   cameraChange?(mode: string): void;
   /** Un FUEL cruzó el sensor del HUB (counted = dio punto). */
-  fuelScored?(hub: Alliance, counted: boolean, x: number, y: number, z: number): void;
+  /** `shooter` = índice del robot que lanzó el FUEL (−1 si nadie: rebote, HUMAN PLAYER). */
+  fuelScored?(hub: Alliance, counted: boolean, x: number, y: number, z: number, shooter?: number): void;
   /** El drive coach dice algo (la App lo traduce, lo muestra y quizá lo dice en voz alta). */
   coach?(m: CoachMsg): void;
   /** Un robot lanzó FUEL (sonido / efectos). */
@@ -333,7 +334,7 @@ export class GameSession {
     if (this.match) counted = this.match.fuelEntered(hub).counted;
     const shooter = this.fuel.shotBy[i];
     if (counted && shooter >= 0 && this.robots[shooter]?.alliance === hub) this.robots[shooter].stats.fuelScored++;
-    this.hooks.fuelScored?.(hub, counted, this.fuel.pos[o], this.fuel.pos[o + 1], this.fuel.pos[o + 2]);
+    this.hooks.fuelScored?.(hub, counted, this.fuel.pos[o], this.fuel.pos[o + 1], this.fuel.pos[o + 2], shooter);
   }
 
   /** Estado de un robot para los criterios de LEVEL (§6.5.2). */

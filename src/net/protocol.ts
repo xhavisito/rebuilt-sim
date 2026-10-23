@@ -50,7 +50,7 @@ export type ClientMsg =
 /** Evento del host para efectos y sonidos del cliente. */
 export type NetEvent =
   | { k: 'match'; e: MatchEvent }
-  | { k: 'score'; hub: Alliance; counted: boolean; x: number; y: number; z: number }
+  | { k: 'score'; hub: Alliance; counted: boolean; x: number; y: number; z: number; by?: number }
   | { k: 'launch'; robot: number; kind: 'shot' | 'pass' | 'corral' }
   | { k: 'hp'; a: Alliance; what: 'throw' | 'door' }
   | { k: 'impact'; s: number; robots: number[]; x: number; y: number; z: number }
