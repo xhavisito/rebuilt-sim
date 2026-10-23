@@ -13,6 +13,8 @@ import {
   type PadStyle,
   type PlayerInput,
 } from './actions';
+import { hapticCooldown, hapticPattern, type HapticEvent, type HapticSpec } from './haptics';
+import { buttonDown, readSticks } from './padMath';
 import type { TouchControls } from './TouchControls';
 
 export type SlotDevice =
@@ -25,6 +27,9 @@ export class InputManager {
   private keys = new Set<string>();
   lastDevice: DeviceKind = 'keyboard';
   lastPadStyle: PadStyle = 'xbox';
+  /** Índice del último gamepad con actividad (−1 = ninguno). */
+  lastPadIndex = -1;
+  private lastHaptic = new Map<string, number>();
   mouseNdc: { x: number; y: number } | null = null;
   touch: TouchControls | null = null;
   slots: SlotDevice[] = [{ type: 'any' }];
@@ -70,6 +75,7 @@ export class InputManager {
     });
     window.addEventListener('gamepadconnected', (e) => {
       this.lastPadStyle = padStyle((e as GamepadEvent).gamepad.id);
+      this.lastPadIndex = (e as GamepadEvent).gamepad.index;
       this.setDevice('gamepad');
     });
   }
@@ -117,42 +123,26 @@ export class InputManager {
     if (this.settings.drive.mouseAim && this.mouseNdc) into.mouseNdc = this.mouseNdc;
   }
 
-  private shape(v: number): number {
-    return this.settings.pad.curve === 'quadratic' ? Math.sign(v) * v * v : v;
-  }
-
   private readPad(pad: Gamepad, into: PlayerInput): boolean {
-    const dz = this.settings.pad.deadzone;
-    const ax = pad.axes;
-    let lx = ax[0] ?? 0;
-    let ly = -(ax[1] ?? 0);
-    const m = Math.hypot(lx, ly);
-    if (m < dz) {
-      lx = 0;
-      ly = 0;
-    } else {
-      const n = Math.min(1, (m - dz) / (1 - dz));
-      const s = this.shape(n) / m;
-      lx *= s;
-      ly *= s;
-    }
-    let rx = ax[2] ?? 0;
-    rx = Math.abs(rx) < dz ? 0 : this.shape(Math.sign(rx) * Math.min(1, (Math.abs(rx) - dz) / (1 - dz)));
-    into.moveX += lx;
-    into.moveY += ly;
-    into.rotate += rx;
-    let active = m > dz || Math.abs(rx) > 0;
+    const o = this.settings.pad;
+    const st = readSticks(pad.axes, { deadzone: o.deadzone, curve: o.curve, layout: o.sticks, invertRotate: o.invertRotate });
+    into.moveX += st.moveX;
+    into.moveY += st.moveY;
+    into.rotate += st.rotate;
+    let active = st.moveX !== 0 || st.moveY !== 0 || st.rotate !== 0;
     const b = this.settings.padBindings;
     for (const a of BUTTON_ACTIONS)
       for (const idx of b[a]) {
-        const btn = pad.buttons[idx];
-        if (btn && (btn.pressed || btn.value > 0.3)) {
+        if (buttonDown(pad.buttons[idx], idx, o.triggerThreshold)) {
           into.held[a] = true;
           active = true;
         }
       }
-    // Íconos correctos en el HUD según el control usado
-    if (active) this.lastPadStyle = padStyle(pad.id);
+    // Íconos correctos en el HUD según el control usado; la vibración va a este control
+    if (active) {
+      this.lastPadStyle = padStyle(pad.id);
+      this.lastPadIndex = pad.index;
+    }
     return active;
   }
 
@@ -194,23 +184,43 @@ export class InputManager {
     return out;
   }
 
-  /** Vibración del control (si el navegador la soporta) o del teléfono. */
-  rumble(slot: number, strength: number, ms: number): void {
-    if (!this.settings.pad.vibration) return;
-    const s = this.slots[slot] ?? { type: 'any' };
-    if (this.lastDevice === 'touch' || s.type === 'touch') {
-      try {
-        navigator.vibrate?.(Math.min(ms, 200));
-      } catch {
-        /* sin soporte */
-      }
+  /**
+   * Vibración por evento del juego (ver input/haptics.ts) para el jugador `slot`: respeta los
+   * ajustes, la intensidad y un tiempo mínimo entre efectos iguales.
+   * @param strength 0–1 (fuerza del choque)
+   */
+  haptic(slot: number, ev: HapticEvent, strength = 1): void {
+    const spec = hapticPattern(ev, strength, this.settings.pad);
+    if (!spec || slot < 0) return;
+    const key = `${slot}:${ev}`;
+    const now = performance.now() / 1000;
+    if (now - (this.lastHaptic.get(key) ?? -1e9) < hapticCooldown(ev)) return;
+    this.lastHaptic.set(key, now);
+    const s = this.slots[slot];
+    if (!s) return;
+    if (s.type === 'touch' || (s.type === 'any' && this.lastDevice === 'touch')) {
+      if (spec.phoneMs > 0) vibratePhone(spec.phoneMs);
       return;
     }
-    for (const p of this.gamepads()) {
-      if (s.type === 'gamepad' && p.index !== s.index) continue;
-      const act = (p as Gamepad & { vibrationActuator?: GamepadHapticActuator }).vibrationActuator;
-      act?.playEffect?.('dual-rumble', { duration: ms, strongMagnitude: strength, weakMagnitude: strength * 0.6 }).catch(() => {});
-    }
+    if (s.type === 'keyboard') return;
+    let pads = this.gamepads();
+    if (s.type === 'gamepad') pads = pads.filter((p) => p.index === s.index);
+    // Un jugador con cualquier dispositivo: solo el último control que se usó
+    else if (this.lastPadIndex >= 0 && pads.some((p) => p.index === this.lastPadIndex)) pads = pads.filter((p) => p.index === this.lastPadIndex);
+    for (const p of pads) playOn(p, spec);
+  }
+
+  /** Vibración de prueba en un control (Ajustes › Control). */
+  testHaptic(padIndex: number): void {
+    const spec = hapticPattern('test', 1, { ...this.settings.pad, vibration: true });
+    const p = this.gamepads().find((g) => g.index === padIndex);
+    if (spec && p) playOn(p, spec);
+    else if (spec && this.lastDevice === 'touch') vibratePhone(spec.phoneMs);
+  }
+
+  /** El mismo efecto para todos los jugadores locales (avisos del match). */
+  hapticAll(ev: HapticEvent): void {
+    for (let i = 0; i < this.slots.length; i++) this.haptic(i, ev);
   }
 
   /** ¿Hay teclas presionadas o actividad reciente? */
@@ -220,3 +230,43 @@ export class InputManager {
 }
 
 const clamp = (v: number): number => Math.max(-1, Math.min(1, v));
+
+type Actuator = GamepadHapticActuator & { effects?: string[]; type?: string };
+
+/** ¿El control puede vibrar en este navegador? y ¿tiene gatillos con vibración? */
+export function padHaptics(p: Gamepad): { rumble: boolean; triggers: boolean } {
+  const act = (p as Gamepad & { vibrationActuator?: Actuator | null }).vibrationActuator;
+  if (!act || typeof act.playEffect !== 'function') return { rumble: false, triggers: false };
+  const fx = act.effects;
+  return { rumble: !fx || fx.includes('dual-rumble'), triggers: !!fx?.includes('trigger-rumble') };
+}
+
+function playOn(p: Gamepad, spec: HapticSpec): void {
+  const act = (p as Gamepad & { vibrationActuator?: Actuator | null }).vibrationActuator;
+  if (!act?.playEffect) return;
+  const caps = padHaptics(p);
+  try {
+    if (caps.triggers && (spec.right || spec.left)) {
+      // trigger-rumble incluye los motores principales
+      (act.playEffect as (t: string, p: Record<string, number>) => Promise<unknown>)('trigger-rumble', {
+        duration: spec.ms,
+        strongMagnitude: spec.strong,
+        weakMagnitude: spec.weak,
+        leftTrigger: spec.left ?? 0,
+        rightTrigger: spec.right ?? 0,
+      }).catch(() => {});
+    } else if (spec.strong > 0 || spec.weak > 0) {
+      act.playEffect('dual-rumble', { duration: spec.ms, strongMagnitude: spec.strong, weakMagnitude: spec.weak }).catch(() => {});
+    }
+  } catch {
+    /* sin soporte */
+  }
+}
+
+function vibratePhone(ms: number): void {
+  try {
+    navigator.vibrate?.(Math.min(ms, 200));
+  } catch {
+    /* sin soporte */
+  }
+}

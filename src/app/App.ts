@@ -19,6 +19,7 @@ import { loadSettings, saveSettings, type Difficulty, type Settings } from '../c
 import type { MatchEvent } from '../core/match';
 import { ALLIANCES, type Alliance, type StationNumber } from '../core/types';
 import { GameSession, type RobotSlotConfig, type SessionConfig } from '../game/GameSession';
+import type { Robot } from '../game/Robot';
 import { InputManager, type SlotDevice } from '../input/InputManager';
 import { TouchControls } from '../input/TouchControls';
 import { FieldView } from '../render/FieldView';
@@ -321,9 +322,13 @@ export class App {
         this.effects.emit(c.x, F.HUB_RIM_HEIGHT + 0.1, c.z, 6, { color: 0xffd54f, speed: 2, up: 2, life: 0.8, size: 0.06, gravity: 4 });
         this.stadium.cheer(0.08);
       },
-      launch: (_r, _kind, isPlayer) => {
-        if (isPlayer) this.audio.shoot();
+      launch: (r, kind, isPlayer) => {
+        if (!isPlayer) return;
+        this.audio.shoot();
+        // en línea, el cliente solo oye los tiros de su robot: su slot local es el 0
+        this.input.haptic(Math.max(0, localSlot(r, s.localCount)), kind === 'pass' ? 'pass' : 'shot');
       },
+      intake: (r) => this.input.haptic(localSlot(r, s.localCount), 'intake'),
       hpAction: (a, what) => {
         if (what === 'door') this.toast(s.humanPlayers[a].doorOpen ? t('chuteOpen') : t('chuteClosed'));
       },
@@ -332,7 +337,7 @@ export class App {
         this.effects.emit(x, y, z, Math.round(6 + 14 * strength), { color: 0xffb74d, speed: 2.5 + 3 * strength, spread: 1.2, life: 0.35, size: 0.03, gravity: 9 });
         if (slot >= 0) {
           s.rigs[Math.min(slot, s.rigs.length - 1)]?.addShake(strength * 0.12);
-          this.input.rumble(slot, strength, 120);
+          this.input.haptic(slot, 'impact', strength);
         }
       },
       cameraChange: (mode) => {
@@ -676,7 +681,7 @@ export class App {
           case 'SHIFT3':
           case 'SHIFT4': {
             this.audio.powerUp();
-            this.input.rumble(0, 0.5, 250);
+            this.input.hapticAll('shift');
             const n = e.phase.slice(-1);
             const active = this.session?.match?.isHubActive(player?.alliance ?? 'blue');
             this.toast(`SHIFT ${n} · HUB ${active ? t('hubActive') : t('hubInactive')}`.toUpperCase(), active ? 'good' : '');
@@ -684,7 +689,7 @@ export class App {
           }
           case 'END_GAME':
             this.audio.steamWhistle();
-            this.input.rumble(0, 0.6, 300);
+            this.input.hapticAll('endgame');
             say('¡END GAME! Todos los HUBS activos', 'END GAME! All HUBS active');
             break;
           case 'POST':
@@ -715,8 +720,9 @@ export class App {
         const team = this.session?.robots[f.robot]?.spec.teamNumber;
         this.toast(`${f.rule} – ${RULES[f.rule].title} · ${f.severity} FOUL${team ? ` (${team})` : ''}`, f.severity === 'MAJOR' ? 'major' : 'minor');
         this.audio.whistle();
-        if (f.robot >= 0 && this.session?.robots[f.robot]?.isPlayer) {
-          this.input.rumble(0, 0.4, 150);
+        const fr = f.robot >= 0 ? this.session?.robots[f.robot] : undefined;
+        if (fr?.isPlayer) {
+          this.input.haptic(localSlot(fr, this.session?.localCount ?? 1), 'foul');
           this.toast(tx(RULES[f.rule]));
         }
         break;
@@ -1114,6 +1120,11 @@ export class App {
  * Robots de la IA: los robots reales de la temporada, sin repetir el del jugador. En Fácil van en
  * orden fijo (lo usan los escenarios e2e); en las demás dificultades, al azar.
  */
+/** Slot local del jugador que maneja el robot (−1 si es de la IA o de un jugador remoto). */
+function localSlot(r: Robot, localCount: number): number {
+  return r.control.type === 'player' && r.control.slot < localCount ? r.control.slot : -1;
+}
+
 function aiRobotPool(difficulty: string, playerId: string): RobotSpec[] {
   const top = CAD_ROBOTS.filter((r) => r.id !== playerId);
   if (difficulty === 'easy') return top;

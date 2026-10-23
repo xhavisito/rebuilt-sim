@@ -11,8 +11,9 @@ import { allRobots, fitsUnderTrench, ROBOT_PRESETS, robotById, type RobotSpec } 
 import { DEFAULT_SETTINGS, type Settings } from '../config/settings';
 import { defaultStart } from '../core/startRules';
 import type { Alliance, StationNumber } from '../core/types';
-import { AXIS_ACTIONS, BUTTON_ACTIONS, keyLabel, PAD_LABELS, type AxisAction, type ButtonAction } from '../input/actions';
+import { AXIS_ACTIONS, BUTTON_ACTIONS, keyLabel, type AxisAction, type ButtonAction } from '../input/actions';
 import type { SlotDevice } from '../input/InputManager';
+import { openControllerScreen, padButtonLabel } from './ControllerScreen';
 import { bind, esc, range, seg, select, type Opt } from './forms';
 import { getLang, setLang, t, type TKey } from './i18n';
 import { keyToNav, MenuNav, PadNav, type NavOptions } from './nav';
@@ -61,7 +62,10 @@ export class Screens {
   /** Llamar cada frame: navegación con control y dibujo de la vitrina 3D. */
   tick(dt: number): void {
     if (!this.visible) return;
-    if (this.nav) for (const a of this.padNav.poll(dt)) this.nav.handle(a);
+    // Siempre se lee (para no ver como nuevo un botón que ya estaba presionado), pero mientras
+    // se reasigna un botón el control no navega
+    const acts = this.padNav.poll(dt);
+    if (this.nav && !this.app.input.captureOff) for (const a of acts) this.nav.handle(a);
     this.showroom.render(dt);
   }
 
@@ -594,11 +598,9 @@ export class Screens {
       .map((a) => {
         const keys = s.keys[a].map((k) => `<span class="kbd">${esc(keyLabel(k, getLang()))}</span>`).join('');
         const pad = (BUTTON_ACTIONS as string[]).includes(a)
-          ? s.padBindings[a as ButtonAction].map((i) => `<span class="kbd">${PAD_LABELS[style][i] ?? i}</span>`).join('')
-          : `<span class="kbd">${a.startsWith('move') ? 'L' : 'R'}</span>`;
-        return `<tr><td>${t(`a_${a}` as TKey)}</td><td>${keys} <button class="chipbtn" data-rebind="${a}">${t('rebind')}</button></td><td>${pad} ${
-          (BUTTON_ACTIONS as string[]).includes(a) ? `<button class="chipbtn" data-rebindpad="${a}">🎮</button>` : ''
-        }</td></tr>`;
+          ? s.padBindings[a as ButtonAction].map((i) => `<span class="kbd">${esc(padButtonLabel(style, i))}</span>`).join('')
+          : `<span class="kbd">${a.startsWith('move') === (s.pad.sticks === 'standard') ? 'L' : 'R'}</span>`;
+        return `<tr><td>${t(`a_${a}` as TKey)}</td><td>${keys} <button class="chipbtn" data-rebind="${a}">${t('rebind')}</button></td><td>${pad}</td></tr>`;
       })
       .join('');
     this.show(`
@@ -623,9 +625,7 @@ export class Screens {
         <label>${t('aimGuide')}</label>${seg('aimguide', yn, onoff(s.drive.aimGuide))}
         <label>${t('mouseAim')}</label>${seg('mouseaim', yn, onoff(s.drive.mouseAim))}
         <h3>${t('gamepad')}</h3>
-        <label>${t('deadzone')}</label>${range('deadzone', 0, 0.4, 0.01, s.pad.deadzone)}
-        <label>${t('curve')}</label>${seg('curve', [{ value: 'linear', label: t('c_linear') }, { value: 'quadratic', label: t('c_quadratic') }], s.pad.curve)}
-        <label>${t('vibration')}</label>${seg('vib', yn, onoff(s.pad.vibration))}
+        <label></label><div class="row" style="gap:10px;align-items:center"><button class="chipbtn" data-padscreen data-nav>🎮 ${t('padScreen')}</button><span class="msg" style="flex:1">${t('padScreenDesc')}</span></div>
         <h3>${t('touch')}</h3>
         <label>${t('touchScale')}</label>${range('tscale', 0.6, 1.6, 0.05, s.touch.scale)}
         <label>${t('touchOpacity')}</label>${range('topacity', 0.15, 1, 0.05, s.touch.opacity)}
@@ -692,15 +692,6 @@ export class Screens {
         case 'mouseaim':
           s.drive.mouseAim = b;
           break;
-        case 'deadzone':
-          s.pad.deadzone = Number(v);
-          break;
-        case 'curve':
-          s.pad.curve = v as 'linear' | 'quadratic';
-          break;
-        case 'vib':
-          s.pad.vibration = b;
-          break;
         case 'tscale':
           s.touch.scale = Number(v);
           break;
@@ -766,29 +757,25 @@ export class Screens {
         });
       }),
     );
-    // Reasignar control: el siguiente botón presionado en cualquier gamepad
-    r.querySelectorAll<HTMLElement>('[data-rebindpad]').forEach((btn) =>
-      btn.addEventListener('click', () => {
-        const action = btn.dataset.rebindpad as ButtonAction;
-        cap.style.display = '';
-        cap.textContent = `${t(`a_${action}` as TKey)}: ${t('pressPad')}`;
-        const before = new Set<string>();
-        for (const p of this.app.input.gamepads()) p.buttons.forEach((b, i) => b.pressed && before.add(`${p.index}:${i}`));
-        const timer = window.setInterval(() => {
-          for (const p of this.app.input.gamepads())
-            p.buttons.forEach((b, i) => {
-              if (b.pressed && !before.has(`${p.index}:${i}`)) {
-                window.clearInterval(timer);
-                for (const a of BUTTON_ACTIONS) s.padBindings[a] = s.padBindings[a].filter((x) => x !== i);
-                s.padBindings[action] = [i];
-                this.app.save();
-                this.settings(back);
-              }
-            });
-        }, 50);
-        this.cleanup.push(() => window.clearInterval(timer));
+    r.querySelector('[data-padscreen]')!.addEventListener('click', () => this.controller(() => this.settings(back)));
+  }
+
+  /** Ajustes › Control y vibración (ver ControllerScreen.ts). */
+  controller(back: () => void = () => this.settings(), focusKey?: string): void {
+    // al volver a dibujar (reasignar, cambiar esquema) no regresa hasta arriba
+    const top = focusKey ? this.root.scrollTop : 0;
+    this.prepare(back);
+    this.cleanup.push(
+      openControllerScreen({
+        app: this.app,
+        root: this.root,
+        back,
+        focusKey,
+        setNav: (n) => (this.nav = n),
+        rerender: (k) => this.controller(back, k),
       }),
     );
+    this.root.scrollTop = top;
   }
 
   // ------------------------------------------------------------------ en línea

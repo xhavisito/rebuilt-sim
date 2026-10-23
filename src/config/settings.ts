@@ -1,6 +1,8 @@
 /** Ajustes persistentes (localStorage, con valores por defecto si no hay almacenamiento). */
 import type { Alliance, EventType, StationNumber } from '../core/types';
 import { DEFAULT_KEYS, DEFAULT_PAD, type KeyBindings, type PadBindings } from '../input/actions';
+import type { HapticGroup } from '../input/haptics';
+import type { StickLayout } from '../input/padMath';
 import type { Quality } from '../render/Renderer';
 import type { CameraMode } from '../render/CameraRig';
 
@@ -26,7 +28,22 @@ export interface Settings {
     /** Dibuja la trayectoria del siguiente tiro. */
     aimGuide: boolean;
   };
-  pad: { deadzone: number; curve: 'linear' | 'quadratic'; vibration: boolean };
+  pad: {
+    deadzone: number;
+    curve: 'linear' | 'quadratic';
+    vibration: boolean;
+    /** Intensidad de la vibración, 0–1. */
+    vibrationStrength: number;
+    /** Vibración en los gatillos (impulse triggers de Xbox, si el navegador la soporta). */
+    triggerRumble: boolean;
+    /** Qué eventos vibran (ver input/haptics.ts). */
+    haptics: Record<HapticGroup, boolean>;
+    /** Qué stick mueve y cuál gira. */
+    sticks: StickLayout;
+    invertRotate: boolean;
+    /** Recorrido de LT/RT (0–1) que cuenta como presionado. */
+    triggerThreshold: number;
+  };
   touch: { scale: number; opacity: number; layout: Record<string, { x: number; y: number }> };
   keys: KeyBindings;
   padBindings: PadBindings;
@@ -59,7 +76,17 @@ export const DEFAULT_SETTINGS: Settings = {
   coach: { show: true, voice: true },
   colorblind: false,
   drive: { fieldRelative: true, mouseAim: false, autoAim: true, shootOnMove: true, aimGuide: true },
-  pad: { deadzone: 0.12, curve: 'quadratic', vibration: true },
+  pad: {
+    deadzone: 0.12,
+    curve: 'quadratic',
+    vibration: true,
+    vibrationStrength: 0.8,
+    triggerRumble: true,
+    haptics: { shots: true, impacts: true, intake: true, match: true },
+    sticks: 'standard',
+    invertRotate: false,
+    triggerThreshold: 0.3,
+  },
   touch: { scale: 1, opacity: 0.55, layout: {} },
   keys: DEFAULT_KEYS,
   padBindings: DEFAULT_PAD,
