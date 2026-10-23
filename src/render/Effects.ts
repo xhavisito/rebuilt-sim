@@ -1,6 +1,7 @@
 /**
  * Partículas en GPU (un solo THREE.Points con shader): ráfagas al anotar en el HUB,
- * estela sutil de los tiros, chispas/polvo en los choques. Pool fijo, sin asignaciones.
+ * estela de los tiros, chispas en los choques, destellos del shooter y la intake. Pool fijo,
+ * sin asignaciones. `glow` = mezcla aditiva (luz); sin él, mezcla normal (polvo de las llantas).
  */
 import * as THREE from 'three';
 
@@ -21,23 +22,26 @@ const VERT = /* glsl */ `
   varying float vAlpha;
   varying vec3 vColor;
   uniform float uScale;
+  uniform float uMaxPx;
   void main() {
-    vAlpha = aAlpha;
     vColor = aColor;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = aSize * uScale / max(0.1, -mv.z);
+    // pegadas a la cámara se desvanecen (si no, tapan media pantalla como discos blancos)
+    vAlpha = aAlpha * smoothstep(0.35, 1.4, -mv.z);
+    gl_PointSize = min(uMaxPx, aSize * uScale / max(0.1, -mv.z));
     gl_Position = projectionMatrix * mv;
   }`;
 
 const FRAG = /* glsl */ `
   varying float vAlpha;
   varying vec3 vColor;
+  uniform float uGain;
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     float d = dot(c, c);
     if (d > 0.25) discard;
     float a = vAlpha * smoothstep(0.25, 0.0, d);
-    gl_FragColor = vec4(vColor * 1.6, a);
+    gl_FragColor = vec4(vColor * uGain, a);
   }`;
 
 export class Effects {
@@ -57,7 +61,10 @@ export class Effects {
   private material: THREE.ShaderMaterial;
   enabled = true;
 
-  constructor(capacity = 1600) {
+  constructor(
+    capacity = 1600,
+    readonly glow = true,
+  ) {
     this.n = capacity;
     this.pos = new Float32Array(capacity * 3).fill(-100);
     this.vel = new Float32Array(capacity * 3);
@@ -76,10 +83,10 @@ export class Effects {
     this.material = new THREE.ShaderMaterial({
       vertexShader: VERT,
       fragmentShader: FRAG,
-      uniforms: { uScale: { value: 600 } },
+      uniforms: { uScale: { value: 600 }, uMaxPx: { value: 48 }, uGain: { value: glow ? 1.25 : 1 } },
       transparent: true,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: glow ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     this.points = new THREE.Points(g, this.material);
     this.points.frustumCulled = false;
@@ -90,6 +97,7 @@ export class Effects {
   /** Ajusta el tamaño de los puntos a la altura del viewport (px). */
   setViewportHeight(h: number): void {
     this.material.uniforms.uScale.value = h * 0.55;
+    this.material.uniforms.uMaxPx.value = Math.max(24, h * 0.045);
   }
 
   emit(x: number, y: number, z: number, count: number, o: EmitOptions): void {
@@ -119,8 +127,8 @@ export class Effects {
     }
   }
 
-  /** Una partícula quieta y tenue (estela de un tiro). */
-  trail(x: number, y: number, z: number): void {
+  /** Una partícula quieta que se apaga (estela de un tiro); color por omisión: ámbar del FUEL. */
+  trail(x: number, y: number, z: number, r = 1, g = 0.62, b = 0.12, life = 0.32, size = 0.045): void {
     if (!this.enabled) return;
     const i = this.next;
     this.next = (this.next + 1) % this.n;
@@ -128,11 +136,11 @@ export class Effects {
     this.pos[i * 3 + 1] = y;
     this.pos[i * 3 + 2] = z;
     this.vel[i * 3] = this.vel[i * 3 + 1] = this.vel[i * 3 + 2] = 0;
-    this.col[i * 3] = 1;
-    this.col[i * 3 + 1] = 0.85;
-    this.col[i * 3 + 2] = 0.35;
-    this.maxLife[i] = this.life[i] = 0.28;
-    this.baseSize[i] = 0.07;
+    this.col[i * 3] = r;
+    this.col[i * 3 + 1] = g;
+    this.col[i * 3 + 2] = b;
+    this.maxLife[i] = this.life[i] = life;
+    this.baseSize[i] = size;
     this.grav[i] = 0;
   }
 
@@ -156,8 +164,9 @@ export class Effects {
       this.pos[o + 1] = Math.max(0.01, this.pos[o + 1] + this.vel[o + 1] * dt);
       this.pos[o + 2] += this.vel[o + 2] * dt;
       const f = Math.max(0, this.life[i] / this.maxLife[i]);
-      this.alpha[i] = f * 0.9;
-      this.size[i] = this.baseSize[i] * (0.5 + 0.5 * f);
+      this.alpha[i] = this.glow ? f * 0.9 : f * 0.45;
+      // la luz se encoge al apagarse; el polvo se esparce
+      this.size[i] = this.baseSize[i] * (this.glow ? 0.5 + 0.5 * f : 1.8 - 0.8 * f);
     }
     if (!any) return;
     const g = this.points.geometry;

@@ -40,6 +40,7 @@ await new Promise((resolve, reject) => {
 });
 
 const browser = await chromium.launch({
+  executablePath: process.env.CHROMIUM_PATH || undefined,
   args: ['--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=vulkan', '--enable-unsafe-swiftshader'],
 });
 const url = `http://localhost:${port}/?${query}`;

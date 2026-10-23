@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeRobotFile, encodeRobotFile } from '../src/config/robotFile';
-import { fitScalePct, guessCadUnit, newRobotTemplate, presetById, DEFAULT_ROBOT_ID } from '../src/config/robots';
+import { DEFAULT_LOOK, fitScalePct, guessCadUnit, newRobotTemplate, presetById, resolveLook, DEFAULT_ROBOT_ID } from '../src/config/robots';
 
 describe('CAD propio: unidades y escala', () => {
   it('adivina la unidad por el tamaño del marco', () => {
@@ -57,5 +57,23 @@ describe('archivo de robot', () => {
     expect(() => decodeRobotFile('{')).toThrow('not-json');
     expect(() => decodeRobotFile('{"format":"otro","spec":{}}')).toThrow('not-robot');
     expect(() => decodeRobotFile('{"format":"rebuilt-sim-robot","version":99,"spec":{}}')).toThrow('newer-version');
+  });
+});
+
+describe('estética del robot (look)', () => {
+  it('completa lo que falta y descarta valores inválidos', () => {
+    expect(resolveLook(undefined)).toEqual(DEFAULT_LOOK);
+    expect(resolveLook({ finish: 'candy', underglow: '#00ffAA', leds: 'rainbow' })).toEqual({ finish: 'candy', underglow: '#00ffAA', leds: 'rainbow' });
+    expect(resolveLook({ finish: 'oro', underglow: 'red; x', leds: 7 })).toEqual(DEFAULT_LOOK);
+    expect(resolveLook({ underglow: 'off' }).underglow).toBe('off');
+  });
+
+  it('viaja en el archivo y se valida al importarlo', () => {
+    const s = newRobotTemplate();
+    s.look = { finish: 'carbon', underglow: '#ff00ff', leds: 'off' };
+    expect(decodeRobotFile(encodeRobotFile(s)).spec.look).toEqual(s.look);
+    const bad = JSON.parse(encodeRobotFile(s));
+    bad.spec.look = { finish: 'x', underglow: 'url(evil)' };
+    expect(decodeRobotFile(JSON.stringify(bad)).spec.look).toEqual(DEFAULT_LOOK);
   });
 });

@@ -25,6 +25,7 @@ import { InputManager, type SlotDevice } from '../input/InputManager';
 import { TouchControls } from '../input/TouchControls';
 import { FieldView } from '../render/FieldView';
 import { Effects } from '../render/Effects';
+import { robotFx } from '../render/RobotView';
 import { ALLIANCE_COLOR } from '../render/FieldView';
 import { QUALITY_ORDER, Renderer, type Quality, type Viewport } from '../render/Renderer';
 import { Showroom } from '../render/Showroom';
@@ -62,7 +63,9 @@ export class App {
   readonly touch: TouchControls;
   readonly audio: AudioEngine;
   readonly hud: Hud;
-  readonly effects = new Effects();
+  readonly effects = new Effects(3000);
+  /** Polvo de las llantas (mezcla normal, no aditiva). */
+  readonly dust = new Effects(500, false);
   readonly stadium = new Stadium();
   session: GameSession | null = null;
   /** Dificultad de la IA por alianza en los matches (URL `?difficultyRed=`/`?difficultyBlue=`; banco de pruebas). */
@@ -119,10 +122,15 @@ export class App {
     setLang(this.settings.lang);
     this.renderer = new Renderer(appEl);
     this.field = new FieldView();
-    this.renderer.scene.add(this.field.group, this.stadium.group, this.effects.points);
+    this.renderer.scene.add(this.field.group, this.stadium.group, this.effects.points, this.dust.points);
+    robotFx.glow = this.effects;
+    robotFx.dust = this.dust;
     this.renderer.onQualityChange.push((p) => {
       this.stadium.setDensity(p.crowd);
-      this.effects.setViewportHeight(window.innerHeight * Math.min(window.devicePixelRatio || 1, p.maxPixelRatio) * p.renderScale);
+      const vh = window.innerHeight * Math.min(window.devicePixelRatio || 1, p.maxPixelRatio) * p.renderScale;
+      this.effects.setViewportHeight(vh);
+      this.dust.setViewportHeight(vh);
+      robotFx.level = this.renderer.quality === 'low' ? 0 : this.renderer.quality === 'medium' ? 1 : 2;
     });
     this.input = new InputManager(this.settings, this.renderer.renderer.domElement);
     this.audio = new AudioEngine(this.settings);
@@ -485,6 +493,8 @@ export class App {
       });
     }
     this.effects.clear();
+    this.dust.clear();
+    this.trailPrev = new Float32Array(0);
     this.autoQ = { t: 0, frames: 0, steps: 0 };
   }
 
@@ -1238,6 +1248,7 @@ export class App {
     this.clock += dt;
     this.stadium.update(dt, this.clock);
     this.effects.update(dt);
+    this.dust.update(dt);
     if (s) {
       this.updateArenaScreen(s);
       this.emitTrails(s);
@@ -1317,13 +1328,38 @@ export class App {
     else this.stadium.setScreen(formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t)), String(m.score('red')), String(m.score('blue')));
   }
 
-  /** Estela sutil de los FUEL disparados (cada 2 frames). */
-  private trailFrame = 0;
+  /**
+   * Estela de los FUEL disparados: puntos que se apagan, rellenando el tramo desde el cuadro
+   * anterior para que se lea como una línea continua (ámbar del FUEL).
+   */
+  private trailPrev = new Float32Array(0);
   private emitTrails(s: GameSession): void {
-    if (this.renderer.quality === 'low' || s.paused || (this.trailFrame++ & 1)) return;
+    if (this.renderer.quality === 'low' || s.paused) return;
     const f = s.fuel;
-    for (let i = 0; i < f.count; i++)
-      if (f.state[i] === FuelState.Field && f.flags[i] & FLAG_SHOT) this.effects.trail(f.pos[i * 3], f.pos[i * 3 + 1], f.pos[i * 3 + 2]);
+    if (this.trailPrev.length < f.count * 4) this.trailPrev = new Float32Array(f.count * 4);
+    const prev = this.trailPrev;
+    for (let i = 0; i < f.count; i++) {
+      const o = i * 4;
+      if (!(f.state[i] === FuelState.Field && f.flags[i] & FLAG_SHOT)) {
+        prev[o + 3] = 0;
+        continue;
+      }
+      const x = f.pos[i * 3];
+      const y = f.pos[i * 3 + 1];
+      const z = f.pos[i * 3 + 2];
+      // tramo desde la posición anterior (máx. 4 puntos; si saltó lejos, solo el actual)
+      const d = prev[o + 3] ? Math.hypot(x - prev[o], y - prev[o + 1], z - prev[o + 2]) : 0;
+      const n = d > 0 && d < 1.5 ? Math.min(4, Math.ceil(d / 0.06)) : 1;
+      for (let k = 1; k <= n; k++) {
+        const t = k / n;
+        const age = (1 - t) * 0.03;
+        this.effects.trail(prev[o] + (x - prev[o]) * (n > 1 ? t : 1), prev[o + 1] + (y - prev[o + 1]) * (n > 1 ? t : 1), prev[o + 2] + (z - prev[o + 2]) * (n > 1 ? t : 1), 1, 0.62, 0.12, 0.3 - age);
+      }
+      prev[o] = x;
+      prev[o + 1] = y;
+      prev[o + 2] = z;
+      prev[o + 3] = 1;
+    }
   }
 
   /**
