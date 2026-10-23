@@ -58,7 +58,8 @@ describe('física de robots', () => {
       const pw = world();
       const r = new RobotPhysics(pw, presetById('cad-190'), 0, -5.6, F.BUMP_CENTER_Z, 0.3);
       let maxTilt = 0;
-      run(pw, [r], 2.5, (rb) => {
+      // 1.6 s: cruza el BUMP azul y frena en la NEUTRAL ZONE, antes del BUMP rojo
+      run(pw, [r], 1.6, (rb) => {
         maxTilt = Math.max(maxTilt, rb.tilt());
         return { vx: 6, vz: 0, omega };
       });
@@ -163,6 +164,28 @@ describe('física de robots', () => {
     run(pw, [r], 1.3, () => ({ vx: 0, vz: 10, omega: 0 }));
     expect(r.velocity().z).toBeLessThanOrEqual(spec.maxSpeed + 0.05);
     expect(r.velocity().z).toBeGreaterThan(spec.maxSpeed - 0.3);
+    pw.free();
+  });
+
+  it('acelera con la curva del motor y frena con toda la tracción', () => {
+    const pw = world();
+    const spec = presetById('cad-6328');
+    const r = new RobotPhysics(pw, spec, 0, 0, -3.6, Math.PI / 2);
+    // Arranque: los primeros 0.1 s casi a toda la aceleración; cerca de la velocidad máxima, menos
+    run(pw, [r], 0.1, () => ({ vx: 0, vz: 10, omega: 0 }));
+    const early = r.velocity().z / 0.1;
+    run(pw, [r], 0.4, () => ({ vx: 0, vz: 10, omega: 0 }));
+    const v0 = r.velocity().z;
+    run(pw, [r], 0.1, () => ({ vx: 0, vz: 10, omega: 0 }));
+    const late = (r.velocity().z - v0) / 0.1;
+    expect(late).toBeLessThan(early * 0.75);
+    // Frenado desde velocidad máxima: más fuerte que la aceleración de arriba
+    run(pw, [r], 1.0, () => ({ vx: 0, vz: 10, omega: 0 }));
+    const vTop = r.velocity().z;
+    run(pw, [r], 0.1, () => ({ vx: 0, vz: 0, omega: 0 }));
+    const brake = (vTop - r.velocity().z) / 0.1;
+    expect(brake).toBeGreaterThan(late * 1.5);
+    expect(brake).toBeLessThanOrEqual(spec.traction * 9.81 + 1.0) // + roce del chasis;
     pw.free();
   });
 });

@@ -314,6 +314,17 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     los robots de la galería antes de empezar (hasta 5 s; si no, diseño del simulador). Borrar
     exige el token guardado al publicar; con 3 reportes el robot deja de listarse.
 
+31. **YELLOW CARDS en el torneo** (§6.6.1): se acumulan de un match de Qualifications al siguiente
+    (`Tournament.yellows`; el robot llega con la tarjeta y la siguiente YELLOW es RED). Supuesto, el
+    manual no está en el repo (verificar con TU22 §6.6/§11): no pasan a los Playoffs, y en Playoffs la
+    tarjeta sigue siendo por robot (RED → la alianza queda en 0).
+32. **Avisos del árbitro**: además del aviso (regla, qué pasó, severidad y a quién van los puntos),
+    una bandera sobre el robot que cometió la falta (3 s; tarjetas 4 s) y los puntos por faltas en el
+    marcador de cada alianza. Se leen del `Match`, así que salen igual en línea y en repeticiones.
+33. **Manejo** (`RobotPhysics.drive`): al acelerar, el par del motor cae con la velocidad (a tope
+    queda ~45 % de la aceleración: llega a la máxima en ~0.6 s); frenar o cambiar de dirección solo
+    lo limita la tracción (μ·g, a lo más 1.3 × `maxAccel`).
+
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.
 - Celular emulado (CPU 4×, 844×390 @2×, Media): 30–50 FPS típicos; caídas breves a ~25 cuando
