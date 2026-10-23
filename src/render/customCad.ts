@@ -9,6 +9,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { CustomCad, RobotSpec } from '../config/robots';
 import type { OptimizeResult, OptimizeStep } from './cadOptimize';
+import { hubCadUrlAllowed } from '../net/robotHub';
 
 const DB_NAME = 'rebuilt-sim';
 const STORE = 'cad';
@@ -94,6 +95,41 @@ export async function preloadCustomCads(robots: RobotSpec[]): Promise<void> {
   } catch (e) {
     console.warn('custom CAD', e);
   }
+  // Robots de la galería guardados sin su archivo (p. ej. borrado del navegador): se bajan de nuevo
+  // en segundo plano (sin red, el arranque no espera)
+  void ensureCustomCads(robots, 0, true);
+}
+
+const fetching = new Map<string, Promise<void>>();
+
+/**
+ * Descarga los CAD de la galería de la comunidad que falten (robots de otros jugadores en línea,
+ * vista previa de la galería). Espera a lo más `timeoutMs`; lo que no llegue a tiempo se dibuja
+ * con el diseño del simulador. Con `store`, el archivo también se guarda en IndexedDB.
+ */
+export async function ensureCustomCads(specs: RobotSpec[], timeoutMs = 6000, store = false): Promise<void> {
+  const jobs = specs.flatMap((s) => {
+    const c = s.customCad;
+    if (!c || models.has(c.id) || !hubCadUrlAllowed(c.url)) return [];
+    let p = fetching.get(c.id);
+    if (!p) {
+      const url = c.url;
+      p = fetch(url)
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
+        .then(async (buf) => {
+          registerCustomModel(c.id, await parseCad(buf));
+          if (store) await putCadFile(c.id, buf).catch(() => undefined);
+        })
+        .catch((e) => {
+          fetching.delete(c.id);
+          console.warn('community CAD', url, e);
+        });
+      fetching.set(c.id, p);
+    }
+    return [p];
+  });
+  if (!jobs.length) return;
+  await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, timeoutMs))]);
 }
 
 /** Ejes del modelo ya parado (Y arriba) y girado al frente del robot, en unidades del modelo. */
@@ -152,4 +188,20 @@ export function sceneTriangles(scene: THREE.Object3D): number {
     if (g) n += (g.index?.count ?? g.getAttribute('position')?.count ?? 0) / 3;
   });
   return Math.round(n);
+}
+
+/** Guarda en IndexedDB el GLB de un robot de la galería (al descargarlo a "mis robots"). */
+export async function storeHubCad(c: CustomCad): Promise<boolean> {
+  if (!hubCadUrlAllowed(c.url)) return false;
+  try {
+    if (await getCadFile(c.id)) return true;
+    const r = await fetch(c.url);
+    if (!r.ok) return false;
+    const buf = await r.arrayBuffer();
+    if (!models.has(c.id)) registerCustomModel(c.id, await parseCad(buf));
+    await putCadFile(c.id, buf);
+    return true;
+  } catch {
+    return false;
+  }
 }

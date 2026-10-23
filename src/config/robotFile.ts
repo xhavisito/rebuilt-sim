@@ -68,7 +68,20 @@ export function decodeRobotFile(text: string, newId = `custom-${Date.now().toStr
   }
   if (!isObj(f) || f.format !== ROBOT_FILE_FORMAT || !isObj(f.spec)) throw new Error('not-robot');
   if (typeof f.version !== 'number' || f.version > ROBOT_FILE_VERSION) throw new Error('newer-version');
-  const src = f.spec as Record<string, unknown>;
+  const cad = typeof f.cad === 'string' ? fromBase64(f.cad) : undefined;
+  if (cad && cad.byteLength > MAX_CAD_BYTES) throw new Error('too-big');
+  const spec = sanitizeSpec(f.spec, newId, !!cad);
+  return { spec, cad: spec.customCad ? cad : undefined };
+}
+
+/**
+ * Ficha que llega de afuera (archivo, galería de la comunidad): se completa con la plantilla, se
+ * validan los tipos y recibe `newId`. El CAD propio se conserva solo si `hasCad` (el GLB viene
+ * aparte); su archivo queda como `${newId}-cad`, salvo que se pida otro `cadId`.
+ */
+export function sanitizeSpec(raw: unknown, newId: string, hasCad: boolean, cadId = `${newId}-cad`): RobotSpec {
+  if (!isObj(raw)) throw new Error('not-robot');
+  const src = raw;
   const spec = mergeTyped(newRobotTemplate(), src);
   spec.id = newId;
   if (!spec.name.trim()) spec.name = 'Robot';
@@ -79,13 +92,10 @@ export function decodeRobotFile(text: string, newId = `custom-${Date.now().toStr
   if (Array.isArray(sh.posIn) && sh.posIn.length === 2 && sh.posIn.every((x) => typeof x === 'number')) spec.shooter.posIn = sh.posIn as [number, number];
   if (typeof src.overhangIn === 'number') spec.overhangIn = src.overhangIn;
   if (isObj(src.cad) && typeof src.cad.file === 'string' && /^[\w-]+\.glb$/.test(src.cad.file)) spec.cad = { file: src.cad.file };
-  let cad: ArrayBuffer | undefined;
-  if (typeof f.cad === 'string' && isObj(src.customCad)) {
-    cad = fromBase64(f.cad);
-    if (cad.byteLength > MAX_CAD_BYTES) throw new Error('too-big');
+  if (hasCad && isObj(src.customCad)) {
     const c = src.customCad;
     spec.customCad = mergeTyped(
-      { id: `${newId}-cad`, name: 'model.glb', unit: 1, scalePct: 100, upAxis: 'y' as 'y' | 'z', yawDeg: 0, offsetIn: [0, 0, 0] as [number, number, number] },
+      { id: cadId, name: 'model.glb', unit: 1, scalePct: 100, upAxis: 'y' as 'y' | 'z', yawDeg: 0, offsetIn: [0, 0, 0] as [number, number, number] },
       { ...c, id: undefined },
     );
     if (spec.customCad.upAxis !== 'y' && spec.customCad.upAxis !== 'z') spec.customCad.upAxis = 'y';
@@ -93,5 +103,5 @@ export function decodeRobotFile(text: string, newId = `custom-${Date.now().toStr
     if (typeof c.intakeNode === 'string') spec.customCad.intakeNode = c.intakeNode;
     delete spec.cad; // el CAD propio reemplaza al del equipo
   }
-  return { spec, cad };
+  return spec;
 }

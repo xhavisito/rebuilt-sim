@@ -13,6 +13,7 @@ import { StrategyPlanner } from '../ui/StrategyPlanner';
 import { AutoDesigner } from '../ui/AutoDesigner';
 import { Screens, type LocalPlayer } from '../ui/Menu';
 import { RobotEditor } from '../ui/RobotEditor';
+import { CommunityScreen } from '../ui/CommunityScreen';
 import { saveTournament, TournamentScreen } from '../ui/TournamentScreen';
 import { applyRows, COACH_PLAN_ID, rowsForMatch } from '../ui/StrategyDashboard';
 import { loadSettings, saveSettings, type Difficulty, type Settings } from '../config/settings';
@@ -27,6 +28,7 @@ import { Effects } from '../render/Effects';
 import { ALLIANCE_COLOR } from '../render/FieldView';
 import { QUALITY_ORDER, Renderer, type Quality, type Viewport } from '../render/Renderer';
 import { Showroom } from '../render/Showroom';
+import { ensureCustomCads } from '../render/customCad';
 import { Stadium } from '../render/Stadium';
 import { FLAG_SHOT, FuelState } from '../physics/FuelSystem';
 import { formatTimer, timerSeconds } from '../core/clock';
@@ -85,6 +87,7 @@ export class App {
   /** A dónde regresa el planeador (menú principal o configuración del match). */
   private plannerBack: () => void = () => this.screens.main();
   private editor: RobotEditor;
+  private community: CommunityScreen;
   private tourney: TournamentScreen;
   private statsScreen: StatsScreen;
   private menuCam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
@@ -176,10 +179,21 @@ export class App {
       },
       () => ({ mine: this.settings.match.strategy, opp: this.settings.match.oppStrategy }),
     );
-    this.editor = new RobotEditor(this.screens.root, this.screens.showroom, back, (id) => {
+    this.editor = new RobotEditor(
+      this.screens.root,
+      this.screens.showroom,
+      back,
+      (id) => {
+        this.settings.match.robotId = id;
+        this.save();
+        this.screens.setup('match');
+      },
+      () => this.openCommunity(),
+    );
+    this.community = new CommunityScreen(this.screens.root, this.screens.showroom, () => this.openRobotEditor(), (id) => {
       this.settings.match.robotId = id;
       this.save();
-      this.screens.setup('match');
+      this.openRobotEditor();
     });
     this.tourney = new TournamentScreen(this.screens.root, this.settings, back, (tt, m, watch) => this.playTournamentMatch(tt, m, watch));
     this.statsScreen = new StatsScreen(
@@ -271,6 +285,12 @@ export class App {
   openRobotEditor(): void {
     this.openScreen();
     this.editor.open(this.settings.match.robotId);
+  }
+
+  /** Galería de robots de la comunidad (se entra desde el taller). */
+  openCommunity(): void {
+    this.openScreen();
+    this.community.open();
   }
 
   openTournament(): void {
@@ -588,7 +608,10 @@ export class App {
     this.leaveOnline();
     const room = await ClientRoom.join(code, { name: this.settings.driverName, alliance, spec: robotById(robotId), spectate });
     this.netClient = room;
-    room.onStart = (cfg) => {
+    room.onStart = async (cfg) => {
+      // CAD de la galería de la comunidad de los robots de otros jugadores (si tarda, diseño del simulador)
+      await ensureCustomCads(cfg.robots.map((r) => r.spec), 5000);
+      if (this.netClient !== room) return;
       this.closeOverlay();
       this.startSession(cfg);
       if (!this.session) return;
@@ -608,12 +631,15 @@ export class App {
   }
 
   /** Host: arranca (o repite) el match con los jugadores del lobby. */
-  startOnlineMatch(): void {
+  async startOnlineMatch(): Promise<void> {
     const room = this.netHost;
     if (!room) return;
     const m = this.settings.match;
     room.fillAi = room.lobby().fillAi;
     const robots = room.buildRobots();
+    // CAD de la galería de la comunidad de los robots de los invitados (si tarda, diseño del simulador)
+    await ensureCustomCads(robots.map((r) => r.spec), 5000);
+    if (this.netHost !== room) return;
     for (const rc of robots)
       if (rc.control.type === 'ai') {
         if (!rc.spec.real) rc.spec.teamNumber = 100 + Math.floor(Math.random() * 9800);

@@ -7,3 +7,4 @@ shots/
 # El manual oficial se queda local (es de FIRST; no lo redistribuimos)
 docs/2026GameManual.pdf
 docs/manual.txt
+dist-community/

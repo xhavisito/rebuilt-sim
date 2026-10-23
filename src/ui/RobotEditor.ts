@@ -9,6 +9,9 @@ import * as F from '../config/field';
 import { inch } from '../config/field';
 import { allRobots, DEFAULT_ROBOT_ID, fitScalePct, fitsUnderTrench, guessCadUnit, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type CustomCad, type RobotSpec } from '../config/robots';
 import { decodeRobotFile, encodeRobotFile, MAX_CAD_BYTES } from '../config/robotFile';
+import { communityEnabled } from '../config/community';
+import { loadSettings } from '../config/settings';
+import { publishHubRobot } from '../net/robotHub';
 import { cadNodeNames, cadSize, customModel, deleteCadFile, getCadFile, optimizeCad, parseCad, putCadFile, registerCustomModel, sceneTriangles } from '../render/customCad';
 import { bind, esc, num, seg, select, type Opt } from './forms';
 import { t, tx } from './i18n';
@@ -38,6 +41,8 @@ export class RobotEditor {
     private showroom: Showroom,
     private onBack: () => void,
     private onUse: (id: string) => void,
+    /** Galería de la comunidad (src/ui/CommunityScreen.ts). */
+    private onCommunity: () => void = () => {},
   ) {}
 
   open(id?: string): void {
@@ -57,7 +62,7 @@ export class RobotEditor {
     if (!list.some((r) => r.id === s.id)) opts.push({ value: s.id, label: `${s.name} *` }); // nuevo, sin guardar
     opts.push({ value: 'new', label: `＋ ${t('newRobot')}` });
     this.root.innerHTML = `<div class="inner">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-hub>🌐 ${t('hub_open')}</button><button class="chipbtn" data-back>← ${t('back')}</button></div>
       <h1>${t('robotEditor')}</h1>
       <div class="split">
         <div class="panel editprev" style="display:flex;flex-direction:column;gap:10px"><div class="preview" data-preview style="height:300px"></div><canvas data-schem style="width:100%;height:auto;display:block"></canvas><div data-valid style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div></div>
@@ -114,6 +119,7 @@ export class RobotEditor {
             <button class="chipbtn" data-export>⬇ ${t('exportRobot')}</button>
             <button class="chipbtn" data-import>⬆ ${t('importRobot')}</button>
             <input type="file" data-robotfile accept=".json,application/json" hidden/>
+            ${communityEnabled() ? `<button class="chipbtn" data-publish>🌐 ${t('hub_publish')}</button>` : ''}
           </div>
           <label></label><div data-filemsg></div>
         </div>
@@ -278,6 +284,8 @@ export class RobotEditor {
       if (f) void this.importRobot(f);
     });
     r.querySelector('[data-export]')!.addEventListener('click', () => void this.exportRobot());
+    r.querySelector('[data-hub]')!.addEventListener('click', () => this.onCommunity());
+    r.querySelector('[data-publish]')?.addEventListener('click', () => void this.publish());
   }
 
   private say(sel: string, cls: '' | 'ok' | 'warn' | 'bad', text: string): void {
@@ -355,6 +363,30 @@ export class RobotEditor {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  /** Publica el robot (con su CAD) en la galería de la comunidad. Pide confirmar con un segundo clic. */
+  private publishArmed = false;
+  private async publish(): Promise<void> {
+    const msg = (cls: '' | 'ok' | 'warn' | 'bad', text: string) => this.say('[data-filemsg]', cls, text);
+    const s = this.spec;
+    if (validateSpec(s).some((i) => i.fatal)) return;
+    const name = loadSettings().driverName.trim();
+    if (!this.publishArmed) {
+      this.publishArmed = true;
+      msg('warn', t('hub_publishTerms', { name: name || t('hub_anon') }));
+      return;
+    }
+    this.publishArmed = false;
+    msg('', t('hub_publishing'));
+    try {
+      const cad = s.customCad ? await getCadFile(s.customCad.id) : undefined;
+      await publishHubRobot(s, name, cad);
+      msg('ok', t('hub_published'));
+    } catch (e) {
+      const code = String((e as Error).message ?? e);
+      msg('bad', code === 'too-big' ? t('cadErrBig', { max: 50 }) : t('hub_publishErr', { err: code.slice(0, 160) }));
+    }
   }
 
   private async importRobot(f: File): Promise<void> {
