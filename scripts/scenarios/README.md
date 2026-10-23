@@ -15,5 +15,6 @@ el estado relevante (y capturas en `shots/`).
 | `modes.mjs` | Torneo (jugar → resultados → continuar) y multijugador local con 2 dispositivos |
 | `tournament.mjs` | Torneo de 32 equipos: selección de 8 alianzas (eres capitán), bracket de doble eliminación y Final al mejor de 3 hasta el campeón |
 | `online.mjs` | En línea con 2 pestañas (WebRTC real, señalización local): sala pública en la lista, lobby, match, controles remotos, marcador y la IA toma al que se va |
+| `gamepad.mjs` | Control simulado: pantalla de Control navegable con el D-pad, reasignar (intercambio), manejar con el stick y vibración al tirar (gatillo) y al recoger FUEL |
 
 Uso: `npm run e2e` (todos) o `node scripts/scenarios/rules.mjs`.

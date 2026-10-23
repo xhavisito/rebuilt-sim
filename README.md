@@ -119,7 +119,14 @@ Todo se puede reasignar en **Ajustes → Controles**.
 - Manejo field-relative por defecto: "arriba" es hacia el lado contrario del campo visto desde
   tu DRIVER STATION. Con la cámara de transmisión o la superior, "arriba" es arriba de la pantalla.
   Con la cámara desde el robot, "arriba" es hacia donde mira el robot.
-- Opción de apuntar con el mouse en Ajustes. El control vibra al chocar, al anotar y en los SHIFTS.
+- Opción de apuntar con el mouse en Ajustes.
+- **Ajustes › Control y vibración** (se navega con el mismo control): lista los controles
+  conectados, prueba en vivo de sticks y botones, reasignar botones (si el botón ya se usaba, las
+  dos acciones se intercambian), esquemas "Gatillos" y "Bumpers" (para controles con gatillos
+  digitales), sticks zurdos, invertir giro, zona muerta, curva y umbral de gatillos.
+- Vibración al tirar y pasar (con los gatillos de Xbox donde el navegador lo soporta), al recoger
+  FUEL, al chocar (según la fuerza), en faltas propias, SHIFTS y END GAME; con intensidad y cada
+  grupo se puede apagar. En multijugador local vibra el control de cada jugador.
 - Táctil: los joysticks aparecen donde pones el dedo; en Ajustes puedes cambiar tamaño, opacidad
   y posición de los botones ("Editar layout táctil").
 

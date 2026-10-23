@@ -95,6 +95,8 @@ export interface SessionHooks {
   coach?(m: CoachMsg): void;
   /** Un robot lanzó FUEL (sonido / efectos). */
   launch?(robot: Robot, kind: 'shot' | 'pass' | 'corral', isPlayer: boolean): void;
+  /** Un robot metió un FUEL a su intake (vibración del control). */
+  intake?(robot: Robot): void;
   /** El HUMAN PLAYER lanzó o abrió la CHUTE. */
   hpAction?(alliance: Alliance, what: 'throw' | 'door'): void;
   /** Golpe fuerte (0–1) con el robot del jugador `slot` involucrado o no (-1). */
@@ -394,7 +396,10 @@ export class GameSession {
         this.referee?.onLaunch(rb, i, kind);
         this.hooks.launch?.(rb, kind, rb.control.type === 'player');
       },
-      onIntake: (rb, i) => this.referee?.onIntake(rb, i),
+      onIntake: (rb, i) => {
+        this.referee?.onIntake(rb, i);
+        if (rb.control.type === 'player') this.hooks.intake?.(rb);
+      },
     };
   }
 
