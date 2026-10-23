@@ -1325,8 +1325,13 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .st-pub { display: flex; flex-direction: column; gap: 8px; }
 .st-reset { align-self: flex-start; }
 @media (max-width: 760px) { .st-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .st-rating b { font-size: 36px; } }
+.st-code summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.st-code[open] { display: flex; flex-direction: column; gap: 8px; }
+.st-coderow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.st-coderow code { font: 12px var(--mono); padding: 6px 8px; border-radius: 6px; background: var(--bg-2); word-break: break-all; flex: 1; min-width: 0; }
+.st-coderow input { flex: 1; min-width: 160px; }
 
-/* Calidad baja: sin backdrop-filter (ver App: lite-ui); el fondo un poco más opaco lo compensa */
+/* Calidad baja: sin backdrop-filter (ver App: lite-ui) */
 body.lite-ui *,
 body.lite-ui *::before,
 body.lite-ui *::after {

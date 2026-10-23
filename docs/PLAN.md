@@ -122,6 +122,9 @@ scripts/screenshot.mjs     verificación con Playwright
   950/1150/1350/1550 o 1200 si es una persona; K 48 los primeros 10 matches, luego 24). El ranking
   global es un mensaje "retained" por jugador en `rebuilt-sim/v1/rank/<id>` del broker MQTT público
   (opcional, requiere nombre de piloto): informal, se puede falsear o borrar; todo se valida y acota.
+  Con Supabase (mismo proyecto de la galería) hay ranking con backend (`docs/ranking.sql`,
+  `docs/ranking.md`): el servidor valida cada match (cooldown 140 s, números posibles en REBUILT) y
+  calcula el rating; cuentas sin correo (id + token con hash en el servidor; código de cuenta).
 
 - **Repeticiones = el modo en línea grabado**: se guarda lo mismo que el host manda a sus
   clientes (estado binario a 30 Hz con el FUEL en delta, estado lento en JSON cuando cambia,
