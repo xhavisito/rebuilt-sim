@@ -23,6 +23,7 @@ type FieldSound = keyof typeof FIELD_SOUNDS;
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private out!: DynamicsCompressorNode;
   private sfxBus!: GainNode;
   private musicBus!: GainNode;
   private noiseBuf: AudioBuffer | null = null;
@@ -61,6 +62,7 @@ export class AudioEngine {
     comp.threshold.value = -14;
     comp.ratio.value = 4;
     this.master.connect(comp).connect(ctx.destination);
+    this.out = comp;
     this.sfxBus = ctx.createGain();
     this.musicBus = ctx.createGain();
     this.sfxBus.connect(this.master);
@@ -91,6 +93,15 @@ export class AudioEngine {
     src.connect(this.sfxBus);
     src.start(t);
     return true;
+  }
+
+  /** Copia de la mezcla final (para el audio de un video); `stop` la desconecta. */
+  tap(): { stream: MediaStream; stop: () => void } | null {
+    const ctx = this.ensure();
+    if (!ctx || typeof ctx.createMediaStreamDestination !== 'function') return null;
+    const dest = ctx.createMediaStreamDestination();
+    this.out.connect(dest);
+    return { stream: dest.stream, stop: () => this.out.disconnect(dest) };
   }
 
   updateSettings(s: Settings): void {

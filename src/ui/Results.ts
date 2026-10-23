@@ -86,7 +86,8 @@ function chart(res: MatchResults): string {
     </table></details>`;
 }
 
-export function renderResults(res: MatchResults, tournament = false): string {
+/** `replay`: hay repetición del match (botones para verla o guardarla). */
+export function renderResults(res: MatchResults, tournament = false, replay = false): string {
   const lang = getLang();
   const title =
     res.winner === 'tie' ? t('tie') : t('winner', { a: t(res.winner) });
@@ -137,7 +138,9 @@ export function renderResults(res: MatchResults, tournament = false): string {
     <h3>${t('foulList')}</h3>
     <ul class="fouls">${fouls}${cards}</ul>
     <div class="actions">
-      ${tournament ? `<button data-a="continue" class="primary">${t('continueTournament')}</button>` : `<button data-a="rematch" class="primary">${t('rematch')}</button><button data-a="menu">${t('quit')}</button>`}
+      ${tournament ? `<button data-a="continue" class="primary">${t('continueTournament')}</button>` : `<button data-a="rematch" class="primary">${t('rematch')}</button>`}
+      ${replay ? `<button data-a="replay">▶ ${t('rp_watch')}</button><button data-a="replayFile">${t('rp_saveFile')}</button>` : ''}
+      ${tournament ? '' : `<button data-a="menu">${t('quit')}</button>`}
     </div>
   </div>`;
 }

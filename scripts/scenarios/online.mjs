@@ -85,6 +85,27 @@ for (let k = 0; k < 10; k++) if ((await host.evaluate(score)) === (await guest.e
 const scores = await Promise.all([host, guest].map((p) => p.evaluate(score)));
 await host.evaluate(() => { window.app.session.timeScale = 1; });
 check('mismo marcador', scores[0] === scores[1], scores.join(' / '));
+// un espectador entra con el match empezado: ve los 6 robots y el FUEL del host, sin robot propio
+const spect = await ctx.newPage();
+spect.on('pageerror', (e) => console.log('PAGEERR spect', e.message));
+await spect.goto(`http://localhost:4190/?signal=local&quality=low&join=${code}&watch=1`);
+await waitFor(spect, () => !!window.app.session?.replica, 30000).then(
+  () => check('el espectador entra a medio match', true),
+  () => check('el espectador entra a medio match', false),
+);
+await host.evaluate(() => { window.app.session.timeScale = 0; });
+await spect.waitForTimeout(1500);
+const seen = await spect.evaluate(() => {
+  const s = window.app.session;
+  return { robots: s.robots.length, mine: s.localPlayers().length, bar: !!document.querySelector('.spec-bar'), fuel: [...s.fuel.state].filter((v) => v === 0).length, x: s.robots[3].phys.curPos.x };
+});
+const truth = await host.evaluate(() => { const s = window.app.session; return { fuel: [...s.fuel.state].filter((v) => v === 0).length, x: s.robots[3].phys.curPos.x }; });
+await host.evaluate(() => { window.app.session.timeScale = 1; });
+check('el espectador ve el campo del host', seen.robots === 6 && seen.mine === 0 && seen.bar && seen.fuel === truth.fuel && Math.abs(seen.x - truth.x) < 0.05, `${JSON.stringify(seen)} vs ${JSON.stringify(truth)}`);
+const lobbyCount = await host.evaluate(() => window.app.netHost.lobby().players.filter((p) => !p.spectator).length);
+check('el espectador no ocupa lugar de jugador', lobbyCount === 2, String(lobbyCount));
+await spect.screenshot({ path: 'shots/online-spectator.png' });
+await spect.close();
 await guest.screenshot({ path: 'shots/online-guest.png' });
 await host.screenshot({ path: 'shots/online-host.png' });
 // el cliente se va: la IA toma su robot

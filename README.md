@@ -47,6 +47,15 @@ con **pantalla táctil, teclado/mouse y control** (Xbox, PlayStation, genéricos
   del periodo, panel del robot con el hopper. **Menú de pausa** con marcador, ajustes rápidos
   (auto-aim, disparo en movimiento, guía de tiro, field-relative, volumen), cámara y controles;
   se navega con control.
+- **Repeticiones y modo espectador**: cada match se graba solo (estado del campo a 30 Hz; se
+  guardan las últimas 8 en el navegador y las que conserves con ★). Desde los resultados o
+  **Repeticiones** se ve desde cualquier cámara: un **director automático** que corta entre tomas
+  siguiendo la acción (tiros, choques, climbs), transmisión, gradas, superior, libre o detrás de
+  cualquiera de los 6 robots. Línea de tiempo con los periodos del match y momentos destacados
+  (rachas de FUEL, faltas, choques), velocidad 0.25×–4× y cuadro a cuadro. **Clips**: recorta un
+  momento y compártelo como archivo `.rbreplay` (quien lo abra lo ve desde la cámara que quiera)
+  o como **video** MP4/WebM con el marcador. Lo mismo para ver IA vs IA en vivo y para entrar
+  **como espectador a una sala en línea**, aunque el match ya haya empezado.
 - **Calidad** Baja / Media / Alta / Ultra / Auto (mide los FPS y se ajusta sola).
 - Español (México) e inglés; modo daltonismo; volumen separado de música, efectos y voces.
 
@@ -115,6 +124,9 @@ Todo se puede reasignar en **Ajustes → Controles**.
 | HUMAN PLAYER: CHUTE DOOR / lanzar | O / H | ↑ / ↓ | Botones **CHUTE** / **Lanzar** |
 | Mostrar FPS | F3 | — | Ajustes |
 
+- **Repeticiones**: Espacio play/pausa · ← → 5 s (Shift: 1 s) · , . cuadro a cuadro ·
+  [ ] velocidad · I / O inicio y fin del clip · 0 director · 1–6 seguir robot · C cámara.
+  La barra se esconde sola mientras corre; mueve el mouse o toca la pantalla para verla.
 - En AUTO tu robot ejecuta la rutina elegida (diséñala en **Diseñador de AUTO**); no recibe mandos.
 - Manejo field-relative por defecto: "arriba" es hacia el lado contrario del campo visto desde
   tu DRIVER STATION. Con la cámara de transmisión o la superior, "arriba" es arriba de la pantalla.
@@ -145,6 +157,8 @@ src/
   referee/   árbitro automático
   audio/     cues del campo (grabaciones), efectos sintetizados (Web Audio) y voces
   ui/        HUD, menús, ajustes, resultados, diseñador de AUTO, editor de robots, torneo
+  net/       modo en línea: host autoritativo, clientes y espectadores por WebRTC
+  replay/    repeticiones: grabación, archivo .rbreplay, reproductor, clips y video
 ```
 
 Detalles, decisiones técnicas y supuestos (donde el manual o los planos no alcanzan para simular):

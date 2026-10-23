@@ -19,7 +19,8 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   en `shots/`, más errores de consola y FPS. Requiere `npm run build` antes.
   Opciones: `--query "mode=match&spectate=1"`, `--eval "app.openRobotEditor()"`, `--throttle 4`.
 - `npm run e2e` — escenarios en navegador real (`scripts/scenarios/*.mjs`): táctil, flujo del
-  match, mecanismos, HUMAN PLAYER, reglas del árbitro, modos y PWA offline.
+  match, mecanismos, HUMAN PLAYER, reglas del árbitro, modos, en línea (con espectador),
+  repeticiones (clip y video) y PWA offline.
 - `npm run ai-bench -- --a hard --b normal --matches 6` — matches de solo IA (mismos robots en
   ambas alianzas, una dificultad por alianza): victorias, puntos, faltas y tiempo defendiendo.
   `--tweakA '{"defense":{"willing":0}}'` prueba variantes del perfil (`src/ai/difficulty.ts`).
@@ -47,6 +48,12 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   TURN opcional al compilar (`VITE_TURN_URL/USER/PASS`, ver `config/net.ts`).
   Salas públicas: anuncio "retained" por sala en un broker MQTT público (`net/directory.ts`,
   cliente mínimo en `net/mqtt.ts`); las privadas solo con código.
+- `replay/` repeticiones: `SessionTap` graba a paso fijo lo mismo que el host manda en línea
+  (snapshots binarios de net/protocol, 30 Hz, cuadro clave cada 2 s; estado lento; eventos);
+  `ReplayPlayer` es un `SessionReplica` que lo dibuja (como el cliente en línea) con play/pausa,
+  velocidad y saltos. Archivo `.rbreplay` (gzip), clips (`clipReplay`), video (MediaRecorder) e
+  IndexedDB (`store.ts`). Espectador (sin robot propio): `GameSession.spectatorCam/focus` y el
+  director de cámaras (`game/Director.ts`); la barra es `ui/SpectatorBar.ts`.
 - `pwa/` registro del service worker; `vite.config.ts` genera `sw.js` con el precache.
 - `public/robots/*.glb` modelos 3D reales de robots 2026 (assets de AdvantageScope de cada
   equipo, simplificados con `scripts/robots/`; licencias en `public/robots/LICENSES.md`).

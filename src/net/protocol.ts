@@ -21,6 +21,8 @@ export interface LobbyPlayer {
   robotName: string;
   team: number;
   host: boolean;
+  /** Solo mira el match (no tiene robot). */
+  spectator?: boolean;
 }
 
 export interface LobbyInfo {
@@ -40,7 +42,7 @@ export interface NetCamera {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; v: number; name: string; alliance: Alliance; spec: RobotSpec }
+  | { t: 'hello'; v: number; name: string; alliance: Alliance; spec: RobotSpec; spectate?: boolean }
   | { t: 'pick'; alliance: Alliance; spec: RobotSpec }
   | { t: 'in'; i: WireInput; cam: NetCamera }
   | { t: 'bye' };

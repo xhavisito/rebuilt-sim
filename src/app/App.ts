@@ -42,6 +42,13 @@ import { attachChartHover, renderResults } from '../ui/Results';
 import { ClientRoom, HostRoom } from '../net/Online';
 import type { NetEvent } from '../net/protocol';
 import { getLang, setLang, t, tx, type TKey } from '../ui/i18n';
+import { SPECTATOR_CAMS } from '../game/GameSession';
+import { SpectatorBar } from '../ui/SpectatorBar';
+import { clipReplay, highlights, serializeReplay, type ReplayData } from '../replay/Recording';
+import { ReplayPlayer, SessionTap } from '../replay/ReplayPlayer';
+import { saveReplay } from '../replay/store';
+import { ClipVideo, download, shareOrDownload, videoSupported } from '../replay/VideoExport';
+import { PHASE_LABEL as PHASES } from '../ui/Hud';
 
 export class App {
   settings: Settings;
@@ -87,6 +94,16 @@ export class App {
   /** Sala en línea propia (host) o a la que entraste (cliente). */
   netHost: HostRoom | null = null;
   netClient: ClientRoom | null = null;
+  /** Grabación del match en curso (repetición). */
+  private tap: SessionTap | null = null;
+  /** Repetición del último match terminado (para verla desde los resultados). */
+  lastReplay: ReplayData | null = null;
+  /** Repetición que se está viendo y a dónde se regresa al salir. */
+  private replay: { player: ReplayPlayer; back: () => void } | null = null;
+  /** Controles del espectador (cámaras, robot, línea de tiempo). */
+  private specBar: SpectatorBar | null = null;
+  /** Exportando un clip a video. */
+  private video: { vid: ClipVideo; end: number; stopAudio: () => void } | null = null;
 
   constructor(
     private appEl: HTMLElement,
@@ -178,6 +195,8 @@ export class App {
   // ------------------------------------------------------------------ menús
   /** Sale de la sesión y muestra el menú principal (con el campo girando de fondo). */
   quitToMenu(): void {
+    const back = this.replay?.back;
+    this.endSessionExtras();
     this.leaveOnline();
     this.session?.dispose();
     this.session = null;
@@ -189,10 +208,36 @@ export class App {
     this.input.slots = [{ type: 'any' }];
     for (const a of ALLIANCES) this.field.setHubLight(a, 'active', 0);
     this.renderer.setQuality(this.renderer.quality, this.menuCam);
-    this.screens.main();
+    if (back) back();
+    else this.screens.main();
+  }
+
+  /**
+   * Antes de cerrar la sesión: guarda lo grabado (match sin terminar si dura lo suficiente) y quita
+   * la barra del espectador.
+   */
+  private endSessionExtras(): void {
+    if (this.tap && !this.tap.finished) {
+      const d = this.tap.finish(true, __APP_VERSION__);
+      if (d && d.meta.duration >= 20) this.storeReplay(d);
+    }
+    this.tap = null;
+    if (this.video) {
+      this.video.stopAudio();
+      void this.video.vid.stop();
+      this.video = null;
+    }
+    this.specBar?.dispose();
+    this.specBar = null;
+    this.replay = null;
+  }
+
+  private storeReplay(d: ReplayData): void {
+    saveReplay(d).catch(() => this.toast(t('rp_storageErr'), 'minor'));
   }
 
   private openScreen(): void {
+    this.endSessionExtras();
     this.session?.dispose();
     this.session = null;
     this.hud.setVisible(false);
@@ -288,7 +333,8 @@ export class App {
   }
 
   // ------------------------------------------------------------------ sesiones
-  startSession(cfg: SessionConfig): void {
+  startSession(cfg: SessionConfig, replay?: ReplayData): void {
+    this.endSessionExtras();
     this.session?.dispose();
     this.audio.stopMusic();
     this.screens.hide();
@@ -323,6 +369,7 @@ export class App {
         this.stadium.cheer(0.08);
       },
       launch: (r, kind, isPlayer) => {
+        s.director.note(r.index, 0.6);
         if (!isPlayer) return;
         this.audio.shoot();
         // en línea, el cliente solo oye los tiros de su robot: su slot local es el 0
@@ -332,7 +379,8 @@ export class App {
       hpAction: (a, what) => {
         if (what === 'door') this.toast(s.humanPlayers[a].doorOpen ? t('chuteOpen') : t('chuteClosed'));
       },
-      impact: (strength, slot, x, y, z) => {
+      impact: (strength, slot, x, y, z, robots = []) => {
+        for (const i of robots) s.director.note(i, 1 + 6 * strength);
         this.audio.hit(strength);
         this.effects.emit(x, y, z, Math.round(6 + 14 * strength), { color: 0xffb74d, speed: 2.5 + 3 * strength, spread: 1.2, life: 0.35, size: 0.03, gravity: 9 });
         if (slot >= 0) {
@@ -343,7 +391,7 @@ export class App {
       cameraChange: (mode) => {
         this.toast(`${t('camera')}: ${t(`cam_${mode}` as TKey)}`);
         // Recuerda la cámara elegida (un solo jugador; la libre es solo de práctica)
-        if (Math.min(s.rigs.length, s.localCount) === 1 && cfg.mode !== 'local' && !cfg.sharedCamera && mode !== 'free') {
+        if (s.localPlayers().length === 1 && cfg.mode !== 'local' && !cfg.sharedCamera && mode !== 'free') {
           this.settings.camera = mode as Settings['camera'];
           this.save();
         }
@@ -357,6 +405,13 @@ export class App {
         return c?.type === 'player' && c.slot < localCount;
       });
     }
+    // Repetición: graba los matches (no las repeticiones ni la práctica); el cliente en línea graba
+    // lo que le llega (ver joinRoom)
+    this.lastReplay = null;
+    if (s.match && !replay) {
+      this.tap = new SessionTap(s);
+      s.hooks = this.tap.wrapHooks(s.hooks);
+    }
     // recompone el composer con la cámara nueva
     this.renderer.setQuality(this.renderer.quality, s.rigs[0].camera);
     // Sin robot propio (espectador) no hay controles táctiles
@@ -367,7 +422,28 @@ export class App {
     this.touch.setButtonVisible('throw', hpPlayer);
     this.hud.setVisible(true);
     this.closeOverlay();
-    if (s.match) this.countdown = 3.2;
+    // (el espectador en línea puede entrar a medio match: sin cuenta regresiva)
+    this.countdown = s.match && !replay && !(cfg.net?.role === 'client' && s.spectator) ? 3.2 : -1;
+    if (replay) {
+      const player = new ReplayPlayer(s, replay);
+      s.replica = player;
+      player.onEvent = (e) => this.applyNetEvent(e, -1);
+      player.seek(player.start);
+      this.replay = { player, back: () => this.screens.main() };
+    }
+    // Sin robot propio: controles del espectador (en una repetición, con la línea de tiempo)
+    if (s.spectator) {
+      const player = this.replay?.player;
+      this.specBar = new SpectatorBar(this.uiEl, {
+        session: s,
+        player,
+        highlights: replay ? highlights(replay) : undefined,
+        canVideo: videoSupported(),
+        onClipFile: (a, b) => void this.saveClip(a, b),
+        onClipVideo: (a, b) => this.exportVideo(a, b),
+        onShare: replay ? () => void this.offerReplayFile(replay) : undefined,
+      });
+    }
     this.effects.clear();
     this.autoQ = { t: 0, frames: 0, steps: 0 };
   }
@@ -486,14 +562,17 @@ export class App {
   }
 
   /** Entra a la sala de otro jugador. */
-  async joinRoom(code: string, alliance: Alliance, robotId: string): Promise<ClientRoom> {
+  async joinRoom(code: string, alliance: Alliance, robotId: string, spectate = false): Promise<ClientRoom> {
     this.leaveOnline();
-    const room = await ClientRoom.join(code, { name: this.settings.driverName, alliance, spec: robotById(robotId) });
+    const room = await ClientRoom.join(code, { name: this.settings.driverName, alliance, spec: robotById(robotId), spectate });
     this.netClient = room;
     room.onStart = (cfg) => {
       this.closeOverlay();
       this.startSession(cfg);
-      if (this.session) room.attach(this.session);
+      if (!this.session) return;
+      const replica = room.attach(this.session);
+      // la repetición del cliente: lo mismo que manda el host
+      this.tap?.attach(replica);
     };
     room.onEvent = (e) => this.onNetEvent(e);
     room.onClosed = () => {
@@ -544,13 +623,18 @@ export class App {
 
   /** Cliente: sonidos y efectos que manda el host. */
   private onNetEvent(e: NetEvent): void {
-    const s = this.session;
     const room = this.netClient;
     if (e.k === 'left') {
       this.toast(t('net_left', { n: e.name }));
       return;
     }
-    if (!s?.replica || !room) return;
+    if (room) this.applyNetEvent(e, room.robot);
+  }
+
+  /** Evento del host (o de la repetición) en la sesión que solo dibuja; `own` = robot propio. */
+  private applyNetEvent(e: NetEvent, own: number): void {
+    const s = this.session;
+    if (!s?.replica) return;
     const h = s.hooks;
     if (e.k === 'match') {
       const m = s.match;
@@ -558,10 +642,10 @@ export class App {
       if (m && e.e.type === 'firstInactive') m.firstInactive = e.e.alliance;
       h.matchEvent?.(e.e);
     } else if (e.k === 'score') h.fuelScored?.(e.hub, e.counted, e.x, e.y, e.z);
-    else if (e.k === 'launch' && s.robots[e.robot]) h.launch?.(s.robots[e.robot], e.kind, e.robot === room.robot);
+    else if (e.k === 'launch' && s.robots[e.robot]) h.launch?.(s.robots[e.robot], e.kind, e.robot === own);
     else if (e.k === 'hp') h.hpAction?.(e.a, e.what);
-    else if (e.k === 'impact') h.impact?.(e.s, e.robots.includes(room.robot) ? 0 : -1, e.x, e.y, e.z);
-    else if (e.k === 'toast' && e.robot === room.robot) h.toast?.(e.key, e.robot);
+    else if (e.k === 'impact') h.impact?.(e.s, e.robots.includes(own) ? 0 : -1, e.x, e.y, e.z, e.robots);
+    else if (e.k === 'toast' && own >= 0 && e.robot === own) h.toast?.(e.key, e.robot);
   }
 
   /**
@@ -626,7 +710,7 @@ export class App {
   }
 
   /** Guarda el resultado del match jugado en el torneo y vuelve a su pantalla. */
-  private finishTournamentMatch(): void {
+  private finishTournamentMatch(open = true): void {
     const c = this.tournamentCtx;
     const s = this.session;
     if (!c || !s?.match) return;
@@ -656,7 +740,7 @@ export class App {
     if (target) target.result = { red: side('red'), blue: side('blue'), perf };
     saveTournament(c.tt);
     this.tournamentCtx = null;
-    this.openTournament();
+    if (open) this.openTournament();
   }
 
   private onMatchEvent(e: MatchEvent): void {
@@ -710,11 +794,14 @@ export class App {
       case 'warning':
         if (e.alliance === player?.alliance) this.audio.beep(true);
         break;
-      case 'end':
+      case 'end': {
         this.stadium.cheer(1);
-        // pequeña pausa para ver las luces de "campo seguro" antes de los resultados
-        setTimeout(() => this.showResults(), 1500);
+        // pequeña pausa para ver las luces de "campo seguro" antes de los resultados (en una
+        // repetición no: sigue la repetición)
+        const s = this.session;
+        if (!this.replay) setTimeout(() => this.session === s && this.showResults(), 1500);
         break;
+      }
       case 'foul': {
         const f = e.foul;
         const team = this.session?.robots[f.robot]?.spec.teamNumber;
@@ -744,15 +831,160 @@ export class App {
     if (!s) return;
     const res = buildResults(s);
     if (!res) return;
+    // la repetición del match: se guarda sola; desde aquí se ve o se baja como archivo
+    if (this.tap && !this.tap.finished) {
+      const d = this.tap.finish(false, __APP_VERSION__);
+      this.lastReplay = d;
+      if (d) this.storeReplay(d);
+    }
     const inTournament = !!this.tournamentCtx;
-    this.openOverlay(renderResults(res, inTournament), (a) => {
+    // (en línea no se ve aquí: el host sigue con la sala; queda en Repeticiones)
+    const replay = this.lastReplay && !s.cfg.net ? this.lastReplay : null;
+    this.openOverlay(renderResults(res, inTournament, !!replay), (a) => {
       if (a === 'continue') this.finishTournamentMatch();
       else if (a === 'rematch') this.restart();
+      else if (a === 'replay' && replay) {
+        const tour = !!this.tournamentCtx;
+        if (tour) this.finishTournamentMatch(false);
+        this.playReplay(replay, tour ? () => this.openTournament() : () => this.screens.replays());
+      } else if (a === 'replayFile' && replay) void this.offerReplayFile(replay);
       else this.quitToMenu();
     });
     attachChartHover(this.overlay, res);
     const p = s.playerRobot(0);
     if (p) this.audio.speak(res.winner === 'tie' ? t('tie') : t('winner', { a: t(res.winner) }), getLang());
+  }
+
+  // ------------------------------------------------------------------ repeticiones
+  /** Ve una repetición (`back` = a dónde se regresa al salir). */
+  playReplay(d: ReplayData, back?: () => void): void {
+    const cfg: SessionConfig = {
+      ...structuredClone(d.cfg),
+      // sin física ni IA: la sesión dibuja la grabación, como un cliente en línea espectador
+      net: { role: 'client', localPlayers: 1 },
+      sharedCamera: false,
+      training: false,
+      robots: d.cfg.robots.map((rc) => ({ ...structuredClone(rc), control: { type: 'none' as const }, plan: undefined })),
+    };
+    this.input.slots = [{ type: 'any' }];
+    this.startSession(cfg, d);
+    if (this.replay && back) this.replay.back = back;
+    this.field.setLeds(true);
+  }
+
+  private replayName(d: ReplayData, ext: string, clip?: [number, number]): string {
+    const dt = new Date(d.meta.date);
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const day = `${dt.getFullYear()}${p2(dt.getMonth() + 1)}${p2(dt.getDate())}-${p2(dt.getHours())}${p2(dt.getMinutes())}`;
+    const teams = `${d.meta.teams.red.join('-')}_vs_${d.meta.teams.blue.join('-')}`;
+    return `rebuilt-${clip ? 'clip-' : ''}${day}-${teams}.${ext}`;
+  }
+
+  /** La repetición completa como archivo (compartir o descargar). */
+  private async offerReplayFile(d: ReplayData): Promise<void> {
+    const bytes = await serializeReplay(d);
+    this.offerFile(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }), this.replayName(d, 'rbreplay'), t('rp_clipReady'), t('rp_clipReadyDesc'));
+  }
+
+  /** Recorta [t0, t1] de la repetición en un archivo propio. */
+  private async saveClip(t0: number, t1: number): Promise<void> {
+    const r = this.replay;
+    if (!r) return;
+    const clip = clipReplay(r.player.data, t0, t1);
+    const bytes = await serializeReplay(clip);
+    this.offerFile(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }), this.replayName(r.player.data, 'rbreplay', [t0, t1]), t('rp_clipReady'), t('rp_clipReadyDesc'));
+  }
+
+  /**
+   * Graba [t0, t1] en video: lo reproduce a velocidad normal con la cámara elegida y copia cada
+   * frame (con el marcador) al grabador.
+   */
+  private exportVideo(t0: number, t1: number): void {
+    const r = this.replay;
+    const s = this.session;
+    if (!r || !s || this.video) return;
+    if (!videoSupported()) {
+      this.toast(t('rp_noVideo'), 'minor');
+      return;
+    }
+    const tap = this.audio.tap();
+    const vid = new ClipVideo(this.renderer.renderer.domElement, tap?.stream ?? null);
+    r.player.seek(t0);
+    r.player.speed = 1;
+    r.player.playing = true;
+    this.video = { vid, end: t1, stopAudio: () => tap?.stop() };
+    this.specBar?.setVisible(false);
+    this.uiEl.classList.add('recording');
+    this.toast(`● ${t('rp_recording')}…`);
+    vid.start();
+  }
+
+  private videoFrame(s: GameSession): void {
+    const v = this.video!;
+    const p = this.replay?.player;
+    const m = s.match;
+    v.vid.draw({
+      red: m?.score('red') ?? 0,
+      blue: m?.score('blue') ?? 0,
+      timer: m ? formatTimer(m.phase === 'PRE' ? 20 : timerSeconds(m.t)) : '',
+      phase: m ? PHASES[m.phase] : '',
+      teams: {
+        red: s.robots.filter((r) => r.alliance === 'red').map((r) => r.spec.teamNumber),
+        blue: s.robots.filter((r) => r.alliance === 'blue').map((r) => r.spec.teamNumber),
+      },
+      label: 'REBUILT SIM',
+    });
+    if (!p || p.t < v.end - 1e-3 && p.playing) return;
+    if (p) p.playing = false;
+    this.video = null;
+    v.stopAudio();
+    this.uiEl.classList.remove('recording');
+    this.specBar?.setVisible(true);
+    void v.vid.stop().then((blob) => {
+      const d = this.replay?.player.data;
+      this.offerFile(blob, d ? this.replayName(d, v.vid.ext, [0, 0]) : `rebuilt-clip.${v.vid.ext}`, t('rp_videoReady'), '', true);
+    });
+  }
+
+  /**
+   * Diálogo para un archivo listo, encima de lo que haya (resultados, pausa): compartir (si el
+   * sistema puede) o descargar; el video con vista previa.
+   */
+  private offerFile(blob: Blob, name: string, title: string, desc: string, video = false): void {
+    const p = this.replay?.player;
+    const wasPlaying = p?.playing ?? false;
+    if (p) p.playing = false;
+    const url = video ? URL.createObjectURL(blob) : '';
+    const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    const canShare = !!nav.canShare?.({ files: [file] });
+    const size = blob.size > 1e6 ? `${(blob.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(blob.size / 1e3))} KB`;
+    const layer = document.createElement('div');
+    layer.className = 'overlay file-layer';
+    layer.innerHTML = `<div class="dialog file-ready">
+        <h2>${esc(title)}</h2>
+        ${video ? `<video src="${url}" controls autoplay muted playsinline></video>` : ''}
+        <p class="fr-name"><b>${esc(name)}</b> · ${size}</p>
+        ${desc ? `<p class="fr-desc">${esc(desc)}</p>` : ''}
+        <div class="actions">
+          ${canShare ? `<button data-a="share" class="primary">${t('rp_share')}</button>` : ''}
+          <button data-a="download" class="${canShare ? '' : 'primary'}">${t('rp_download')}</button>
+          <button data-a="close">${t('back')}</button>
+        </div>
+      </div>`;
+    this.uiEl.appendChild(layer);
+    layer.querySelectorAll<HTMLElement>('[data-a]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const a = btn.dataset.a;
+        if (a === 'share') void shareOrDownload(blob, name, title);
+        else if (a === 'download') download(blob, name);
+        else {
+          layer.remove();
+          if (url) URL.revokeObjectURL(url);
+          if (p && this.replay?.player === p && !this.session?.paused) p.playing = wasPlaying;
+        }
+      }),
+    );
   }
 
   // ------------------------------------------------------------------ pausa / overlay
@@ -770,10 +1002,32 @@ export class App {
   togglePause(): void {
     const s = this.session;
     if (!s) return;
+    // Esc mientras se graba un video: lo cancela
+    if (this.video) {
+      const v = this.video;
+      this.video = null;
+      v.stopAudio();
+      void v.vid.stop();
+      if (this.replay) this.replay.player.playing = false;
+      this.uiEl.classList.remove('recording');
+      this.specBar?.setVisible(true);
+      return;
+    }
     s.paused = !s.paused;
+    // la repetición se detiene detrás del menú y sigue al cerrarlo
+    const p = this.replay?.player;
+    if (p) {
+      if (s.paused) {
+        this.replayWasPlaying = p.playing;
+        p.playing = false;
+      } else p.playing = this.replayWasPlaying;
+    }
+    this.specBar?.setVisible(!s.paused);
     if (s.paused) this.showPause();
     else this.closeOverlay();
   }
+
+  private replayWasPlaying = false;
 
   /** Menú de pausa; `focusA` = acción que conserva el foco al redibujar (ajustes rápidos). */
   private showPause(focusA?: string): void {
@@ -792,7 +1046,9 @@ export class App {
     };
     const toggle = (k: string, on: boolean, label: string) =>
       `<button class="ps-toggle ${on ? 'on' : ''}" data-nav data-a="t:${k}" role="switch" aria-checked="${on}"><span>${label}</span><i></i></button>`;
-    const cams = CAMERA_MODES.filter((c) => c !== 'free' || practice);
+    const spectator = s.spectator;
+    const cams = spectator ? SPECTATOR_CAMS : CAMERA_MODES.filter((c) => c !== 'free' || practice);
+    const camOn = spectator ? s.spectatorCam : rig?.mode;
     const kb = (codes: string[]) => codes.map((k) => `<kbd>${esc(keyLabel(k, getLang()))}</kbd>`).join('');
     const K = this.settings.keys;
     const keys: Array<[string, string]> = [
@@ -805,7 +1061,7 @@ export class App {
       [t('a_cameraNext'), kb(K.cameraNext.slice(0, 1))],
       [t('a_slow'), kb(K.slow.slice(0, 1))],
     ];
-    const modeLabel = practice ? t('practice') : s.cfg.mode === 'tournament' ? t('tournament') : s.cfg.mode === 'local' ? t('local') : s.cfg.mode === 'online' ? t('online') : t('match');
+    const modeLabel = this.replay ? t('rp_title') : practice ? t('practice') : s.cfg.mode === 'tournament' ? t('tournament') : s.cfg.mode === 'local' ? t('local') : s.cfg.mode === 'online' ? t('online') : t('match');
     const score = m
       ? `<div class="ps-score">
           <div class="red"><span>${t('red')}</span><b>${m.score('red')}</b></div>
@@ -823,6 +1079,7 @@ export class App {
             <button data-a="resume" class="primary" data-nav data-nav-default>${I.play}<span>${t('resume')}</span><kbd>Esc</kbd></button>
             ${practice ? `<button data-a="reset" data-nav>${I.reset}<span>${t('resetField')}</span></button>` : ''}
             ${this.tournamentCtx || s.replica ? '' : `<button data-a="restart" data-nav>${I.restart}<span>${t('restart')}</span></button>`}
+            ${this.replay ? `<button data-a="replayFile" data-nav>${I.restart}<span>${t('rp_saveFile')}</span></button>` : ''}
             ${this.tournamentCtx && !s.players().length ? `<button data-a="skipMatch" data-nav>${I.restart}<span>${t('skipMatch')}</span></button>` : ''}
             <button data-a="quit" class="quit" data-nav>${I.quit}<span>${t('quit')}</span></button>
           </nav>
@@ -839,7 +1096,7 @@ export class App {
           <label class="ps-vol"><span>${t('volMaster')}</span><input type="range" min="0" max="1" step="0.05" value="${this.settings.audio.master}" data-vol/><b data-volv>${Math.round(this.settings.audio.master * 100)}%</b></label>
           ${
             rig && Math.min(s.rigs.length, s.localCount) === 1
-              ? `<h3>${t('camera')}</h3><div class="ps-cams">${cams.map((c) => `<button class="chipbtn ${rig.mode === c ? 'on' : ''}" data-nav data-a="c:${c}">${t(`cam_${c}` as TKey)}</button>`).join('')}</div>`
+              ? `<h3>${t('camera')}</h3><div class="ps-cams">${cams.map((c) => `<button class="chipbtn ${camOn === c ? 'on' : ''}" data-nav data-a="c:${c}">${t(`cam_${c}` as TKey)}</button>`).join('')}</div>`
               : ''
           }
           <h3 class="ps-kh">${t('controls')}</h3>
@@ -853,6 +1110,7 @@ export class App {
           this.togglePause();
         } else if (a === 'restart') this.restart();
         else if (a === 'skipMatch') this.skipTournamentMatch();
+        else if (a === 'replayFile' && this.replay) void this.offerReplayFile(this.replay.player.data);
         else if (a === 'quit') this.quitToMenu();
         else if (a.startsWith('t:')) {
           const k = a.slice(2);
@@ -865,7 +1123,8 @@ export class App {
           this.save();
           this.showPause(a);
         } else if (a.startsWith('c:')) {
-          s.setCamera(a.slice(2) as CameraMode);
+          if (spectator) s.setSpectatorCam(a.slice(2) as typeof s.spectatorCam);
+          else s.setCamera(a.slice(2) as CameraMode);
           this.showPause(a);
         }
       },
@@ -945,7 +1204,9 @@ export class App {
       const t1 = performance.now();
       const views = s.frame(dt);
       this.renderer.render(views);
+      if (this.video) this.videoFrame(s);
       const t2 = performance.now();
+      this.specBar?.update(dt);
       this.fpsAcc.sim += t1 - t0;
       this.fpsAcc.gpu += t2 - t1;
       this.updateHud(s, views);
@@ -981,7 +1242,8 @@ export class App {
   private tickOnline(dt: number, s: GameSession, inp: PlayerInput | undefined): void {
     if (this.netHost?.session === s) this.netHost.tick(dt);
     const c = this.netClient;
-    if (c && s.replica && inp) {
+    // (el espectador no manda controles)
+    if (c && s.replica && inp && c.robot >= 0) {
       const cam = s.rigs[0].camera;
       const p = cam.position;
       const q = cam.quaternion;
