@@ -12,7 +12,7 @@
  */
 import * as THREE from 'three';
 import { BUMPER_ZONE_LOW, FUEL_RADIUS, inch } from '../config/field';
-import type { RobotSpec } from '../config/robots';
+import type { CustomCad, RobotSpec } from '../config/robots';
 import type { Alliance } from '../core/types';
 import { ALLIANCE_COLOR } from './FieldView';
 import { mergeStaticChildren } from './merge';
@@ -20,6 +20,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { CAD_RIGS, CLEAR_MIN_OPACITY, hopperSlots, openingFor, shownFuel, type CadRig, type HopperSlot, type MechState } from './cadRigs';
 import { HopperFuelSim } from './hopperFuel';
+import { cadFrame, customModel } from './customCad';
 
 export interface RobotVisualState {
   intakeDeploy: number; // 0–1
@@ -265,14 +266,16 @@ export class RobotView {
       m.castShadow = false;
     }
 
-    // Robot con CAD real del equipo: solo BUMPERS procedurales (color de alianza) + el modelo
+    // Robot con CAD real del equipo (o el propio del taller, si está en este dispositivo): solo
+    // BUMPERS procedurales (color de alianza) + el modelo
     const keep: THREE.Object3D[] = [];
-    if (spec.cad) {
+    const custom = spec.customCad && customModel(spec.customCad.id) ? spec.customCad : null;
+    if (spec.cad || custom) {
       this.rsl = new THREE.MeshStandardMaterial();
       this.led = new THREE.MeshStandardMaterial();
       this.hopperBalls = new THREE.InstancedMesh(new THREE.BufferGeometry(), S.fuel, 1);
       this.hopperBalls.count = 0;
-      this.ready = this.loadCad(spec.cad.file);
+      this.ready = custom ? this.loadCustomCad(custom) : this.loadCad(spec.cad!.file);
     } else {
       // ---- Chasis: belly pan, tubo 2×1 en el perímetro y travesaños
       const yF = BUMPER_TOP; // altura de la parte superior del chasis
@@ -677,6 +680,63 @@ export class RobotView {
       .catch((e) => console.warn('robot model', file, e));
   }
 
+  /** CAD propio: nodos que se mueven con la turret y con la intake. */
+  private customTurret: THREE.Object3D | null = null;
+  private customIntake: THREE.Object3D | null = null;
+
+  /**
+   * CAD propio del taller (src/render/customCad.ts): se para con su eje "arriba", se gira al frente,
+   * se escala, se centra sobre el marco y se apoya en el piso; luego el corrimiento del usuario.
+   */
+  private async loadCustomCad(c: CustomCad): Promise<void> {
+    const src = customModel(c.id);
+    if (!src) return;
+    await prepareCustom(src);
+    const m = src.clone(true);
+    m.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mesh.castShadow = !mat.transparent;
+      mesh.receiveShadow = true;
+    });
+    const root = new THREE.Group();
+    root.name = 'cad';
+    const frame = cadFrame(c);
+    const up = frame.children[0];
+    up.scale.setScalar(Math.max(1e-6, c.unit * c.scalePct / 100));
+    up.add(m);
+    root.add(frame);
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(frame);
+    if (!box.isEmpty()) {
+      const ctr = box.getCenter(new THREE.Vector3());
+      frame.position.set(-ctr.x, -box.min.y, -ctr.z);
+    }
+    const [fwd, left, upIn] = c.offsetIn;
+    frame.position.add(new THREE.Vector3(inch(fwd), inch(upIn), -inch(left)));
+    root.updateMatrixWorld(true);
+    // Pivote en el centro del nodo (turret) o en el origen (intake): attach conserva su pose
+    const pivotFor = (name: string | undefined, atCenter: boolean): THREE.Object3D | null => {
+      const node = name ? m.getObjectByName(name) : undefined;
+      if (!node || node === m) return null;
+      const pivot = new THREE.Group();
+      if (atCenter) {
+        const b = new THREE.Box3().setFromObject(node);
+        if (!b.isEmpty()) pivot.position.copy(b.getCenter(new THREE.Vector3())).setY(0);
+      }
+      root.add(pivot);
+      pivot.updateMatrixWorld(true);
+      pivot.attach(node);
+      return pivot;
+    };
+    this.customTurret = pivotFor(c.turretNode, true);
+    // La intake no puede ir dentro de la turret (y al revés): se toma el primero que se pidió
+    if (c.intakeNode !== c.turretNode) this.customIntake = pivotFor(c.intakeNode, false);
+    this.group.add(root);
+    this.cadLoaded = true;
+  }
+
   /** Lugares del FUEL en el hopper del CAD y una malla instanciada por caja. */
   private cadSlots: HopperSlot[] = [];
   private cadBoxMeshes: THREE.InstancedMesh[] = [];
@@ -866,6 +926,8 @@ export class RobotView {
       m.spin = s.flywheelSpin * 0.08;
       this.applyMech();
     }
+    if (this.customTurret) this.customTurret.rotation.y = s.turretYaw;
+    if (this.customIntake) this.customIntake.position.x = inch(this.spec.intake.extensionIn) * e;
     if (this.intakeMode === 'pivot') this.intakeArm.rotation.z = this.stowAngle + (this.deployAngle - this.stowAngle) * e;
     else this.intake.position.set(this.rackStow.x + (this.rackDeploy.x - this.rackStow.x) * e, this.rackStow.y + (this.rackDeploy.y - this.rackStow.y) * e, 0);
     for (const r of this.intakeRollers) r.rotation.z = -s.intakeSpin;
@@ -932,6 +994,25 @@ export function loadRobotModel(file: string): Promise<THREE.Group> {
     const url = new URL(`robots/${file}`, document.baseURI).href;
     p = gltfLoader.loadAsync(url).then((g) => creaseNormals(g.scene).then(() => g.scene));
     modelCache.set(file, p);
+  }
+  return p;
+}
+
+const customPrepared = new WeakMap<THREE.Object3D, Promise<void>>();
+
+/**
+ * CAD propio: normales donde falten (una vez por modelo; el resto de los robots lo clona). Con
+ * UV o colores por vértice se calculan sin rehacer la malla, para no perderlos.
+ */
+function prepareCustom(scene: THREE.Object3D): Promise<void> {
+  let p = customPrepared.get(scene);
+  if (!p) {
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !m.geometry.getAttribute('normal') && Object.keys(m.geometry.attributes).length > 1) m.geometry.computeVertexNormals();
+    });
+    p = creaseNormals(scene);
+    customPrepared.set(scene, p);
   }
   return p;
 }

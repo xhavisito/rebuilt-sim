@@ -1070,3 +1070,6 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .net-room { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
 .net-room span { font-size: 12px; opacity: 0.75; letter-spacing: 0.05em; }
 @media (max-width: 560px) { .net-room { grid-template-columns: 1fr auto; } .net-room span { grid-column: 1; } }
+.form .row.trio { flex-wrap: nowrap; }
+.form .row.trio input[type="number"] { width: 0 !important; flex: 1; min-width: 56px; }
+@media (min-width: 901px) { .editprev { position: sticky; top: 12px; align-self: start; } }

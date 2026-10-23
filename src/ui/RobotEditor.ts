@@ -2,12 +2,27 @@
  * Editor de robots: dimensiones (perímetro ≤ 110 in, altura ≤ 30 in), drivetrain, velocidad,
  * hopper, shooter, climb, número de equipo y colores. Validación en vivo contra el manual
  * y esquema 2D (vista superior y lateral). Se guarda en localStorage.
+ * CAD propio (.glb / .gltf) en IndexedDB (src/render/customCad.ts), con escala, ejes, corrimiento
+ * y piezas que se mueven (turret, intake); exportar / importar el robot como archivo.
  */
 import * as F from '../config/field';
-import { allRobots, DEFAULT_ROBOT_ID, fitsUnderTrench, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type RobotSpec } from '../config/robots';
+import { inch } from '../config/field';
+import { allRobots, DEFAULT_ROBOT_ID, fitScalePct, fitsUnderTrench, guessCadUnit, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type CustomCad, type RobotSpec } from '../config/robots';
+import { decodeRobotFile, encodeRobotFile, MAX_CAD_BYTES } from '../config/robotFile';
+import { cadNodeNames, cadSize, customModel, deleteCadFile, getCadFile, parseCad, putCadFile, registerCustomModel } from '../render/customCad';
 import { bind, esc, num, seg, select, type Opt } from './forms';
 import { t, tx } from './i18n';
 import type { Showroom } from '../render/Showroom';
+
+const UNIT_OPTS: Opt[] = [
+  { value: '1', label: 'm' },
+  { value: '0.01', label: 'cm' },
+  { value: '0.001', label: 'mm' },
+  { value: '0.0254', label: 'in' },
+];
+const IN_PER_M = 1 / 0.0254;
+const round = (x: number, step: number) => Math.round(x / step) * step;
+const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
 
 export class RobotEditor {
   private spec!: RobotSpec;
@@ -39,7 +54,7 @@ export class RobotEditor {
       <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-back>← ${t('back')}</button></div>
       <h1>${t('robotEditor')}</h1>
       <div class="split">
-        <div class="panel" style="display:flex;flex-direction:column;gap:10px"><div class="preview" data-preview style="height:300px"></div><canvas data-schem style="width:100%;height:auto;display:block"></canvas><div data-valid style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div></div>
+        <div class="panel editprev" style="display:flex;flex-direction:column;gap:10px"><div class="preview" data-preview style="height:300px"></div><canvas data-schem style="width:100%;height:auto;display:block"></canvas><div data-valid style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div></div>
         <div class="panel form">
           <label>${t('robot')}</label>${select('pick', opts, s.id)}
           ${ro ? `<label></label><div class="msg warn">${t('presetReadonly')}</div>` : ''}
@@ -53,6 +68,8 @@ export class RobotEditor {
           <h3>${t('drivetrain')}</h3>
           <label>${t('drivetrain')}</label>${seg('drive', [{ value: 'swerve', label: 'Swerve' }, { value: 'tank', label: 'Tank / West Coast' }], s.drivetrain)}
           <label>${t('maxSpeed')} (m/s)</label>${num('speed', s.maxSpeed, 0.1, 2, 6)}
+          <label>${t('maxAccel')} (m/s²)</label>${num('accel', s.maxAccel, 0.5, 4, 20)}
+          <label>${t('maxOmega')} (rad/s)</label>${num('omega', s.maxOmega, 0.5, 3, 16)}
           <label>${t('traction')} (μ)</label>${num('traction', s.traction, 0.05, 0.6, 1.6)}
           <h3>INTAKE / HOPPER</h3>
           <label>${t('intakeWidth')} (in)</label>${num('iwidth', s.intake.widthIn, 0.5, 8, 40)}
@@ -68,16 +85,31 @@ export class RobotEditor {
           <label>${t('hoodMax')} (°)</label>${num('amax', s.shooter.maxAngle, 1, 15, 88)}
           <label>${t('accuracy')} (0–1)</label>${num('acc', s.shooter.accuracy, 0.01, 0.3, 1)}
           <label>${t('exitHeight')} (in)</label>${num('exitH', s.shooter.exitHeightIn, 0.5, 8, 30)}
+          <label>${t('lanes')}</label>${seg('lanes', ['1', '2', '3', '4', '5'].map((v) => ({ value: v, label: v })), String(s.shooter.lanes ?? 1))}
+          ${s.shooter.type === 'fixed' ? `<label>${t('shotDir')}</label>${seg('syaw', [
+            { value: '0', label: t('shotFront') },
+            { value: '90', label: t('shotLeft') },
+            { value: '-90', label: t('shotRight') },
+            { value: '180', label: t('shotBack') },
+          ], String(s.shooter.yawDeg ?? 0))}` : ''}
+          <label>${t('backspin')} (rad/s)</label>${num('spin', s.shooter.backspin, 5, 0, 120)}
           <h3>CLIMB</h3>
           <label>${t('maxLevel')}</label>${seg('climb', ['0', '1', '2', '3'].map((v) => ({ value: v, label: v === '0' ? '—' : `L${v}` })), String(s.climb.maxLevel))}
-          <label>L1 / L2 / L3 (s)</label><div class="row">${num('t1', s.climb.timeL1, 0.1, 1, 15)}${num('t2', s.climb.timeL2, 0.1, 2, 20)}${num('t3', s.climb.timeL3, 0.1, 3, 25)}</div>
+          <label>L1 / L2 / L3 (s)</label><div class="row trio">${num('t1', s.climb.timeL1, 0.1, 1, 15)}${num('t2', s.climb.timeL2, 0.1, 2, 20)}${num('t3', s.climb.timeL3, 0.1, 3, 25)}</div>
           <h3>${t('colors')}</h3>
           <label>${t('colors')}</label><div class="row"><input type="color" data-c1 value="${s.colors.primary}"/><input type="color" data-c2 value="${s.colors.accent}"/></div>
+          ${this.cadSection()}
           <label></label><div class="row">
             <button class="chipbtn" data-saveas>${t('saveAsNew')}</button>
             ${ro ? '' : `<button class="chipbtn" data-save>${t('save')}</button><button class="chipbtn" data-del>${t('delete')}</button>`}
             <button class="chipbtn on" data-use>${t('useRobot')}</button>
           </div>
+          <label></label><div class="row">
+            <button class="chipbtn" data-export>⬇ ${t('exportRobot')}</button>
+            <button class="chipbtn" data-import>⬆ ${t('importRobot')}</button>
+            <input type="file" data-robotfile accept=".json,application/json" hidden/>
+          </div>
+          <label></label><div data-filemsg></div>
         </div>
       </div></div>`;
     const r = this.root;
@@ -91,6 +123,23 @@ export class RobotEditor {
       }
       const n = Number(v);
       const sp = this.spec;
+      const c = sp.customCad;
+      const cad: Record<string, (c: CustomCad) => void> = {
+        cunit: (c) => (c.unit = n),
+        cscale: (c) => (c.scalePct = clamp(n, 1, 100000)),
+        cup: (c) => (c.upAxis = v === 'z' ? 'z' : 'y'),
+        cyaw: (c) => (c.yawDeg = n),
+        cox: (c) => (c.offsetIn[0] = n),
+        coy: (c) => (c.offsetIn[1] = n),
+        coz: (c) => (c.offsetIn[2] = n),
+        cturret: (c) => (c.turretNode = v ? String(v) : undefined),
+        cintake: (c) => (c.intakeNode = v ? String(v) : undefined),
+      };
+      if (cad[name]) {
+        if (c) cad[name](c);
+        this.update();
+        return;
+      }
       const map: Record<string, () => void> = {
         team: () => (sp.teamNumber = Math.round(n)),
         width: () => (sp.widthIn = n),
@@ -100,6 +149,11 @@ export class RobotEditor {
         drive: () => (sp.drivetrain = v as RobotSpec['drivetrain']),
         speed: () => (sp.maxSpeed = n),
         traction: () => (sp.traction = n),
+        accel: () => (sp.maxAccel = n),
+        omega: () => (sp.maxOmega = n),
+        lanes: () => (sp.shooter.lanes = Math.round(n)),
+        syaw: () => (sp.shooter.yawDeg = n),
+        spin: () => (sp.shooter.backspin = n),
         iwidth: () => (sp.intake.widthIn = n),
         iext: () => (sp.intake.extensionIn = n),
         irate: () => (sp.intake.rate = n),
@@ -118,8 +172,10 @@ export class RobotEditor {
         t3: () => (sp.climb.timeL3 = n),
       };
       map[name]?.();
+      if (name === 'stype') return this.render();
       this.update();
     });
+    this.bindCad();
     r.querySelector<HTMLInputElement>('[data-name]')!.addEventListener('input', (e) => (this.spec.name = (e.target as HTMLInputElement).value));
     r.querySelector<HTMLInputElement>('[data-c1]')!.addEventListener('input', (e) => {
       this.spec.colors.primary = (e.target as HTMLInputElement).value;
@@ -136,7 +192,10 @@ export class RobotEditor {
     });
     r.querySelector('[data-save]')?.addEventListener('click', () => this.persist());
     r.querySelector('[data-del]')?.addEventListener('click', () => {
-      saveCustomRobots(loadCustomRobots().filter((x) => x.id !== this.spec.id));
+      const rest = loadCustomRobots().filter((x) => x.id !== this.spec.id);
+      saveCustomRobots(rest);
+      const cadId = this.spec.customCad?.id;
+      if (cadId && !rest.some((x) => x.customCad?.id === cadId)) void deleteCadFile(cadId).catch(() => undefined);
       this.open(DEFAULT_ROBOT_ID);
     });
     r.querySelector('[data-use]')!.addEventListener('click', () => {
@@ -145,6 +204,155 @@ export class RobotEditor {
       this.onUse(this.spec.id);
     });
     requestAnimationFrame(() => this.update());
+  }
+
+  // ------------------------------------------------------------------ CAD propio
+
+  private cadSection(): string {
+    const s = this.spec;
+    const c = s.customCad;
+    const input = `<input type="file" data-cadfile accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden/>`;
+    const importBtn = `<button class="chipbtn" data-cadimport>⬆ ${t('cadImport')}</button>`;
+    let body: string;
+    if (!c) {
+      body = `<label></label><div class="msg">${s.cad ? t('cadTeam') : t('cadNoModel')} ${t('cadHint')}</div>
+        <label></label><div class="row">${importBtn}${input}</div>`;
+    } else {
+      const model = customModel(c.id);
+      const nodes: Opt[] = [{ value: '', label: t('cadNone') }, ...(model ? cadNodeNames(model) : []).map((n) => ({ value: n, label: n }))];
+      body = `<label></label><div class="row"><b style="overflow-wrap:anywhere">${esc(c.name)}</b>${importBtn}${input}<button class="chipbtn" data-cadrm>${t('cadRemove')}</button></div>
+        ${model ? '' : `<label></label><div class="msg warn">${t('cadMissing')}</div>`}
+        <label>${t('cadUnit')}</label>${seg('cunit', UNIT_OPTS, String(c.unit))}
+        <label>${t('cadScale')}</label><div class="row">${num('cscale', c.scalePct, 0.5, 1, 100000)}<button class="chipbtn" data-cadfit>${t('cadFit')}</button></div>
+        <label>${t('cadUp')}</label>${seg('cup', [{ value: 'y', label: 'Y (glTF)' }, { value: 'z', label: 'Z (CAD / AdvantageScope)' }], c.upAxis)}
+        <label>${t('cadFront')}</label>${seg('cyaw', ['0', '90', '180', '270'].map((v) => ({ value: v, label: `${v}°` })), String(c.yawDeg))}
+        <label>${t('cadOffset')}</label><div class="row trio">${num('cox', c.offsetIn[0], 0.25, -30, 30)}${num('coy', c.offsetIn[1], 0.25, -30, 30)}${num('coz', c.offsetIn[2], 0.25, -30, 30)}</div>
+        <label>${t('cadTurret')}</label>${select('cturret', nodes, c.turretNode ?? '')}
+        <label>${t('cadIntake')}</label>${select('cintake', nodes, c.intakeNode ?? '')}
+        <label></label><div class="row"><button class="chipbtn" data-cadmeasure>📏 ${t('cadMeasure')}</button></div>`;
+    }
+    return `<h3>${t('cadModel')}</h3>${body}<label></label><div data-cadmsg></div>`;
+  }
+
+  private bindCad(): void {
+    const r = this.root;
+    const file = r.querySelector<HTMLInputElement>('[data-cadfile]');
+    r.querySelector('[data-cadimport]')?.addEventListener('click', () => file?.click());
+    file?.addEventListener('change', () => {
+      const f = file.files?.[0];
+      if (f) void this.importCad(f);
+    });
+    r.querySelector('[data-cadrm]')?.addEventListener('click', () => {
+      delete this.spec.customCad; // el archivo se borra al arrancar si ya no lo usa nadie
+      this.render();
+    });
+    r.querySelector('[data-cadfit]')?.addEventListener('click', () => {
+      const c = this.spec.customCad;
+      const m = c && customModel(c.id);
+      if (!c || !m) return;
+      const sz = cadSize(m, c).multiplyScalar(c.unit);
+      c.scalePct = fitScalePct(sz.x, sz.z, inch(this.spec.lengthIn), inch(this.spec.widthIn));
+      this.render();
+    });
+    r.querySelector('[data-cadmeasure]')?.addEventListener('click', () => {
+      const s = this.spec;
+      const c = s.customCad;
+      const m = c && customModel(c.id);
+      if (!c || !m) return;
+      const sz = cadSize(m, c).multiplyScalar((c.unit * c.scalePct) / 100 * IN_PER_M);
+      s.lengthIn = clamp(round(sz.x, 0.25), 15, 40);
+      s.widthIn = clamp(round(sz.z, 0.25), 15, 40);
+      s.heightIn = clamp(round(sz.y, 0.25), 10, 34);
+      this.render();
+    });
+    const rf = r.querySelector<HTMLInputElement>('[data-robotfile]')!;
+    r.querySelector('[data-import]')!.addEventListener('click', () => rf.click());
+    rf.addEventListener('change', () => {
+      const f = rf.files?.[0];
+      if (f) void this.importRobot(f);
+    });
+    r.querySelector('[data-export]')!.addEventListener('click', () => void this.exportRobot());
+  }
+
+  private say(sel: string, cls: '' | 'ok' | 'warn' | 'bad', text: string): void {
+    const el = this.root.querySelector<HTMLElement>(sel);
+    if (el) el.innerHTML = `<div class="msg ${cls}">${esc(text)}</div>`;
+  }
+
+  private async importCad(f: File): Promise<void> {
+    const msg = (cls: '' | 'ok' | 'warn' | 'bad', text: string) => this.say('[data-cadmsg]', cls, text);
+    if (f.size > MAX_CAD_BYTES) return msg('bad', t('cadErrBig', { max: MAX_CAD_BYTES / 1024 / 1024 }));
+    msg('', t('cadLoading'));
+    const buf = await f.arrayBuffer();
+    let scene;
+    try {
+      scene = await parseCad(buf);
+    } catch (e) {
+      const code = (e as Error)?.message;
+      return msg('bad', code === 'external' ? t('cadErrExternal') : code === 'draco' ? t('cadErrDraco') : t('cadErrParse', { err: String(code ?? e) }));
+    }
+    const id = `cad-${Date.now().toString(36)}`;
+    try {
+      await putCadFile(id, buf);
+    } catch {
+      return msg('bad', t('cadErrStore'));
+    }
+    registerCustomModel(id, scene);
+    const s = this.spec;
+    const c: CustomCad = { id, name: f.name.slice(0, 80), unit: 1, scalePct: 100, upAxis: 'y', yawDeg: 0, offsetIn: [0, 0, 0] };
+    // Un modelo "acostado" con Y arriba (más alto que largo) casi seguro viene con Z arriba
+    const sy = cadSize(scene, c);
+    if (sy.y > 1.3 * Math.max(sy.x, sy.z)) c.upAxis = 'z';
+    const sz = cadSize(scene, c);
+    c.unit = guessCadUnit(Math.max(sz.x, sz.z), inch(Math.max(s.lengthIn, s.widthIn)));
+    const fit = fitScalePct(sz.x * c.unit, sz.z * c.unit, inch(s.lengthIn), inch(s.widthIn));
+    if (fit < 75 || fit > 133) c.scalePct = fit;
+    // Piezas que se mueven, si el CAD las nombra así
+    const names = cadNodeNames(scene);
+    c.turretNode = names.find((n) => /turret|torreta/i.test(n));
+    c.intakeNode = names.find((n) => /intake/i.test(n) && n !== c.turretNode);
+    s.customCad = c;
+    delete s.cad; // reemplaza al CAD del equipo (en esta copia)
+    this.render();
+    this.say('[data-cadmsg]', 'ok', t('cadLoaded', { size: (buf.byteLength / 1024 / 1024).toFixed(1) }));
+  }
+
+  private async exportRobot(): Promise<void> {
+    const s = this.spec;
+    const cad = s.customCad ? await getCadFile(s.customCad.id).catch(() => undefined) : undefined;
+    const blob = new Blob([encodeRobotFile(s, cad)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const slug = s.name.normalize('NFD').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'robot';
+    a.download = `${s.teamNumber}-${slug}.rebuilt-robot.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  private async importRobot(f: File): Promise<void> {
+    const msg = (cls: '' | 'ok' | 'warn' | 'bad', text: string) => this.say('[data-filemsg]', cls, text);
+    let res: ReturnType<typeof decodeRobotFile>;
+    try {
+      res = decodeRobotFile(await f.text());
+    } catch (e) {
+      const code = (e as Error).message;
+      return msg('bad', code === 'newer-version' ? t('robotFileNewer') : code === 'too-big' ? t('cadErrBig', { max: MAX_CAD_BYTES / 1024 / 1024 }) : t('robotFileErr'));
+    }
+    const { spec, cad } = res;
+    if (cad && spec.customCad) {
+      try {
+        registerCustomModel(spec.customCad.id, await parseCad(cad));
+        await putCadFile(spec.customCad.id, cad);
+      } catch {
+        delete spec.customCad;
+      }
+    }
+    this.spec = spec;
+    this.persist(false);
+    this.render();
+    this.say('[data-filemsg]', 'ok', t('robotImported', { name: spec.name }));
   }
 
   private persist(rerender = true): void {
