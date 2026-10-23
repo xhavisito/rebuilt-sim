@@ -727,7 +727,6 @@ export class Screens {
         <label></label><div class="row"><button class="chipbtn" data-editlayout>${t('editLayout')}</button><button class="chipbtn" data-resetlayout>${t('reset')}</button></div>
         <h3>${t('audio')}</h3>
         <label>${t('volMaster')}</label>${range('vmaster', 0, 1, 0.05, s.audio.master)}
-        <label>${t('volMusic')}</label>${range('vmusic', 0, 1, 0.05, s.audio.music)}
         <label>${t('volSfx')}</label>${range('vsfx', 0, 1, 0.05, s.audio.sfx)}
         <label>${t('volVoice')}</label>${range('vvoice', 0, 1, 0.05, s.audio.voice)}
       </div>
@@ -795,9 +794,6 @@ export class Screens {
           break;
         case 'vmaster':
           s.audio.master = Number(v);
-          break;
-        case 'vmusic':
-          s.audio.music = Number(v);
           break;
         case 'vsfx':
           s.audio.sfx = Number(v);

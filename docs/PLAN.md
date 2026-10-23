@@ -54,7 +54,7 @@ src/
   ai/                      RobotAI.ts, HumanPlayerAI.ts, NavGraph.ts
   auto/                    AutoRoutine.ts (tipos, rutinas default), AutoExecutor.ts, Trajectory.ts (rutas suaves)
   referee/Referee.ts       detección de violaciones
-  audio/Audio.ts           Web Audio: cues del FMS, efectos, música, voz (SpeechSynthesis)
+  audio/Audio.ts           Web Audio: cues del FMS, efectos, voz (SpeechSynthesis)
   ui/                      i18n.ts, styles.css, Menu, Hud, Results, Settings, AutoDesigner, RobotEditor, Tournament,
                            SpectatorBar (cámaras, robot a seguir, línea de tiempo y clips)
   net/                     modo en línea (host autoritativo, clientes y espectadores, WebRTC)
