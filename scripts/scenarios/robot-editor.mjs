@@ -1,5 +1,7 @@
 // Taller de robots: importar un CAD propio (GLB), ajustarlo, guardarlo (sobrevive a recargar),
 // jugar un match con él y exportar / importar el robot como archivo.
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, statSync } from 'node:fs';
 import { chromium } from 'playwright';
 import { startServer } from './_server.mjs';
 const server = await startServer(4188);
@@ -64,6 +66,20 @@ const after = await page.evaluate(() => { const l = JSON.parse(localStorage.getI
 console.log('imported robots', before, '→', after.n, JSON.stringify(after.cad));
 if (after.n !== before + 1 || !after.cad || after.cad.upAxis !== 'z') fail('importar robot');
 await page.waitForFunction(() => window.app.screens.showroom.robot?.cadLoaded, null, { timeout: 15000 }).catch(() => fail('CAD del robot importado'));
+// CAD pesado como los de Onshape (> 60 MB, mm, tornillería): se aligera en un worker al importarlo
+mkdirSync('.tmp', { recursive: true });
+spawnSync(process.execPath, ['scripts/robots/heavy-cad.mjs', '.tmp/heavy.glb'], { stdio: 'inherit' });
+await page.selectOption('[data-sel="pick"]', 'new');
+const t0 = Date.now();
+await page.setInputFiles('[data-cadfile]', '.tmp/heavy.glb');
+await page.waitForSelector('[data-cadmsg] .msg.ok', { timeout: 180000 }).catch(() => fail('CAD pesado'));
+const heavy = await page.evaluate(() => ({ msg: document.querySelector('[data-cadmsg]')?.textContent, cad: window.app.editor.spec.customCad }));
+console.log('heavy CAD', (statSync('.tmp/heavy.glb').size / 1048576).toFixed(1), 'MB in', ((Date.now() - t0) / 1000).toFixed(1), 's:', heavy.msg);
+if (!heavy.cad || heavy.cad.unit !== 0.001) fail('unidad del CAD pesado (mm)');
+if (heavy.cad?.turretNode !== 'Turret' || heavy.cad?.intakeNode !== 'Intake') fail('piezas del CAD pesado');
+await page.waitForFunction(() => window.app.screens.showroom.robot?.cadLoaded, null, { timeout: 20000 }).catch(() => fail('vista previa del CAD pesado'));
+await page.waitForTimeout(1000);
+await page.screenshot({ path: 'shots/robot-editor-heavy.png' });
 await browser.close();
 server.close();
 console.log(process.exitCode ? 'robot-editor: FAIL' : 'robot-editor: OK');
