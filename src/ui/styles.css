@@ -610,7 +610,12 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .ranktable th:nth-child(2), .ranktable td:nth-child(2) { text-align: left; }
 .ranktable tr.me td { background: rgba(245, 197, 24, 0.1); }
 .designer { position: relative; width: 100%; }
-.designer canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: var(--bg-2); touch-action: none; }
+.designer .timeline { display: flex; align-items: center; gap: 10px; margin-top: 8px; font: 600 13px var(--mono, monospace); }
+.designer .timeline input[type='range'] { flex: 1; }
+.designer .timeline [data-clock] { min-width: 92px; text-align: right; color: var(--muted); }
+.designer .msg { margin-top: 6px; }
+.designer .hint { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.designer canvas { width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 10px; background: var(--bg-2); touch-action: none; }
 .done-layout { position: absolute; left: 50%; top: 40%; transform: translateX(-50%); z-index: 70; }
 .keyhints { display: flex; gap: 16px; align-items: center; color: var(--muted); font-size: 12px; flex-wrap: wrap; }
 .keyhints span { display: inline-flex; gap: 6px; align-items: center; }

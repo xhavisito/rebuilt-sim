@@ -4,6 +4,10 @@
  * llegar. A prueba de choques:
  * - Cada waypoint tiene un vigilante: si en ~2 s no se acerca (lo estorba un compañero, un rival
  *   o quedó trabado), hace su acción donde está (tirar, si está en su ALLIANCE ZONE) o lo salta.
+ * - Rutas suaves (`routine.spline`, tipo PathPlanner): sigue la trayectoria con velocidad de
+ *   referencia + corrección de posición; si se queda atrás (BUMP, FUEL, un empujón) la referencia
+ *   espera en vez de escaparse. Cada tramo (hasta la siguiente parada) se genera desde donde
+ *   está el robot en ese momento.
  * - Al terminar la rutina (o si se queda sin ella) sigue jugando: junta FUEL de su lado y lo
  *   tira, sin cruzar la CENTER LINE (G403) y sin meterse en las zonas de las rutinas de sus
  *   compañeros.
@@ -14,7 +18,8 @@ import * as F from '../config/field';
 import { FLAG_FROM_HUB, FuelState, type FuelSystem } from '../physics/FuelSystem';
 import { chassisYawFor } from '../game/Mechanisms';
 import { idleCommand, type Robot, type RobotCommand } from '../game/Robot';
-import { pointZone, toAlliance, type AutoRoutine, type AutoWaypoint, type AutoZone } from './AutoRoutine';
+import { mirrorWaypointZ, pointZone, toAlliance, type AutoRoutine, type AutoWaypoint, type AutoZone } from './AutoRoutine';
+import { buildTrajectory, constraintsFor, headingOf, isStop, sampleAt, type Trajectory } from './Trajectory';
 
 type Stage = { kind: 'preload'; t: number } | { kind: 'goto'; i: number } | { kind: 'act'; i: number; t: number } | { kind: 'free' } | { kind: 'done' };
 
@@ -28,6 +33,13 @@ export class AutoExecutor {
   private ballAge = 0;
   /** Waypoints con z reflejada (la rutina se adapta al lado por el que salió el robot). */
   private readonly wps: AutoWaypoint[];
+  /** Rutas suaves: tramo actual (de `legFrom` a la parada `stage.i`), su reloj y su vigilante. */
+  private leg: { traj: Trajectory; t: number; stall: number; over: number } | null = null;
+  private legFrom = 0;
+  /** Siguiente waypoint cuyo cambio de INTAKE ("event marker") falta aplicar. */
+  private evNext = 0;
+  /** Ruta completa planeada (marco de la alianza) para dibujarla en el campo. */
+  readonly preview: Array<{ x: number; z: number }> = [];
 
   constructor(
     private r: Robot,
@@ -41,9 +53,39 @@ export class AutoExecutor {
     const zb = r.alliance === 'blue' ? r.phys.curPos.z : -r.phys.curPos.z;
     const first = routine.waypoints.find((w) => Math.abs(w.z) > 0.3);
     const flip = !!routine.mirrorToStart && !!first && Math.sign(first.z) !== Math.sign(zb) && Math.abs(zb) > 0.3;
-    this.wps = flip ? routine.waypoints.map((w) => ({ ...w, z: -w.z, heading: w.heading === null ? null : -w.heading })) : routine.waypoints;
+    this.wps = flip ? routine.waypoints.map(mirrorWaypointZ) : routine.waypoints;
     const turretShootsMoving = routine.shootPreload && r.spec.shooter.type === 'turret' && routine.waypoints.length > 0;
-    this.stage = routine.shootPreload && !turretShootsMoving ? { kind: 'preload', t: 0 } : this.wps.length ? { kind: 'goto', i: 0 } : { kind: 'free' };
+    this.stage = routine.shootPreload && !turretShootsMoving ? { kind: 'preload', t: 0 } : this.wps.length ? { kind: 'goto', i: this.stopFrom(0) } : { kind: 'free' };
+    if (routine.spline && this.wps.length) {
+      const tr = buildTrajectory(this.bluePose(), this.wps, constraintsFor(r.spec, routine.speed));
+      for (let k = 0; k < tr.samples.length; k += 3) {
+        const q = toAlliance(r.alliance, tr.samples[k].x, tr.samples[k].z, null);
+        this.preview.push({ x: q.x, z: q.z });
+      }
+    }
+  }
+
+  /** Índice del waypoint donde termina el tramo que empieza en `from` (cada uno con navegador). */
+  private stopFrom(from: number): number {
+    if (!this.routine.spline) return from;
+    let j = from;
+    while (j < this.wps.length - 1 && !isStop(this.wps[j], false)) j++;
+    return j;
+  }
+
+  /** Pose del robot en el marco azul de la rutina. */
+  private bluePose(): { x: number; z: number; heading: number } {
+    const p = this.r.phys.curPos;
+    const h = this.r.phys.heading();
+    return this.r.alliance === 'blue' ? { x: p.x, z: p.z, heading: h } : { x: -p.x, z: -p.z, heading: h - Math.PI };
+  }
+
+  /** Punto de referencia actual de la ruta suave (marco de la alianza), para dibujarlo. */
+  get reference(): { x: number; z: number; heading: number } | null {
+    if (!this.leg || this.stage.kind !== 'goto') return null;
+    const q = sampleAt(this.leg.traj, this.leg.t);
+    const a = toAlliance(this.r.alliance, q.x, q.z, q.heading);
+    return { x: a.x, z: a.z, heading: a.h! };
   }
 
   get done(): boolean {
@@ -81,6 +123,11 @@ export class AutoExecutor {
         if (n === 0 || st.t > 4) this.next();
         break;
       case 'goto': {
+        if (this.routine.spline) {
+          this.followLeg(dt, others, st.i, cmd);
+          if (r.spec.shooter.type === 'turret' && n > 0 && this.inZone()) cmd.shoot = true;
+          break;
+        }
         const w = this.wps[st.i];
         const p = toAlliance(r.alliance, w.x, w.z, w.heading);
         this.nav.plan({ x: p.x, z: p.z });
@@ -227,12 +274,99 @@ export class AutoExecutor {
     this.ball = best;
   }
 
+  /**
+   * Ruta suave: sigue el tramo que termina en la parada `i` (velocidad de la referencia +
+   * corrección proporcional de posición; rumbo con prealimentación). Al llegar pasa a su acción.
+   */
+  private followLeg(dt: number, others: Robot[], i: number, cmd: RobotCommand): void {
+    const r = this.r;
+    const blue = r.alliance === 'blue';
+    const me = this.bluePose();
+    if (!this.leg) {
+      const prev = this.legFrom > 0 ? this.wps[this.legFrom - 1] : null;
+      const traj = buildTrajectory(me, this.wps.slice(this.legFrom, i + 1), constraintsFor(r.spec, this.routine.speed), {
+        firstIndex: this.legFrom,
+        startOut: prev?.hout ?? null,
+      });
+      this.leg = { traj, t: 0, stall: 0, over: 0 };
+    }
+    const L = this.leg;
+    const ref = sampleAt(L.traj, L.t);
+    const ex = ref.x - me.x;
+    const ez = ref.z - me.z;
+    const err = Math.hypot(ex, ez);
+    // Atrás de la referencia (BUMP, FUEL, empujón): la referencia espera en vez de escaparse
+    let k = err < 0.25 ? 1 : Math.max(0, 1 - (err - 0.25) / 0.5);
+    // Un robot justo enfrente (hacia donde avanza): frena en vez de chocar
+    for (const o of others) {
+      if (o === r) continue;
+      const ox = (blue ? o.phys.curPos.x : -o.phys.curPos.x) - me.x;
+      const oz = (blue ? o.phys.curPos.z : -o.phys.curPos.z) - me.z;
+      const d = Math.hypot(ox, oz);
+      const clear = d - o.phys.outerW - r.phys.outerW;
+      if (clear < 0.5 && (ox * ref.tx + oz * ref.tz) / (d || 1) > 0.5) k = Math.min(k, Math.max(0, clear / 0.5));
+    }
+    L.t = Math.min(L.traj.duration, L.t + dt * k);
+    // "Event markers": cambios de INTAKE de los waypoints por los que pasa (desde ~0.6 m antes)
+    while (this.evNext < i) {
+      const w = this.wps[this.evNext];
+      if (ref.wp <= this.evNext && Math.hypot(w.x - me.x, w.z - me.z) > 0.6) break;
+      if (w.intake !== undefined) this.intake = w.intake;
+      this.evNext++;
+    }
+    let vx = ref.tx * ref.v * k + ex * 3;
+    let vz = ref.tz * ref.v * k + ez * 3;
+    const vm = Math.hypot(vx, vz);
+    if (vm > r.spec.maxSpeed) {
+      vx *= r.spec.maxSpeed / vm;
+      vz *= r.spec.maxSpeed / vm;
+    }
+    // Rumbo de la trayectoria (+ lo que gira en los próximos 0.1 s); tanque: hacia donde avanza
+    const ahead = sampleAt(L.traj, L.t + 0.1);
+    let want = ref.heading;
+    let ff = (Math.atan2(Math.sin(ahead.heading - ref.heading), Math.cos(ahead.heading - ref.heading)) / 0.1) * k;
+    if (r.spec.drivetrain === 'tank') {
+      want = Math.hypot(vx, vz) > 0.3 ? headingOf(vx, vz) : me.heading;
+      ff = 0;
+      const e = Math.abs(Math.atan2(Math.sin(want - me.heading), Math.cos(want - me.heading)));
+      if (e > 0.6) {
+        vx *= 0.15;
+        vz *= 0.15;
+      }
+    }
+    const lim = Math.min(r.spec.maxOmega, 5);
+    const omega = Math.max(-lim, Math.min(lim, this.nav.omegaTo(blue ? want : want + Math.PI, 0.03) + ff));
+    cmd.drive = { vx: blue ? vx : -vx, vz: blue ? vz : -vz, omega };
+    // ¿Llegó a la parada?
+    const w = this.wps[i];
+    const end = L.traj.samples[L.traj.samples.length - 1];
+    const dEnd = Math.hypot(end.x - me.x, end.z - me.z);
+    const tol = w.climb ? 0.3 : w.shoot ? 0.35 : 0.15;
+    const hErr = w.heading === null || r.spec.drivetrain === 'tank' ? 0 : Math.abs(Math.atan2(Math.sin(end.heading - me.heading), Math.cos(end.heading - me.heading)));
+    if (L.t >= L.traj.duration) L.over += dt;
+    if (L.t >= L.traj.duration && ((dEnd < tol && hErr < 0.15) || (dEnd < tol * 2 && L.over > 1.5))) {
+      this.stage = { kind: 'act', i, t: 0 };
+      return;
+    }
+    // Vigilante: la referencia no avanza ~2 s (lo bloquean) o no llega al final → actúa o salta
+    L.stall = k < 0.2 || L.t >= L.traj.duration ? L.stall + dt : Math.max(0, L.stall - dt);
+    if (L.stall > 2.2 && !w.climb) {
+      if (w.shoot || w.intake !== undefined || w.wait) this.stage = { kind: 'act', i, t: 0 };
+      else this.next();
+    }
+  }
+
   private next(): void {
     const st = this.stage;
     const n = this.wps.length;
-    if (st.kind === 'preload') this.stage = n ? { kind: 'goto', i: 0 } : { kind: 'free' };
-    else if (st.kind === 'act' || st.kind === 'goto') this.stage = st.i + 1 < n ? { kind: 'goto', i: st.i + 1 } : { kind: 'free' };
+    if (st.kind === 'preload') this.stage = n ? { kind: 'goto', i: this.stopFrom(0) } : { kind: 'free' };
+    else if (st.kind === 'act' || st.kind === 'goto') {
+      this.legFrom = st.i + 1;
+      this.evNext = Math.max(this.evNext, st.i + 1);
+      this.stage = st.i + 1 < n ? { kind: 'goto', i: this.stopFrom(st.i + 1) } : { kind: 'free' };
+    }
     this.watch = { best: Infinity, t: 0, total: 0 };
+    this.leg = null;
     this.nav.clear();
   }
 }
