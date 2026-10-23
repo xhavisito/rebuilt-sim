@@ -116,6 +116,12 @@ scripts/screenshot.mjs     verificación con Playwright
 - **Estratega del torneo** (`Strategist.ts`, puro): pros y contras, predicción, roles, AUTO sin
   choques, si conviene ganar el AUTO (ventana final de 55 s), END GAME / TRAVERSAL y RP. El
   dashboard aplica el plan como estrategia `coach-plan` (se rehace para cada match).
+- **Estadísticas y ranking global sin servidor**: cada match terminado (no práctica ni
+  entrenamiento) se acumula en localStorage (`rebuilt-sim.stats.v1`): por jugador, por robot que usó
+  y por diseño de robot (todos los del campo). Rating Elo (inicio 1200; rival = IA por dificultad
+  950/1150/1350/1550 o 1200 si es una persona; K 48 los primeros 10 matches, luego 24). El ranking
+  global es un mensaje "retained" por jugador en `rebuilt-sim/v1/rank/<id>` del broker MQTT público
+  (opcional, requiere nombre de piloto): informal, se puede falsear o borrar; todo se valida y acota.
 
 - **Repeticiones = el modo en línea grabado**: se guarda lo mismo que el host manda a sus
   clientes (estado binario a 30 Hz con el FUEL en delta, estado lento en JSON cuando cambia,

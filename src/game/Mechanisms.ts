@@ -450,8 +450,15 @@ function launchOne(r: Robot, ctx: MechContext, kind: 'shot' | 'pass' | 'corral',
   ctx.fuel.lastTouchTime[i] = ctx.time;
   r.stats.fuelShot++;
   if (kind !== 'shot') r.stats.passes++;
+  else {
+    if (ctx.time - r.lastShotAt > CYCLE_GAP) r.stats.cycles++;
+    r.lastShotAt = ctx.time;
+  }
   ctx.onLaunch?.(r, i, kind);
 }
+
+/** Pausa sin tirar (s) que separa un ciclo del siguiente (ir por FUEL y volver a tirar). */
+export const CYCLE_GAP = 2.5;
 
 const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
 

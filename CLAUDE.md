@@ -54,6 +54,10 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   velocidad y saltos. Archivo `.rbreplay` (gzip), clips (`clipReplay`), video (MediaRecorder) e
   IndexedDB (`store.ts`). Espectador (sin robot propio): `GameSession.spectatorCam/focus` y el
   director de cámaras (`game/Director.ts`); la barra es `ui/SpectatorBar.ts`.
+- Estadísticas y ranking: `core/stats.ts` (puro: acumulados por jugador/robot, rating Elo, validación
+  del ranking global), `game/playerStats.ts` (registra cada match en localStorage al mostrar resultados),
+  `net/leaderboard.ts` (un mensaje "retained" por jugador en el broker MQTT público, sin servidor
+  propio) y `ui/StatsScreen.ts`. `Robot.stats.cycles` = ráfagas de tiro separadas por 2.5 s.
 - `pwa/` registro del service worker; `vite.config.ts` genera `sw.js` con el precache.
 - `public/robots/*.glb` modelos 3D reales de robots 2026 (assets de AdvantageScope de cada
   equipo, simplificados con `scripts/robots/`; licencias en `public/robots/LICENSES.md`).

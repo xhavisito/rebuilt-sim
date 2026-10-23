@@ -287,7 +287,7 @@ export class HostRoom {
       const cfg: SessionConfig = {
         ...s.cfg,
         net: { role: 'client', localPlayers: 1 },
-        robots: s.cfg.robots.map((rc, i) => ({ ...rc, control: i === r.robot ? { type: 'player', slot: 0 } : { type: 'none' }, plan: undefined })),
+        robots: s.cfg.robots.map((rc, i) => ({ ...rc, control: i === r.robot ? { type: 'player', slot: 0 } : { type: 'none' }, human: rc.control.type === 'player', plan: undefined })),
       };
       this.send(r, { t: 'start', cfg, robot: r.robot });
     }

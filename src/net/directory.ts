@@ -38,7 +38,7 @@ export function parseAnnouncement(topicCode: string, payload: string, now = Date
   return { code, name: String(o.name ?? '').slice(0, 24), players, started: !!o.started, ts: o.ts };
 }
 
-interface Transport {
+export interface Transport {
   open(will?: { topic: string; payload: string; retain: boolean }): Promise<void>;
   publish(topic: string, payload: string, retain: boolean): void;
   subscribe(filter: string, on: (topic: string, payload: string) => void): void;
@@ -84,7 +84,8 @@ class LocalTransport implements Transport {
   }
 }
 
-const transport = (): Transport => (new URLSearchParams(location.search).get('signal') === 'local' ? new LocalTransport() : new MqttTransport());
+/** Broker MQTT público (o BroadcastChannel con `?signal=local`); también lo usa el ranking global. */
+export const transport = (): Transport => (new URLSearchParams(location.search).get('signal') === 'local' ? new LocalTransport() : new MqttTransport());
 
 /** Host de una sala pública: la anuncia mientras esté abierta. */
 export class RoomAnnouncer {

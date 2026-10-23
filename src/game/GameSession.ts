@@ -57,6 +57,8 @@ export interface RobotSlotConfig {
   autoRoutine?: string;
   /** Plan de la estrategia de su alianza (IA), ya en el marco real de la alianza. */
   plan?: RobotPlan;
+  /** Cliente en línea: el robot lo maneja otra persona (estadísticas y rating). */
+  human?: boolean;
 }
 
 export interface SessionConfig {

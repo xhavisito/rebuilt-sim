@@ -131,6 +131,7 @@ export class Screens {
       ['strategy', 'strategyPlanner', 'strategyPlannerDesc'],
       ['auto', 'autoDesigner', 'autoDesignerDesc'],
       ['editor', 'robotEditor', 'robotEditorDesc'],
+      ['stats', 'stats', 'statsDesc'],
       ['settings', 'settings', 'settingsDesc'],
     ];
     const name = this.s.driverName || '';
@@ -241,6 +242,7 @@ export class Screens {
         else if (go === 'strategy') this.app.openStrategyPlanner();
         else if (go === 'editor') this.app.openRobotEditor();
         else if (go === 'replays') this.replays();
+        else if (go === 'stats') this.app.openStats();
         else if (go === 'spectate') {
           this.hide();
           this.app.startMatch(true);
@@ -1264,6 +1266,7 @@ const MODE_ICON: Record<string, string> = {
   // llave
   editor: svg('<path d="M14.5 5.5a4 4 0 0 0 4.9 5L21 12l-9 9-3-3 9-9-1.5-1.6a4 4 0 0 1-5-4.9l2.3 2.3 2.4-.6.6-2.4z"/>'),
   // engrane
+  stats: svg('<path d="M4 20V11M10 20V5M16 20v-7M22 20H2"/>'),
   settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M2.5 12h3M18.5 12h3M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/>'),
   go: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
 };
