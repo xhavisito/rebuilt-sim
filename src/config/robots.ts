@@ -8,6 +8,32 @@ import { loadJSON, saveJSON } from './settings';
 
 export type Drivetrain = 'swerve' | 'tank';
 export type ShooterType = 'fixed' | 'turret';
+/** Acabado de la pintura de las placas (solo el robot procedural; el CAD trae sus materiales). */
+export type PaintFinish = 'satin' | 'matte' | 'metallic' | 'candy' | 'carbon';
+/** LEDs del marco: 'status' reacciona a lo que hace el robot, 'rainbow' cicla colores. */
+export type LedMode = 'status' | 'rainbow' | 'off';
+
+/** Estética del robot (no cambia la física). */
+export interface RobotLook {
+  finish: PaintFinish;
+  /** Luz bajo el chasis: 'alliance', un color '#rrggbb' u 'off'. */
+  underglow: string;
+  leds: LedMode;
+}
+
+export const DEFAULT_LOOK: RobotLook = { finish: 'satin', underglow: 'alliance', leds: 'status' };
+export const PAINT_FINISHES: PaintFinish[] = ['satin', 'matte', 'metallic', 'candy', 'carbon'];
+export const LED_MODES: LedMode[] = ['status', 'rainbow', 'off'];
+
+/** Completa y valida la estética de una ficha (archivos, galería, robots viejos sin `look`). */
+export function resolveLook(raw: unknown): RobotLook {
+  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const finish = PAINT_FINISHES.includes(o.finish as PaintFinish) ? (o.finish as PaintFinish) : DEFAULT_LOOK.finish;
+  const leds = LED_MODES.includes(o.leds as LedMode) ? (o.leds as LedMode) : DEFAULT_LOOK.leds;
+  const u = o.underglow;
+  const underglow = u === 'alliance' || u === 'off' || (typeof u === 'string' && /^#[0-9a-f]{6}$/i.test(u)) ? u : DEFAULT_LOOK.underglow;
+  return { finish, underglow, leds };
+}
 
 export interface RobotSpec {
   id: string;
@@ -74,6 +100,8 @@ export interface RobotSpec {
     timeL3: number;
   };
   colors: { primary: string; accent: string };
+  /** Estética opcional (acabado, luz inferior, LEDs); ver `resolveLook`. */
+  look?: RobotLook;
   preload: number;
   /** Modelo 3D real del equipo (public/robots/<file>), ver scripts/robots/ y src/render/cadRigs.ts. */
   cad?: { file: string };

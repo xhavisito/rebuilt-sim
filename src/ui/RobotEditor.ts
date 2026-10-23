@@ -7,14 +7,14 @@
  */
 import * as F from '../config/field';
 import { inch } from '../config/field';
-import { allRobots, DEFAULT_ROBOT_ID, fitScalePct, fitsUnderTrench, guessCadUnit, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, type CustomCad, type RobotSpec } from '../config/robots';
+import { allRobots, DEFAULT_ROBOT_ID, fitScalePct, fitsUnderTrench, guessCadUnit, loadCustomRobots, newRobotTemplate, perimeterIn, ROBOT_PRESETS, robotById, saveCustomRobots, validateSpec, LED_MODES, PAINT_FINISHES, resolveLook, type CustomCad, type RobotSpec } from '../config/robots';
 import { decodeRobotFile, encodeRobotFile, MAX_CAD_BYTES } from '../config/robotFile';
 import { communityEnabled } from '../config/community';
 import { loadSettings } from '../config/settings';
 import { publishHubRobot } from '../net/robotHub';
 import { cadNodeNames, cadSize, customModel, deleteCadFile, getCadFile, optimizeCad, parseCad, putCadFile, registerCustomModel, sceneTriangles } from '../render/customCad';
 import { bind, esc, num, seg, select, type Opt } from './forms';
-import { t, tx } from './i18n';
+import { t, tx, type TKey } from './i18n';
 import type { Showroom } from '../render/Showroom';
 
 const UNIT_OPTS: Opt[] = [
@@ -109,6 +109,7 @@ export class RobotEditor {
           <label>L1 / L2 / L3 (s)</label><div class="row trio">${num('t1', s.climb.timeL1, 0.1, 1, 15)}${num('t2', s.climb.timeL2, 0.1, 2, 20)}${num('t3', s.climb.timeL3, 0.1, 3, 25)}</div>
           <h3>${t('colors')}</h3>
           <label>${t('colors')}</label><div class="row"><input type="color" data-c1 value="${s.colors.primary}"/><input type="color" data-c2 value="${s.colors.accent}"/></div>
+          ${this.lookSection()}
           ${this.cadSection()}
           <label></label><div class="row">
             <button class="chipbtn" data-saveas>${t('saveAsNew')}</button>
@@ -182,6 +183,9 @@ export class RobotEditor {
         t1: () => (sp.climb.timeL1 = n),
         t2: () => (sp.climb.timeL2 = n),
         t3: () => (sp.climb.timeL3 = n),
+        finish: () => (sp.look = { ...resolveLook(sp.look), finish: v as never }),
+        leds: () => (sp.look = { ...resolveLook(sp.look), leds: v as never }),
+        ug: () => (sp.look = { ...resolveLook(sp.look), underglow: v === 'color' ? this.ugColor() : String(v) }),
       };
       map[name]?.();
       if (name === 'stype') return this.render();
@@ -195,6 +199,11 @@ export class RobotEditor {
     });
     r.querySelector<HTMLInputElement>('[data-c2]')!.addEventListener('input', (e) => {
       this.spec.colors.accent = (e.target as HTMLInputElement).value;
+      this.update();
+    });
+    r.querySelector<HTMLInputElement>('[data-ugc]')!.addEventListener('input', (e) => {
+      this.spec.look = { ...resolveLook(this.spec.look), underglow: (e.target as HTMLInputElement).value };
+      r.querySelectorAll('[data-seg="ug"] button').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.v === 'color'));
       this.update();
     });
     r.querySelector('[data-saveas]')!.addEventListener('click', () => {
@@ -219,6 +228,26 @@ export class RobotEditor {
   }
 
   // ------------------------------------------------------------------ CAD propio
+
+  /** Color elegido para la luz inferior (o uno por omisión si es de alianza / apagada). */
+  private ugColor(): string {
+    return this.root.querySelector<HTMLInputElement>('[data-ugc]')?.value ?? '#00e5ff';
+  }
+
+  /** Estética: acabado de la pintura, luz bajo el chasis y LEDs. */
+  private lookSection(): string {
+    const look = resolveLook(this.spec.look);
+    const custom = look.underglow.startsWith('#');
+    const hasCad = !!(this.spec.cad || this.spec.customCad);
+    return `<h3>${t('lookTitle')}</h3>
+      <label>${t('lookFinish')}</label><div>${seg('finish', PAINT_FINISHES.map((f) => ({ value: f, label: t(`finish_${f}` as TKey) })), look.finish)}${hasCad ? `<small style="display:block;margin-top:6px;font-size:12px;opacity:.7">${t('lookFinishCad')}</small>` : ''}</div>
+      <label>${t('lookUnderglow')}</label><div class="row">${seg('ug', [
+        { value: 'alliance', label: t('lookAlliance') },
+        { value: 'color', label: t('lookCustom') },
+        { value: 'off', label: t('lookOff') },
+      ], custom ? 'color' : look.underglow)}<input type="color" data-ugc value="${custom ? look.underglow : '#00e5ff'}"/></div>
+      <label>LEDs</label>${seg('leds', LED_MODES.map((m) => ({ value: m, label: t(`leds_${m}` as TKey) })), look.leds)}`;
+  }
 
   private cadSection(): string {
     const s = this.spec;
