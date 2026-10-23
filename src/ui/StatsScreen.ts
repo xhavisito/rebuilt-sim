@@ -6,6 +6,21 @@ import type { Settings } from '../config/settings';
 import { boardEntry, newStore, RATED_MODES, sortBoard, summarize, type Agg, type BoardEntry, type BoardSort, type MatchRecord, type NamedAgg, type StatsStore } from '../core/stats';
 import { loadStats, saveStats } from '../game/playerStats';
 import { BoardBrowser, publishBoard } from '../net/leaderboard';
+import {
+  accountCode,
+  deleteAccount,
+  fetchBoard,
+  fetchRank,
+  flush,
+  pendingMatches,
+  rankAccount,
+  rankingEnabled,
+  submission,
+  submitMatch,
+  useAccountCode,
+  type SubmitResult,
+} from '../net/rankingApi';
+import type { MatchInput } from '../core/stats';
 import { esc } from './forms';
 import { t, type TKey } from './i18n';
 import { backBtn, brandbar } from './chrome';
@@ -29,10 +44,19 @@ const SORTS: Array<[BoardSort, TKey]> = [
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const f1 = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
 
-/** Publica el resumen del jugador si así lo quiere (después de cada match y al abrir la pantalla). */
-export function syncBoard(st: StatsStore, s: Settings): Promise<void> {
-  if (!s.board || !s.driverName || !st.me.matches) return Promise.resolve();
-  return publishBoard(st.id, boardEntry(st, s.driverName)).catch(() => {});
+/**
+ * Publica el resumen del jugador si así lo quiere (después de cada match y al abrir la pantalla).
+ * Con backend (Supabase) manda el match al servidor, que valida y calcula el rating global; sin
+ * backend publica el resumen local en el broker MQTT.
+ */
+export function syncBoard(st: StatsStore, s: Settings, input?: MatchInput): Promise<SubmitResult | null> {
+  if (!s.board || !s.driverName) return Promise.resolve(null);
+  if (rankingEnabled()) return submitMatch(input ? submission(input) : null, s.driverName).catch(() => null);
+  if (!st.me.matches) return Promise.resolve(null);
+  return publishBoard(st.id, boardEntry(st, s.driverName)).then(
+    () => null,
+    () => null,
+  );
 }
 
 export class StatsScreen {
@@ -43,6 +67,12 @@ export class StatsScreen {
   private board: BoardEntry[] = [];
   private boardState: 'idle' | 'connecting' | 'ok' | 'error' = 'idle';
   private confirmReset = false;
+  /** Ranking del servidor (Supabase) en lugar del broker MQTT. */
+  private readonly server = rankingEnabled();
+  private myRank: { rank: number; total: number } | null = null;
+  private confirmLeave = false;
+  private codeMsg = '';
+  private loadSeq = 0;
 
   constructor(
     private root: HTMLElement,
@@ -55,6 +85,8 @@ export class StatsScreen {
   open(): void {
     this.st = loadStats();
     this.confirmReset = false;
+    this.confirmLeave = false;
+    this.codeMsg = '';
     void syncBoard(this.st, this.settings);
     this.render();
   }
@@ -64,9 +96,40 @@ export class StatsScreen {
     this.browser?.stop();
     this.browser = null;
     this.boardState = 'idle';
+    this.loadSeq++;
+  }
+
+  /** Id del jugador en el ranking (cuenta del servidor o id anónimo del broker). */
+  private get myId(): string {
+    return this.server ? (rankAccount()?.id ?? '') : this.st.id;
+  }
+
+  /** Ranking del servidor: ya viene ordenado; se vuelve a pedir al cambiar el orden. */
+  private loadServerBoard(): void {
+    const seq = ++this.loadSeq;
+    this.boardState = 'connecting';
+    const acc = rankAccount();
+    Promise.all([fetchBoard(this.sort), acc ? fetchRank(acc.id).catch(() => null) : null]).then(
+      ([list, rank]) => {
+        if (seq !== this.loadSeq) return;
+        this.board = list;
+        this.myRank = rank;
+        this.boardState = 'ok';
+        if (this.tab === 'global') this.render();
+      },
+      () => {
+        if (seq !== this.loadSeq) return;
+        this.boardState = 'error';
+        if (this.tab === 'global') this.render();
+      },
+    );
   }
 
   private startBoard(): void {
+    if (this.server) {
+      if (this.boardState === 'idle') this.loadServerBoard();
+      return;
+    }
     if (this.browser) return;
     const b = new BoardBrowser();
     this.browser = b;
@@ -110,10 +173,12 @@ export class StatsScreen {
     r.querySelectorAll<HTMLElement>('[data-sort]').forEach((b) =>
       b.addEventListener('click', () => {
         this.sort = b.dataset.sort as BoardSort;
+        if (this.server) this.loadServerBoard();
         this.render();
       }),
     );
     r.querySelector('[data-publish]')?.addEventListener('click', () => {
+      if (this.server) return this.toggleServer();
       this.settings.board = !this.settings.board;
       this.save();
       const on = this.settings.board && !!this.settings.driverName && this.st.me.matches > 0;
@@ -121,14 +186,34 @@ export class StatsScreen {
       this.browser?.setLocal(this.st.id, on ? boardEntry(this.st, this.settings.driverName) : null);
       this.render();
     });
+    r.querySelector('[data-copycode]')?.addEventListener('click', () => {
+      const acc = rankAccount();
+      if (!acc) return;
+      navigator.clipboard?.writeText(accountCode(acc)).then(
+        () => ((this.codeMsg = t('st_codeCopied')), this.render()),
+        () => {},
+      );
+    });
+    r.querySelector('[data-usecode]')?.addEventListener('click', () => {
+      const code = r.querySelector<HTMLInputElement>('[data-codein]')?.value ?? '';
+      useAccountCode(code, this.settings.driverName).then(
+        (ok) => {
+          this.codeMsg = ok ? t('st_codeUsed') : t('st_codeBad');
+          if (ok) this.loadServerBoard();
+          this.render();
+        },
+        () => ((this.codeMsg = t('st_offline')), this.render()),
+      );
+    });
     r.querySelector('[data-reset]')?.addEventListener('click', () => {
       if (!this.confirmReset) {
         this.confirmReset = true;
         this.render();
         return;
       }
-      // borra también la entrada publicada; el id nuevo empieza de cero
-      void publishBoard(this.st.id, null).catch(() => {});
+      // borra también la entrada publicada (o la cuenta del servidor); el id nuevo empieza de cero
+      if (this.server) void deleteAccount().then(() => this.loadServerBoard(), () => {});
+      else void publishBoard(this.st.id, null).catch(() => {});
       this.browser?.setLocal(this.st.id, null);
       this.st = newStore();
       saveStats(this.st);
@@ -136,6 +221,26 @@ export class StatsScreen {
       this.render();
     });
     this.refreshNav();
+  }
+
+  /** Con backend: apagar borra la cuenta del servidor (dos toques); prender manda lo pendiente. */
+  private toggleServer(): void {
+    if (this.settings.board) {
+      if (rankAccount() && !this.confirmLeave) {
+        this.confirmLeave = true;
+        this.render();
+        return;
+      }
+      this.confirmLeave = false;
+      this.settings.board = false;
+      this.save();
+      void deleteAccount().then(() => this.loadServerBoard(), () => {});
+    } else {
+      this.settings.board = true;
+      this.save();
+      if (this.settings.driverName) void flush(this.settings.driverName).then(() => this.loadServerBoard(), () => {});
+    }
+    this.render();
   }
 
   // ------------------------------------------------------------------ pestañas
@@ -220,7 +325,9 @@ export class StatsScreen {
   private global(): string {
     const s = this.settings;
     const list = sortBoard(this.board, this.sort);
-    const mine = list.findIndex((e) => e.id === this.st.id);
+    const me = this.myId;
+    const mine = list.findIndex((e) => e.id === me);
+    const place = this.server ? (this.myRank && mine >= 0 ? this.myRank : null) : mine >= 0 ? { rank: mine + 1, total: list.length } : null;
     const status =
       this.boardState === 'connecting'
         ? `<div class="msg">${t('st_connecting')}</div>`
@@ -236,20 +343,35 @@ export class StatsScreen {
           .slice(0, 100)
           .map(
             (e, i) =>
-              `<tr class="${e.id === this.st.id ? 'me' : ''}"><td>${i + 1}</td><td>${esc(e.name)}${e.id === this.st.id ? ` <span style="color:var(--muted)">(${t('st_you')})</span>` : ''}</td>${SORTS.map(([k]) => `<td>${fmt(e, k)}</td>`).join('')}<td>${pct(e.winRate)}</td><td style="text-align:left">${e.team ? `${e.team} ` : ''}<span style="color:var(--muted)">${esc(e.robot)}</span></td></tr>`,
+              `<tr class="${e.id === me ? 'me' : ''}"><td>${i + 1}</td><td>${esc(e.name)}${e.id === me ? ` <span style="color:var(--muted)">(${t('st_you')})</span>` : ''}</td>${SORTS.map(([k]) => `<td>${fmt(e, k)}</td>`).join('')}<td>${pct(e.winRate)}</td><td style="text-align:left">${e.team ? `${e.team} ` : ''}<span style="color:var(--muted)">${esc(e.robot)}</span></td></tr>`,
           )
           .join('')}</table></div>`
       : '';
     return `
-      <div class="msg">${t('st_globalHelp')}</div>
+      <div class="msg">${t(this.server ? 'st_globalHelpServer' : 'st_globalHelp')}</div>
       <div class="panel st-pub">
-        <button class="ps-toggle ${s.board ? 'on' : ''}" data-nav data-publish role="switch" aria-checked="${s.board}"><span>${t('st_publish')}</span><i></i></button>
+        <button class="ps-toggle ${s.board ? 'on' : ''}" data-nav data-publish role="switch" aria-checked="${s.board}"><span>${this.confirmLeave ? t('st_leaveConfirm') : t('st_publish')}</span><i></i></button>
         ${s.board && !s.driverName ? `<div class="msg warn">${t('st_needName')}</div>` : ''}
-        ${mine >= 0 ? `<b>${t('st_myPlace', { n: mine + 1, m: list.length })}</b>` : ''}
+        ${place ? `<b>${t('st_myPlace', { n: place.rank, m: place.total })}</b>` : ''}
+        ${this.server ? this.accountPanel() : ''}
       </div>
       <div class="st-sort"><span>${t('st_sortBy')}</span>${SORTS.map(([k, l]) => `<button class="chipbtn ${k === this.sort ? 'on' : ''}" data-nav data-sort="${k}">${t(l)}</button>`).join('')}</div>
       ${status}
       ${table}`;
+  }
+
+  /** Cuenta del servidor: matches pendientes y código para usarla en otro dispositivo. */
+  private accountPanel(): string {
+    const acc = rankAccount();
+    const pending = pendingMatches();
+    return `
+      ${pending ? `<div class="msg warn">${t('st_pending', { n: pending })}</div>` : ''}
+      <details class="st-code"><summary>${t('st_account')}</summary>
+        <div class="msg">${t('st_codeHelp')}</div>
+        ${acc ? `<div class="st-coderow"><code>${esc(accountCode(acc))}</code><button class="chipbtn" data-nav data-copycode>${t('st_copyCode')}</button></div>` : `<div class="msg">${t('st_noAccount')}</div>`}
+        <div class="st-coderow"><input type="text" data-codein placeholder="RBSIM1-…" autocomplete="off" spellcheck="false"/><button class="chipbtn" data-nav data-usecode>${t('st_useCode')}</button></div>
+        ${this.codeMsg ? `<div class="msg">${esc(this.codeMsg)}</div>` : ''}
+      </details>`;
   }
 
   private history(): string {

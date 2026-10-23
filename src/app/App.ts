@@ -897,7 +897,9 @@ export class App {
     const saved = recordSession(s);
     if (saved?.rec) {
       if (saved.rec.delta) this.toast(t('st_ratingToast', { r: saved.rec.rating, d: `${saved.rec.delta > 0 ? '+' : ''}${saved.rec.delta}` }), saved.rec.delta > 0 ? 'good' : '');
-      void syncBoard(saved.store, this.settings);
+      void syncBoard(saved.store, this.settings, saved.input).then((g) => {
+        if (g?.delta) this.toast(t('st_globalToast', { r: g.rating, d: `${g.delta > 0 ? '+' : ''}${g.delta}` }), g.delta > 0 ? 'good' : '');
+      });
     }
     const inTournament = !!this.tournamentCtx;
     // (en línea no se ve aquí: el host sigue con la sala; queda en Repeticiones)
