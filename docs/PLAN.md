@@ -299,6 +299,14 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     robot llegado por la red) se dibuja el diseño del simulador. Los archivos que ningún robot
     guardado usa se borran al arrancar. El robot se exporta como `.rebuilt-robot.json` (ficha +
     GLB en base64, `src/config/robotFile.ts`).
+30. **Galería de robots de la comunidad**: GitHub Pages es estático, así que los robots publicados
+    van a un proyecto gratuito de Supabase (tabla `robots` + bucket público `robots`; permisos en
+    `docs/comunidad.sql`, pasos en `docs/comunidad.md`). Cliente mínimo con fetch
+    (`src/net/robotHub.ts`), activo solo si se compila con `VITE_SUPABASE_URL/ANON_KEY`. Las fichas
+    se validan al leer como un archivo importado (`sanitizeSpec`); el CAD solo se baja del bucket
+    público de la galería (`hubCadUrlAllowed`). En línea, el host y los clientes bajan el CAD de
+    los robots de la galería antes de empezar (hasta 5 s; si no, diseño del simulador). Borrar
+    exige el token guardado al publicar; con 3 reportes el robot deja de listarse.
 
 ## Rendimiento medido (Fase 6)
 - Escritorio (Intel Arc integrado, Alta/Ultra): 60 FPS, ~3–9 ms de simulación con 6 robots.

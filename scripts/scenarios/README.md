@@ -16,6 +16,7 @@ el estado relevante (y capturas en `shots/`).
 | `tournament.mjs` | Torneo de 32 equipos: selección de 8 alianzas (eres capitán), bracket de doble eliminación y Final al mejor de 3 hasta el campeón |
 | `auto-path.mjs` | Autónomo programable: importa una ruta suave, arrastra/deshace en el lienzo, vista previa y el robot sigue la ruta en AUTO |
 | `robot-editor.mjs` | Taller: importar un CAD propio (GLB), ajustar ejes/escala/piezas móviles, guardarlo (vuelve tras recargar), jugar un match con él y exportar / importar el robot |
+| `community.mjs` | Galería de la comunidad contra un Supabase simulado: publicar con CAD, verlo y descargarlo desde otro navegador, jugar con él, recargar sin red, reportar y borrar |
 | `online.mjs` | En línea con 2 pestañas (WebRTC real, señalización local): sala pública en la lista, lobby, match, controles remotos, marcador y la IA toma al que se va |
 | `gamepad.mjs` | Control simulado: pantalla de Control navegable con el D-pad, reasignar (intercambio), manejar con el stick y vibración al tirar (gatillo) y al recoger FUEL |
 

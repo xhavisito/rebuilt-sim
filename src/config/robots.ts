@@ -113,6 +113,11 @@ export interface CustomCad {
   turretNode?: string;
   /** Nodo del modelo que sale con la intake (se desliza hacia el frente `intake.extensionIn`). */
   intakeNode?: string;
+  /**
+   * Robot de la galería de la comunidad: GLB público (src/net/robotHub.ts). Si el archivo no está
+   * en el dispositivo (p. ej. el robot de otro jugador en línea) se descarga de ahí.
+   */
+  url?: string;
 }
 
 export const CAD_UNITS = [1, 0.01, 0.001, 0.0254] as const;

@@ -48,6 +48,8 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   TURN opcional al compilar (`VITE_TURN_URL/USER/PASS`, ver `config/net.ts`).
   Salas públicas: anuncio "retained" por sala en un broker MQTT público (`net/directory.ts`,
   cliente mínimo en `net/mqtt.ts`); las privadas solo con código.
+  Galería de robots de la comunidad: Supabase gratuito (`net/robotHub.ts`, `docs/comunidad.md`),
+  activa si se compila con `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 - `replay/` repeticiones: `SessionTap` graba a paso fijo lo mismo que el host manda en línea
   (snapshots binarios de net/protocol, 30 Hz, cuadro clave cada 2 s; estado lento; eventos);
   `ReplayPlayer` es un `SessionReplica` que lo dibuja (como el cliente en línea) con play/pausa,
