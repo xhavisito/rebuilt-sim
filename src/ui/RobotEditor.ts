@@ -15,6 +15,8 @@ import { publishHubRobot } from '../net/robotHub';
 import { cadNodeNames, cadSize, customModel, deleteCadFile, getCadFile, optimizeCad, parseCad, putCadFile, registerCustomModel, sceneTriangles } from '../render/customCad';
 import { bind, esc, num, seg, select, type Opt } from './forms';
 import { t, tx, type TKey } from './i18n';
+import { backBtn, brandbar, ic } from './chrome';
+import { CANVAS_FONT, FIELD_PAL } from './fieldStyle';
 import type { Showroom } from '../render/Showroom';
 
 const UNIT_OPTS: Opt[] = [
@@ -62,7 +64,7 @@ export class RobotEditor {
     if (!list.some((r) => r.id === s.id)) opts.push({ value: s.id, label: `${s.name} *` }); // nuevo, sin guardar
     opts.push({ value: 'new', label: `＋ ${t('newRobot')}` });
     this.root.innerHTML = `<div class="inner">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-hub>🌐 ${t('hub_open')}</button><button class="chipbtn" data-back>← ${t('back')}</button></div>
+      ${brandbar('2026 REBUILT', `<button class="chipbtn" data-hub>${ic.globe}${t('hub_open')}</button>${backBtn('data-back')}`)}
       <h1>${t('robotEditor')}</h1>
       <div class="split">
         <div class="panel editprev" style="display:flex;flex-direction:column;gap:10px"><div class="preview" data-preview style="height:300px"></div><canvas data-schem style="width:100%;height:auto;display:block"></canvas><div data-valid style="display:flex;flex-direction:column;gap:4px;margin-top:8px"></div></div>
@@ -117,10 +119,10 @@ export class RobotEditor {
             <button class="chipbtn on" data-use>${t('useRobot')}</button>
           </div>
           <label></label><div class="row">
-            <button class="chipbtn" data-export>⬇ ${t('exportRobot')}</button>
-            <button class="chipbtn" data-import>⬆ ${t('importRobot')}</button>
+            <button class="chipbtn" data-export>${ic.download}${t('exportRobot')}</button>
+            <button class="chipbtn" data-import>${ic.upload}${t('importRobot')}</button>
             <input type="file" data-robotfile accept=".json,application/json" hidden/>
-            ${communityEnabled() ? `<button class="chipbtn" data-publish>🌐 ${t('hub_publish')}</button>` : ''}
+            ${communityEnabled() ? `<button class="chipbtn" data-publish>${ic.globe}${t('hub_publish')}</button>` : ''}
           </div>
           <label></label><div data-filemsg></div>
         </div>
@@ -253,7 +255,7 @@ export class RobotEditor {
     const s = this.spec;
     const c = s.customCad;
     const input = `<input type="file" data-cadfile accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden/>`;
-    const importBtn = `<button class="chipbtn" data-cadimport>⬆ ${t('cadImport')}</button>`;
+    const importBtn = `<button class="chipbtn" data-cadimport>${ic.upload}${t('cadImport')}</button>`;
     let body: string;
     if (!c) {
       body = `<label></label><div class="msg">${s.cad ? t('cadTeam') : t('cadNoModel')} ${t('cadHint')}</div>
@@ -270,7 +272,7 @@ export class RobotEditor {
         <label>${t('cadOffset')}</label><div class="row trio">${num('cox', c.offsetIn[0], 0.25, -30, 30)}${num('coy', c.offsetIn[1], 0.25, -30, 30)}${num('coz', c.offsetIn[2], 0.25, -30, 30)}</div>
         <label>${t('cadTurret')}</label>${select('cturret', nodes, c.turretNode ?? '')}
         <label>${t('cadIntake')}</label>${select('cintake', nodes, c.intakeNode ?? '')}
-        <label></label><div class="row"><button class="chipbtn" data-cadmeasure>📏 ${t('cadMeasure')}</button></div>`;
+        <label></label><div class="row"><button class="chipbtn" data-cadmeasure>${ic.ruler}${t('cadMeasure')}</button></div>`;
     }
     return `<h3>${t('cadModel')}</h3>${body}<label></label><div data-cadmsg></div>`;
   }
@@ -475,16 +477,24 @@ export class RobotEditor {
     c.width = Math.round(w * (window.devicePixelRatio || 1));
     c.height = Math.round(c.width * 0.62);
     const g = c.getContext('2d')!;
-    g.fillStyle = '#111216';
+    const P = FIELD_PAL;
+    g.fillStyle = P.bg;
     g.fillRect(0, 0, c.width, c.height);
     const S = c.width / 100; // px por pulgada (vista superior ocupa ~la mitad)
+    // retícula de plano cada 4 in
+    g.strokeStyle = P.grid;
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = 0; x < c.width; x += 4 * S) (g.moveTo(x, 0), g.lineTo(x, c.height));
+    for (let y = 0; y < c.height; y += 4 * S) (g.moveTo(0, y), g.lineTo(c.width, y));
+    g.stroke();
     const bt = s.bumperIn;
     // Vista superior
     const ox = c.width * 0.27;
     const oy = c.height * 0.5;
     const L = s.lengthIn;
     const W = s.widthIn;
-    g.fillStyle = '#1e88e5';
+    g.fillStyle = P.blue;
     g.fillRect(ox - (L / 2 + bt) * S, oy - (W / 2 + bt) * S, (L + 2 * bt) * S, (W + 2 * bt) * S);
     g.fillStyle = s.colors.primary;
     g.fillRect(ox - (L / 2) * S, oy - (W / 2) * S, L * S, W * S);
@@ -493,14 +503,14 @@ export class RobotEditor {
     g.setLineDash([4, 4]);
     g.strokeRect(ox + (L / 2) * S, oy - (W / 2) * S, 12 * S, W * S);
     g.setLineDash([]);
-    g.fillStyle = s.intake.extensionIn > 12 ? '#e53935' : s.colors.accent;
+    g.fillStyle = s.intake.extensionIn > 12 ? P.red : s.colors.accent;
     g.fillRect(ox + (L / 2) * S, oy - (s.intake.widthIn / 2) * S, s.intake.extensionIn * S, s.intake.widthIn * S * 0.12 + 2);
     g.fillRect(ox + (L / 2 + s.intake.extensionIn - 1) * S, oy - (s.intake.widthIn / 2) * S, 1 * S, s.intake.widthIn * S);
     // Vista lateral
     const sx = c.width * 0.62;
     const gy = c.height * 0.85;
     const HS = c.height / 40; // px por pulgada vertical
-    g.strokeStyle = '#9aa6b8';
+    g.strokeStyle = P.tower;
     g.beginPath();
     g.moveTo(sx - 30 * HS * 0.5, gy);
     g.lineTo(c.width - 8, gy);
@@ -515,13 +525,13 @@ export class RobotEditor {
       g.stroke();
       g.setLineDash([]);
       g.fillStyle = color;
-      g.font = `${Math.round(HS * 1.3)}px sans-serif`;
+      g.font = `600 ${Math.round(HS * 1.3)}px ${CANVAS_FONT}`;
       g.fillText(label, c.width - 8 - g.measureText(label).width, lineY(inch) - 3);
     };
     const bodyW = Math.min(L * HS * 0.8, c.width - sx - 30);
     g.fillStyle = s.colors.primary;
     g.fillRect(sx, lineY(s.heightIn), bodyW, (s.heightIn - 7) * HS);
-    g.fillStyle = '#1e88e5';
+    g.fillStyle = P.blue;
     g.fillRect(sx - 6, lineY(7), bodyW + 12, 4.5 * HS);
     g.fillStyle = '#111';
     for (const k of [0.15, 0.85]) {
@@ -530,10 +540,10 @@ export class RobotEditor {
       g.fill();
     }
     // límites encima del robot para que se lean
-    dash(30, '30 in (R107)', '#e57373');
-    dash(F.TRENCH_CLEAR_HEIGHT / F.IN, 'TRENCH 22.25 in', '#ffd54f');
+    dash(30, '30 in (R107)', '#ff8a83');
+    dash(F.TRENCH_CLEAR_HEIGHT / F.IN, 'TRENCH 22.25 in', P.fuel);
     g.fillStyle = '#fff';
-    g.font = `bold ${Math.round(S * 3)}px sans-serif`;
+    g.font = `700 ${Math.round(S * 3)}px ${CANVAS_FONT}`;
     g.fillText(String(s.teamNumber), ox - S * 6, oy + S * 1);
   }
 }

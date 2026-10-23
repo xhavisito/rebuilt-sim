@@ -3,8 +3,7 @@
  * "Power Up – Linear Popping", "Steam Whistle" se tocan con las grabaciones reales del
  * campo (`public/sounds/*.wav`, ver `public/sounds/LICENSES.md`); si un archivo no carga, se usa la
  * versión sintetizada (también "Foghorn", que no tiene grabación).
- * Más efectos, un loop de música ligero y voces (SpeechSynthesis).
- * Buses de volumen separados: música, efectos y voces.
+ * Más efectos y voces (SpeechSynthesis). Volumen separado para efectos y voces; sin música.
  */
 import type { Settings } from '../config/settings';
 
@@ -25,11 +24,7 @@ export class AudioEngine {
   private master!: GainNode;
   private out!: DynamicsCompressorNode;
   private sfxBus!: GainNode;
-  private musicBus!: GainNode;
   private noiseBuf: AudioBuffer | null = null;
-  private musicTimer: number | null = null;
-  private musicStep = 0;
-  private nextNoteTime = 0;
   private lastHit = 0;
   private sampleData = new Map<FieldSound, Promise<ArrayBuffer | null>>();
   private samples = new Map<FieldSound, AudioBuffer>();
@@ -64,9 +59,7 @@ export class AudioEngine {
     this.master.connect(comp).connect(ctx.destination);
     this.out = comp;
     this.sfxBus = ctx.createGain();
-    this.musicBus = ctx.createGain();
     this.sfxBus.connect(this.master);
-    this.musicBus.connect(this.master);
     const len = ctx.sampleRate;
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
@@ -114,7 +107,6 @@ export class AudioEngine {
     const a = this.settings.audio;
     this.master.gain.value = a.master;
     this.sfxBus.gain.value = a.sfx;
-    this.musicBus.gain.value = a.music * 0.5;
   }
 
   // ------------------------------------------------------------------ primitivas
@@ -306,45 +298,6 @@ export class AudioEngine {
     const t = this.now();
     if (t === null) return;
     this.tone(high ? 1200 : 800, t, 0.08, { wave: 'square', gain: 0.05, filter: 2500 });
-  }
-
-  // ------------------------------------------------------------------ música
-  startMusic(): void {
-    const ctx = this.ctx;
-    if (!ctx || this.musicTimer !== null) return;
-    this.musicStep = 0;
-    this.nextNoteTime = ctx.currentTime + 0.1;
-    this.musicTimer = window.setInterval(() => this.scheduleMusic(), 50);
-  }
-
-  stopMusic(): void {
-    if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
-    this.musicTimer = null;
-  }
-
-  private scheduleMusic(): void {
-    const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
-    const stepDur = 60 / 124 / 4; // semicorcheas a 124 BPM
-    // progresión: Am – F – C – G
-    const roots = [110, 87.31, 130.81, 98];
-    while (this.nextNoteTime < ctx.currentTime + 0.2) {
-      const s = this.musicStep;
-      const bar = Math.floor(s / 16) % 4;
-      const root = roots[bar];
-      const t = this.nextNoteTime;
-      if (s % 4 === 0) this.tone(root, t, stepDur * 3.5, { wave: 'sawtooth', gain: 0.11, filter: 420, bus: this.musicBus });
-      if (s % 2 === 0) {
-        const third = bar === 0 ? 3 : 4; // La menor; los demás acordes mayores
-        const arp = [0, 7, 12, 7, third, 7, 12, 12 + third];
-        const semi = arp[(s / 2) % arp.length];
-        this.tone(root * 4 * Math.pow(2, semi / 12), t, stepDur * 1.6, { wave: 'triangle', gain: 0.035, bus: this.musicBus });
-      }
-      if (s % 4 === 2) this.noise(t, 0.04, { gain: 0.03, filter: 8000, type: 'highpass', bus: this.musicBus, decay: true });
-      if (s % 8 === 0) this.tone(55, t, 0.15, { wave: 'sine', to: 35, gain: 0.25, bus: this.musicBus });
-      this.nextNoteTime += stepDur;
-      this.musicStep++;
-    }
   }
 
   // ------------------------------------------------------------------ voz

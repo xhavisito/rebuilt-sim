@@ -149,6 +149,19 @@ export class Match {
     return f;
   }
 
+  /**
+   * El robot llega al match con una YELLOW CARD de un match anterior del evento: la siguiente
+   * YELLOW se convierte en RED (§6.6.1, YELLOW CARDS acumulables).
+   */
+  carryYellow(robot: number): void {
+    this.yellows.set(robot, Math.max(1, this.yellows.get(robot) ?? 0));
+  }
+
+  /** ¿Trae (o recibió) una YELLOW CARD? */
+  hasYellow(robot: number): boolean {
+    return (this.yellows.get(robot) ?? 0) > 0;
+  }
+
   /** YELLOW + YELLOW = RED (§6.6.1). RED → DESCALIFICADO. */
   addCard(card: CardType, offender: Alliance, robot: number, rule: RuleCode): CardRecord {
     let c: CardType = card;

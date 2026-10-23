@@ -34,7 +34,7 @@ await E(() => { const s = window.app.session; s.match.t = 40; window.__climb3 = 
 await page.waitForTimeout(300);
 // cámara broadcast: W = alejarse de la cámara = hacia −Z (el barandal del fondo)
 await page.keyboard.down('KeyW'); await page.waitForTimeout(7200); await page.keyboard.up('KeyW');
-console.log('PIN', await E(() => { const s = window.app.session; return JSON.stringify({ fouls: s.match.fouls.map((f) => f.rule + ':' + f.severity), pins: s.referee.activePins().map((p) => p.seconds.toFixed(1)), z1: s.robots[1].phys.curPos.z.toFixed(2) }); }));
+console.log('PIN', await E(() => { const s = window.app.session; return JSON.stringify({ fouls: s.match.fouls.map((f) => f.rule + ':' + f.severity), pins: s.referee.activePins().map((p) => p.seconds.toFixed(1)), flags: [...document.querySelectorAll('.ref-flag')].filter((e) => e.style.display !== 'none').map((e) => e.querySelector('b').textContent), z1: s.robots[1].phys.curPos.z.toFixed(2) }); }));
 await page.screenshot({ path: 'shots/p4-pin.png' });
 // END GAME: el rojo 0 trepa su TOWER; el jugador lo toca → G420 + L3
 await E(() => { const s = window.app.session; s.match.t = 140; const r = s.robots[2]; r.phys.teleport(8.27 - 1.07 - r.phys.outerL - 0.05, -0.29, 0); const f = s.runClimb.bind(s); s.runClimb = (rb, dt) => { if (rb === r) rb.cmd.climbUp = true; f(rb, dt); }; });

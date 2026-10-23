@@ -175,6 +175,17 @@ describe('puntuación del match', () => {
     expect(m.disqualified.has(2)).toBe(true);
     expect(m.rp('red', true).total).toBe(0);
   });
+
+  it('una YELLOW CARD de un match anterior convierte la siguiente en RED', () => {
+    const m = new Match('regional', new Rng(1));
+    m.carryYellow(4);
+    m.start();
+    expect(m.hasYellow(4)).toBe(true);
+    expect(m.cards.length).toBe(0); // la que trae no se vuelve a anotar
+    expect(m.addCard('YELLOW', 'blue', 4, 'G418').card).toBe('RED');
+    expect(m.disqualified.has(4)).toBe(true);
+    expect(m.addCard('YELLOW', 'blue', 5, 'G418').card).toBe('YELLOW');
+  });
 });
 
 describe('TOWER (§6.5.2)', () => {

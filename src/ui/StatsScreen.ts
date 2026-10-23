@@ -8,6 +8,7 @@ import { loadStats, saveStats } from '../game/playerStats';
 import { BoardBrowser, publishBoard } from '../net/leaderboard';
 import { esc } from './forms';
 import { t, type TKey } from './i18n';
+import { backBtn, brandbar } from './chrome';
 
 type Tab = 'me' | 'robots' | 'global' | 'history';
 const TABS: Array<[Tab, TKey]> = [
@@ -93,7 +94,7 @@ export class StatsScreen {
     if (this.tab === 'global') this.startBoard();
     const body = this.tab === 'me' ? this.me() : this.tab === 'robots' ? this.robots() : this.tab === 'global' ? this.global() : this.history();
     this.root.innerHTML = `<div class="inner stats">
-      <div class="brandbar"><div class="brand">REBUILT <span>SIM</span></div><div class="ctx">2026 REBUILT</div><div class="grow"></div><button class="chipbtn" data-nav data-back>← ${t('back')}</button></div>
+      ${brandbar('2026 REBUILT', backBtn('data-nav data-back'))}
       <h1>${t('st_title')}</h1>
       <div class="st-tabs" role="tablist">${TABS.map(([k, l]) => `<button class="chipbtn ${k === this.tab ? 'on' : ''}" role="tab" aria-selected="${k === this.tab}" data-nav data-tab="${k}">${t(l)}</button>`).join('')}</div>
       ${body}

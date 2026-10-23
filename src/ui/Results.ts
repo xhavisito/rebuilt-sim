@@ -7,6 +7,7 @@ import { RULES } from '../core/fouls';
 import type { Alliance } from '../core/types';
 import type { AllianceResult, MatchResults } from '../game/results';
 import { getLang, t } from './i18n';
+import { ic } from './chrome';
 
 /** Colores validados (dataviz validate_palette, superficie oscura). */
 const SERIES: Record<Alliance, string> = { red: '#ef5350', blue: '#2f8fe0' };
@@ -139,7 +140,7 @@ export function renderResults(res: MatchResults, tournament = false, replay = fa
     <ul class="fouls">${fouls}${cards}</ul>
     <div class="actions">
       ${tournament ? `<button data-a="continue" class="primary">${t('continueTournament')}</button>` : `<button data-a="rematch" class="primary">${t('rematch')}</button>`}
-      ${replay ? `<button data-a="replay">▶ ${t('rp_watch')}</button><button data-a="replayFile">${t('rp_saveFile')}</button>` : ''}
+      ${replay ? `<button data-a="replay">${ic.play}${t('rp_watch')}</button><button data-a="replayFile">${t('rp_saveFile')}</button>` : ''}
       ${tournament ? '' : `<button data-a="menu">${t('quit')}</button>`}
     </div>
   </div>`;
