@@ -75,9 +75,13 @@ export class Robot {
   readonly climb = new ClimbState();
   /** Nivel/puntos de TOWER evaluados (para resultados). */
   towerResult = { auto: 0, teleop: 0, level: 0 };
-  /** Estadísticas del match (MVP). */
-  /** Estadísticas del match (resultados y ranking por categoría del torneo). */
-  stats = { fuelScored: 0, fuelShot: 0, towerPts: 0, fouls: 0, intaked: 0, passes: 0, distance: 0, defenseSec: 0 };
+  /**
+   * Estadísticas del match (resultados, ranking por categoría del torneo y estadísticas del
+   * jugador). `cycles` = ráfagas de tiro al HUB separadas por más de `CYCLE_GAP` s sin tirar.
+   */
+  stats = { fuelScored: 0, fuelShot: 0, towerPts: 0, fouls: 0, intaked: 0, passes: 0, distance: 0, defenseSec: 0, cycles: 0 };
+  /** Último tiro al HUB (s de simulación), para contar los ciclos. */
+  lastShotAt = -Infinity;
 
   constructor(
     pw: PhysicsWorld,

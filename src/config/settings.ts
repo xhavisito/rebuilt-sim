@@ -20,6 +20,8 @@ export interface Settings {
   /** Drive coach en los matches: mensajes en pantalla y voz. */
   coach: { show: boolean; voice: boolean };
   colorblind: boolean;
+  /** Publicar el resumen de estadísticas en el ranking global (necesita nombre de piloto). */
+  board: boolean;
   drive: {
     fieldRelative: boolean;
     mouseAim: boolean;
@@ -75,6 +77,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cameraShake: true,
   coach: { show: true, voice: true },
   colorblind: false,
+  board: true,
   drive: { fieldRelative: true, mouseAim: false, autoAim: true, shootOnMove: true, aimGuide: true },
   pad: {
     deadzone: 0.12,

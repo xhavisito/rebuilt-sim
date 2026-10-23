@@ -32,6 +32,8 @@ import { FLAG_SHOT, FuelState } from '../physics/FuelSystem';
 import { formatTimer, timerSeconds } from '../core/clock';
 import { loadJSON, saveJSON } from '../config/settings';
 import { buildResults } from '../game/results';
+import { recordSession } from '../game/playerStats';
+import { StatsScreen, syncBoard } from '../ui/StatsScreen';
 import { RULES } from '../core/fouls';
 import { Hud, PHASE_LABEL, type PlayerHudInfo } from '../ui/Hud';
 import { esc } from '../ui/forms';
@@ -84,6 +86,7 @@ export class App {
   private plannerBack: () => void = () => this.screens.main();
   private editor: RobotEditor;
   private tourney: TournamentScreen;
+  private statsScreen: StatsScreen;
   private menuCam = new THREE.PerspectiveCamera(50, 16 / 9, 0.1, 200);
   private menuAngle = 0;
   /** Evento `beforeinstallprompt` (PWA) guardado para el botón "Instalar app". */
@@ -179,6 +182,13 @@ export class App {
       this.screens.setup('match');
     });
     this.tourney = new TournamentScreen(this.screens.root, this.settings, back, (tt, m, watch) => this.playTournamentMatch(tt, m, watch));
+    this.statsScreen = new StatsScreen(
+      this.screens.root,
+      this.settings,
+      () => this.closeStats(),
+      () => this.save(),
+      () => this.screens.nav?.refresh(),
+    );
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       this.installPrompt = e as Event & { prompt: () => Promise<void> };
@@ -266,6 +276,18 @@ export class App {
   openTournament(): void {
     this.openScreen();
     this.tourney.open();
+  }
+
+  /** Estadísticas del jugador y ranking global. */
+  openStats(): void {
+    this.openScreen();
+    this.screens.prepare(() => this.closeStats());
+    this.statsScreen.open();
+  }
+
+  private closeStats(): void {
+    this.statsScreen.close();
+    this.screens.main();
   }
 
   relabel(): void {
@@ -837,6 +859,12 @@ export class App {
       const d = this.tap.finish(false, __APP_VERSION__);
       this.lastReplay = d;
       if (d) this.storeReplay(d);
+    }
+    // Estadísticas del jugador y rating (una vez por match); se publican si así lo quiere
+    const saved = recordSession(s);
+    if (saved?.rec) {
+      if (saved.rec.delta) this.toast(t('st_ratingToast', { r: saved.rec.rating, d: `${saved.rec.delta > 0 ? '+' : ''}${saved.rec.delta}` }), saved.rec.delta > 0 ? 'good' : '');
+      void syncBoard(saved.store, this.settings);
     }
     const inTournament = !!this.tournamentCtx;
     // (en línea no se ve aquí: el host sigue con la sala; queda en Repeticiones)
