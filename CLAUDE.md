@@ -60,6 +60,9 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   del ranking global), `game/playerStats.ts` (registra cada match en localStorage al mostrar resultados),
   `net/leaderboard.ts` (un mensaje "retained" por jugador en el broker MQTT público, sin servidor
   propio) y `ui/StatsScreen.ts`. `Robot.stats.cycles` = ráfagas de tiro separadas por 2.5 s.
+  Con Supabase configurado (mismo proyecto de la galería) el ranking global va por `net/rankingApi.ts`
+  y `docs/ranking.sql`: cuenta sin correo (id + token, código para otro dispositivo), el servidor
+  valida cada match y calcula el rating. `npm run test:sql` prueba el SQL en un Postgres local.
 - `pwa/` registro del service worker; `vite.config.ts` genera `sw.js` con el precache.
 - `public/robots/*.glb` modelos 3D reales de robots 2026 (assets de AdvantageScope de cada
   equipo, simplificados con `scripts/robots/`; licencias en `public/robots/LICENSES.md`).
