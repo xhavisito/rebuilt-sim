@@ -713,6 +713,8 @@ export class Screens {
         <label>${t('colorblind')}</label>${seg('cb', yn, onoff(s.colorblind))}
         <h3>${t('graphics')}</h3>
         <label>${t('quality')}</label>${seg('quality', q, s.quality)}
+        <label>${t('dynamicRes')}</label>${seg('dynres', yn, onoff(s.dynamicRes))}
+        <label>${t('fpsCap')}</label>${seg('fpscap', [{ value: '0', label: t('fpsCapOff') }, { value: '60', label: '60' }, { value: '30', label: t('fpsCap30') }], String(s.fpsCap))}
         <label>${t('showFps')}</label>${seg('fps', yn, onoff(s.showFps))}
         <h3>${t('driving')}</h3>
         <label>${t('fieldRelative')}</label>${seg('fieldrel', yn, onoff(s.drive.fieldRelative))}
@@ -768,6 +770,13 @@ export class Screens {
         case 'quality':
           s.quality = v as Settings['quality'];
           this.app.applyQuality();
+          break;
+        case 'dynres':
+          s.dynamicRes = b;
+          if (!b) this.app.renderer.setDynScale(1);
+          break;
+        case 'fpscap':
+          s.fpsCap = Number(v) as Settings['fpsCap'];
           break;
         case 'fps':
           s.showFps = b;

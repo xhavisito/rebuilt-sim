@@ -34,6 +34,10 @@ async function boot(): Promise<void> {
     app.applyQuality();
   }
   if (params.get('fps') === '1') app.settings.showFps = true;
+  // Banco de rendimiento (`npm run perf`): medir sin resolución dinámica ni límite de FPS
+  if (params.get('dynres') === '0') app.settings.dynamicRes = false;
+  const cap = Number(params.get('fpscap'));
+  if (cap === 0 || cap === 30 || cap === 60) if (params.has('fpscap')) app.settings.fpsCap = cap;
   const diff = params.get('difficulty');
   if (isDifficulty(diff)) app.settings.match.difficulty = diff;
   // Dificultad por alianza (banco de pruebas IA vs IA: `npm run ai-bench`)

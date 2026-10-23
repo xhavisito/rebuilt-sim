@@ -14,6 +14,10 @@ export interface Settings {
   /** Nombre del piloto (menú principal). */
   driverName: string;
   quality: Quality | 'auto';
+  /** Baja la resolución de render cuando no se alcanzan los FPS (Renderer.dynScale). */
+  dynamicRes: boolean;
+  /** Límite de FPS (0 = el de la pantalla); 30 ahorra batería en celulares. */
+  fpsCap: 0 | 30 | 60;
   showFps: boolean;
   camera: CameraMode;
   cameraShake: boolean;
@@ -72,6 +76,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lang: 'es',
   driverName: '',
   quality: 'auto',
+  dynamicRes: true,
+  fpsCap: 0,
   showFps: false,
   camera: 'third',
   cameraShake: true,

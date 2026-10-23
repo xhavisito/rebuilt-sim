@@ -25,7 +25,14 @@ UI en español (México) por defecto + inglés; términos del juego siempre en i
   ambas alianzas, una dificultad por alianza): victorias, puntos, faltas y tiempo defendiendo.
   `--tweakA '{"defense":{"willing":0}}'` prueba variantes del perfil (`src/ai/difficulty.ts`).
   Requiere `npm run build`; en la nube, `CHROMIUM_PATH=/opt/pw-browsers/chromium`.
+- `npm run perf -- --qualities low,medium,high --only mobile --throttle 4` — banco de rendimiento:
+  match en espectador por calidad; FPS, peor cuadro, ms de sim/render, draw calls y triángulos.
+  Requiere `npm run build`; en la nube (SwiftShader) compara entre versiones, no en absoluto.
 - FPS/tiempos en pantalla: tecla F3 o `?fps=1` (muestra ms de simulación y de render).
+  `?quality=low|medium|high|ultra`, `?dynres=0` (sin resolución dinámica), `?fpscap=30`.
+- Calidad (`render/Renderer.ts` QUALITY): en baja/media los CAD de robots se simplifican y fusionan
+  por parte (`render/robotLod.ts`), baja quita IBL y el blur de la UI; "Auto" adivina por equipo y
+  baja de nivel midiendo FPS; la resolución dinámica (`Renderer.dynScale`) la ajusta App.
 - Node está instalado en `~/.local/bin` (v24); si `node` no aparece, agrega
   `~/.local/bin` al PATH.
 
