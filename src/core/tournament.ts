@@ -98,6 +98,28 @@ export interface Tournament {
    * dashboard; ver src/ai/PhasePlan.ts). Sin entrada = la sugerencia del drive coach.
    */
   matchPlans?: Record<string, unknown[]>;
+  /** Equipos (índice en `teams`) con YELLOW CARD en Qualifications (§6.6.1). */
+  yellows?: number[];
+}
+
+/**
+ * YELLOW CARDS del torneo (§6.6.1): se acumulan de un match de Qualifications al siguiente (la
+ * segunda es RED). Supuesto (verificar con TU22 §6.6/§11): no pasan a los Playoffs.
+ * Devuelve la posición (0–5, rojo y luego azul) de los robots que llegan con YELLOW CARD.
+ */
+export function carriedYellows(t: Tournament, m: TMatch): number[] {
+  if (m.kind !== 'qual') return [];
+  const has = new Set(t.yellows ?? []);
+  return [...m.red, ...m.blue].flatMap((team, k) => (has.has(team) ? [k] : []));
+}
+
+/** Anota a los equipos que recibieron tarjeta en un match de Qualifications (`carded`: posición 0–5). */
+export function recordCards(t: Tournament, m: TMatch, carded: number[]): void {
+  if (m.kind !== 'qual' || !carded.length) return;
+  const ids = [...m.red, ...m.blue];
+  const set = new Set(t.yellows ?? []);
+  for (const k of carded) if (ids[k] !== undefined) set.add(ids[k]);
+  t.yellows = [...set];
 }
 
 /** Calendario: cada equipo juega `perTeam` matches; se evita repetir compañeros cuando se puede. */
