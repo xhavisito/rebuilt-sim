@@ -4,7 +4,7 @@
  * o `navigator.vibrate` en teléfonos.
  */
 
-export type HapticEvent = 'shot' | 'pass' | 'impact' | 'intake' | 'shift' | 'endgame' | 'foul' | 'test';
+export type HapticEvent = 'shot' | 'pass' | 'score' | 'impact' | 'intake' | 'shift' | 'endgame' | 'foul' | 'test';
 
 /** Grupos que se pueden apagar por separado en Ajustes › Control. */
 export type HapticGroup = 'shots' | 'impacts' | 'intake' | 'match';
@@ -14,6 +14,7 @@ export const HAPTIC_GROUPS: HapticGroup[] = ['shots', 'impacts', 'intake', 'matc
 export const HAPTIC_GROUP: Record<HapticEvent, HapticGroup | null> = {
   shot: 'shots',
   pass: 'shots',
+  score: 'shots',
   impact: 'impacts',
   intake: 'intake',
   shift: 'match',
@@ -41,6 +42,8 @@ const SPECS: Record<HapticEvent, HapticSpec> = {
   // Golpe seco y corto del flywheel; el gatillo derecho "patea"
   shot: { strong: 0.15, weak: 0.55, ms: 45, right: 0.6, phoneMs: 0, cooldown: 0.07 },
   pass: { strong: 0.1, weak: 0.4, ms: 40, right: 0.4, phoneMs: 0, cooldown: 0.07 },
+  // Tu FUEL entró: pulso suave doble en el motor chico
+  score: { strong: 0, weak: 0.35, ms: 60, phoneMs: 0, cooldown: 0.15 },
   // Choque: escala con la fuerza del golpe
   impact: { strong: 1, weak: 0.6, ms: 140, phoneMs: 120, cooldown: 0.12 },
   // Un FUEL entra a la intake: tic suave en el gatillo izquierdo
