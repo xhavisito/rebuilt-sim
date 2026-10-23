@@ -100,6 +100,7 @@ export class Hud {
         <button class="pause-btn" data-k="pause" aria-label="${t('paused')}">${ICON_PAUSE}</button>
       </div>
       <div class="pin-layer" data-k="pins"></div>
+      <div class="pin-layer" data-k="flags"></div>
       <div class="coach" data-k="coach"></div>
     `;
     parent.appendChild(r);
@@ -192,7 +193,9 @@ export class Hud {
         (rp.querySelector('.meter i') as HTMLElement).style.transform = `scaleX(${Math.min(1, fuel / goal).toFixed(3)})`;
         rp.classList.toggle('energized', fuel >= th.energized);
         rp.classList.toggle('supercharged', fuel >= th.supercharged);
-        rp.querySelector('em')!.textContent = `${t('towerPts')} ${m.towerPoints(a)}`;
+        // Puntos que le dan las faltas del oponente (Tabla 6-6: MINOR 5, MAJOR 15)
+        const foulPts = m.foulPointsFor(a);
+        rp.querySelector('em')!.textContent = `${t('towerPts')} ${m.towerPoints(a)}${foulPts ? ` · ${t('foulPtsShort')} +${foulPts}` : ''}`;
       }
       // Aviso de quién queda inactivo en SHIFT 1 (durante TRANSITION)
       const fi = m.firstInactive;
@@ -292,6 +295,33 @@ export class Hud {
       h.style.transform = `translate(${p.x}px, ${p.y}px)`;
       h.textContent = `PIN ${p.seconds.toFixed(1)}`;
       h.classList.toggle('hot', p.seconds >= 3);
+    });
+  }
+
+  /**
+   * Banderas del árbitro sobre el robot que cometió una falta o recibió una tarjeta (unos
+   * segundos), en coordenadas de pantalla: regla, severidad y a quién van los puntos.
+   */
+  setFlags(flags: Array<{ x: number; y: number; title: string; sub: string; cls: string }>): void {
+    const layer = this.els.flags;
+    while (layer.children.length < flags.length) {
+      const d = document.createElement('div');
+      d.innerHTML = '<b></b><span></span>';
+      layer.appendChild(d);
+    }
+    Array.from(layer.children).forEach((el, i) => {
+      const f = flags[i];
+      const h = el as HTMLElement;
+      if (!f) {
+        h.style.display = 'none';
+        return;
+      }
+      h.style.display = '';
+      h.className = `ref-flag ${f.cls}`;
+      h.style.transform = `translate(${f.x}px, ${f.y}px) translate(-50%, -100%)`;
+      const [b, sp] = [h.firstElementChild as HTMLElement, h.lastElementChild as HTMLElement];
+      if (b.textContent !== f.title) b.textContent = f.title;
+      if (sp.textContent !== f.sub) sp.textContent = f.sub;
     });
   }
 }
