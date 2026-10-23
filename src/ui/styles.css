@@ -917,6 +917,35 @@ input[type='color'] { width: 48px; height: 34px; border: none; background: none;
 .sel-log { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); max-height: 160px; overflow: auto; }
 .sel-log .ok { color: #4ade80; }
 .sel-log .no { color: #f87171; }
+/* Bracket de doble eliminación (torneo) */
+.bracket { display: flex; gap: 14px; overflow-x: auto; padding: 8px 0 4px; }
+.br-trees { display: flex; flex-direction: column; gap: 6px; }
+.br-label { font: 800 11px var(--font); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
+.br-tree { display: flex; gap: 10px; }
+.br-col { display: flex; flex-direction: column; gap: 4px; min-width: 128px; }
+.br-col-body { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 8px; }
+.br-round { font: 600 10px var(--font); color: var(--muted); text-align: center; }
+.br-finals { display: flex; align-items: center; padding-left: 12px; border-left: 1px dashed var(--line-2); }
+.br-match { background: var(--surface-3); border-radius: 8px; padding: 4px 6px 5px; font-size: 12px; border: 1px solid transparent; }
+.br-match.next { border-color: var(--accent); }
+.br-match.br-final { min-width: 170px; border-color: var(--line-2); }
+.br-id { font: 700 10px var(--font); color: var(--muted); letter-spacing: 0.08em; margin-bottom: 2px; }
+.br-side { border-left: 3px solid var(--red); padding-left: 5px; }
+.br-side.blue { border-left-color: var(--blue); margin-top: 2px; }
+.br-team { display: flex; align-items: center; gap: 6px; min-height: 19px; }
+.br-team.tbd { color: var(--muted); font-style: italic; font-size: 11px; }
+.br-team.win { font-weight: 700; }
+.br-team.win .br-score { color: var(--accent); }
+.br-team.lose { opacity: 0.5; }
+.br-team.me b { color: var(--accent); }
+.br-cap { color: var(--muted); font-size: 11px; }
+.br-score { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 700; }
+.br-fgame { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 3px; }
+.br-fgame span { margin-left: auto; color: var(--text); font-variant-numeric: tabular-nums; }
+.br-fgame .sw { margin: 0; width: 8px; height: 8px; }
+.br-place { margin-left: auto; font-size: 11px; padding: 1px 6px; border-radius: 4px; background: var(--surface-3); color: var(--muted); }
+.br-place.gold { background: rgba(255, 199, 44, 0.18); color: var(--accent); }
+.br-place.silver { background: rgba(220, 230, 245, 0.12); color: #dfe6f0; }
 /* Dashboard de estrategia del torneo */
 .dash .dash-top { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
 .dash .dash-top .grow { flex: 1; min-width: 160px; }
