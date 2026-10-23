@@ -219,6 +219,12 @@ imagen superior del campo de WPILib (`fields/.../2026-rebuilt.png`).
     el código (1678 y 6328 hacia atrás, 190 hacia la derecha) desde su posición en el robot.
     El hopper de 971 sobresale 11 in al frente sobre los BUMPERS (colisionador incluido).
     Rendimiento de sus tech binders / Robot Study Dashboard (estimado si no se publicó).
+    La velocidad libre del drivetrain (`maxSpeed`) sale del código de cada equipo
+    (`kSpeedAt12Volts` de TunerConstants o su equivalente, citado en robots.ts); 1757, 8214,
+    9410, 2363 y 3478 no la publican y conservan la estimada. 3847 (Spectrum) y 1425 (Error Code
+    Xero) se armaron con su simulación publicada (RobotSim / MapleSimUtil, Mechanism3d): carriles,
+    cadencia, altura y posición del tiro, rango del hood y extensión de la intake. `clear` en
+    sources.mjs dibuja translúcido el policarbonato que el CAD trae opaco (hopper de 3847).
 15. **FUEL contra el perímetro**: el barandal (3 cm) y la ALLIANCE WALL tienen un respaldo
     invisible de 0.3–0.6 m (fuera de las aberturas del CORRAL y de la CHUTE), `shoveFuel` nunca
     saca un FUEL hacia afuera del campo (se escurre a lo largo de la pared) y un FUEL metido en

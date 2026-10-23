@@ -58,7 +58,7 @@ describe('física de robots', () => {
       const pw = world();
       const r = new RobotPhysics(pw, presetById('cad-190'), 0, -5.6, F.BUMP_CENTER_Z, 0.3);
       let maxTilt = 0;
-      run(pw, [r], 2.2, (rb) => {
+      run(pw, [r], 2.5, (rb) => {
         maxTilt = Math.max(maxTilt, rb.tilt());
         return { vx: 6, vz: 0, omega };
       });

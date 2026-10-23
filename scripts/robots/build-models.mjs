@@ -278,6 +278,7 @@ for (const src of SOURCES) {
   bakePalettes(doc);
   // ---- Quita tornillería, piezas diminutas y BUMPERS
   const drop = src.drop ? new RegExp(src.drop, 'i') : null;
+  const clear = src.clear ? new RegExp(src.clear, 'i') : null;
   const hl = src.frameIn ? (src.frameIn[0] * 0.0254) / 2 : 1;
   const hw = src.frameIn ? (src.frameIn[1] * 0.0254) / 2 : 1;
   let removed = 0;
@@ -303,6 +304,14 @@ for (const src of SOURCES) {
         if (process.env.SHOW_REMOVED && diag > 0.2) console.log(`  quitada (${diag.toFixed(2)} m${invisible ? ', invisible' : bumper ? ', bumper' : ''}): ${names.filter(Boolean).slice(0, 3).join(' < ')}`);
         n.setMesh(null);
         removed++;
+      } else if (clear && names.some((s) => clear.test(s))) {
+        // Policarbonato que el CAD trae opaco: material propio translúcido (pbr lo vuelve BLEND)
+        for (const pr of n.getMesh().listPrimitives()) {
+          const m = pr.getMaterial();
+          if (!m) continue;
+          const c = m.getBaseColorFactor();
+          pr.setMaterial(m.clone().setBaseColorFactor([c[0], c[1], c[2], 0.4]));
+        }
       }
     });
   // ---- Materiales. La transmisión de SolidWorks (lexan, vidrio) pasa a transparencia simple:
