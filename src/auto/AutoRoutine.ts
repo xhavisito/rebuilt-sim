@@ -18,6 +18,11 @@ export interface AutoWaypoint {
   shoot?: boolean;
   wait?: number;
   climb?: boolean;
+  /** Rutas suaves: detenerse aquí aunque no haya acción (si no, pasa sin frenar). */
+  stop?: boolean;
+  /** Rutas suaves: manijas de la curva Bézier (offset en m desde el punto); sin ellas, automáticas. */
+  hin?: { x: number; z: number };
+  hout?: { x: number; z: number };
 }
 
 export interface AutoRoutine {
@@ -31,6 +36,13 @@ export interface AutoRoutine {
    * waypoint, se refleja en z para no cruzar por enfrente de sus compañeros.
    */
   mirrorToStart?: boolean;
+  /**
+   * Ruta suave tipo PathPlanner (curvas Bézier + perfil de velocidad, `Trajectory.ts`). Si no,
+   * el navegador va de punto a punto e inserta solo los cruces de BUMP/TRENCH.
+   */
+  spline?: boolean;
+  /** Rutas suaves: fracción de la velocidad máxima del robot (0.2–1; por defecto 0.85). */
+  speed?: number;
   waypoints: AutoWaypoint[];
 }
 
@@ -78,6 +90,26 @@ export const BUILTIN_ROUTINES: AutoRoutine[] = [
       ],
     };
   }),
+  {
+    // Ruta suave de ejemplo (y plantilla de las nuevas): cruza el BUMP de su lado, barre la
+    // NEUTRAL ZONE sin pasar la CENTER LINE y regresa por el otro BUMP a tirar
+    id: 'spline-sweep',
+    name: 'Ruta suave · NEUTRAL ZONE',
+    builtin: true,
+    shootPreload: true,
+    mirrorToStart: true,
+    spline: true,
+    speed: 0.85,
+    waypoints: [
+      { x: hubX - 1.25, z: F.BUMP_CENTER_Z, heading: null, intake: true },
+      { x: hubX + 1.35, z: F.BUMP_CENTER_Z, heading: null },
+      { x: -1.0, z: 1.9, heading: null },
+      { x: -1.0, z: -1.2, heading: null },
+      { x: hubX + 1.35, z: -F.BUMP_CENTER_Z, heading: null },
+      { x: hubX - 1.25, z: -F.BUMP_CENTER_Z, heading: null },
+      { x: line - 1.5, z: -F.BUMP_CENTER_Z - 0.4, heading: 0, shoot: true },
+    ],
+  },
   {
     id: 'depot',
     name: 'Precarga + DEPOT',
@@ -190,6 +222,63 @@ export function saveCustomRoutines(list: AutoRoutine[]): void {
 
 export function routineById(id: string): AutoRoutine {
   return loadRoutines().find((r) => r.id === id) ?? BUILTIN_ROUTINES[2];
+}
+
+const num = (v: unknown, lo: number, hi: number): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : undefined);
+const vec = (v: unknown): { x: number; z: number } | undefined => {
+  const o = v as { x?: unknown; z?: unknown } | null;
+  const x = num(o?.x, -6, 6);
+  const z = num(o?.z, -6, 6);
+  return o && x !== undefined && z !== undefined ? { x, z } : undefined;
+};
+
+/**
+ * Valida una rutina importada (JSON de otra persona): solo los campos conocidos, con números
+ * finitos y dentro del campo. Devuelve null si no parece una rutina.
+ */
+export function sanitizeRoutine(o: unknown): AutoRoutine | null {
+  const r = o as Partial<AutoRoutine> | null;
+  if (!r || typeof r !== 'object' || !Array.isArray(r.waypoints) || r.waypoints.length > 64) return null;
+  const waypoints: AutoWaypoint[] = [];
+  for (const w of r.waypoints as unknown[]) {
+    const q = w as Record<string, unknown>;
+    const x = num(q?.x, -F.HALF_L, F.HALF_L);
+    const z = num(q?.z, -F.HALF_W, F.HALF_W);
+    if (x === undefined || z === undefined) return null;
+    const wp: AutoWaypoint = { x, z, heading: num(q.heading, -10, 10) ?? null };
+    if (typeof q.intake === 'boolean') wp.intake = q.intake;
+    if (q.shoot === true) wp.shoot = true;
+    if (q.climb === true) wp.climb = true;
+    if (q.stop === true) wp.stop = true;
+    const wait = num(q.wait, 0, 15);
+    if (wait) wp.wait = wait;
+    const hin = vec(q.hin);
+    const hout = vec(q.hout);
+    if (hin) wp.hin = hin;
+    if (hout) wp.hout = hout;
+    waypoints.push(wp);
+  }
+  const name = typeof r.name === 'string' && r.name.trim() ? r.name.trim().slice(0, 48) : 'AUTO';
+  return {
+    id: `custom-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+    name,
+    shootPreload: r.shootPreload !== false,
+    spline: r.spline !== false,
+    speed: num(r.speed, 0.2, 1) ?? 0.85,
+    mirrorToStart: r.mirrorToStart === true || undefined,
+    waypoints,
+  };
+}
+
+/** Waypoint reflejado en z (lado de arriba ↔ abajo). */
+export function mirrorWaypointZ(w: AutoWaypoint): AutoWaypoint {
+  return {
+    ...w,
+    z: -w.z,
+    heading: w.heading === null ? null : -w.heading,
+    hin: w.hin ? { x: w.hin.x, z: -w.hin.z } : undefined,
+    hout: w.hout ? { x: w.hout.x, z: -w.hout.z } : undefined,
+  };
 }
 
 /** Convierte un punto del marco azul al de la alianza. */

@@ -36,6 +36,7 @@ import { climbSlots, type TowerOccupancy } from './Climber';
 import { HumanPlayer, type HpContext } from './HumanPlayer';
 import { chassisYawFor, passTarget, plowLoad, predictLaunch, runIntake, runShooter, shoveFuel, type MechContext } from './Mechanisms';
 import { AimGuide } from '../render/AimGuide';
+import { AutoPathView } from '../render/AutoPathView';
 import { idleCommand, Robot, type ControlKind, type RobotCommand } from './Robot';
 
 export type SessionMode = 'practice' | 'match' | 'local' | 'tournament' | 'online';
@@ -753,6 +754,7 @@ export class GameSession {
     for (const r of this.robots) r.syncView(this.alpha, this.simTime, this.fuel.robotCount(r.index));
     this.fuelView.update(this.alpha);
     this.updateAimGuides(frameDt);
+    this.updateAutoPaths();
     const players = this.players();
     const views: Viewport[] = [];
     const n = Math.min(this.rigs.length, this.localCount);
@@ -783,6 +785,25 @@ export class GameSession {
   }
 
   private aimGuides = new Map<number, AimGuide>();
+  private autoPaths = new Map<number, AutoPathView>();
+
+  /** Ruta planeada de AUTO de los jugadores locales (rutas suaves del diseñador), solo en AUTO. */
+  private updateAutoPaths(): void {
+    const auto = this.phase === 'AUTO';
+    for (const r of this.localPlayers()) {
+      const ex = this.autos.get(r.index);
+      let v = this.autoPaths.get(r.index);
+      if (auto && ex?.preview.length && !v) {
+        v = new AutoPathView(ex.preview, r.alliance);
+        this.autoPaths.set(r.index, v);
+        this.group.add(v.group);
+      }
+      if (v && !auto) {
+        v.dispose();
+        this.autoPaths.delete(r.index);
+      } else v?.update(ex?.reference ?? null);
+    }
+  }
 
   /** Trayectoria del siguiente tiro de cada jugador (ver AimGuide). */
   private updateAimGuides(dt: number): void {

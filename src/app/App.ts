@@ -210,7 +210,7 @@ export class App {
 
   openAutoDesigner(): void {
     this.openScreen();
-    this.designer.open(this.settings.match.autoRoutine);
+    this.designer.open(this.settings.match.autoRoutine, this.settings.match.robotId);
   }
 
   openRobotEditor(): void {

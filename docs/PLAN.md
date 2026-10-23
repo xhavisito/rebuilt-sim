@@ -52,7 +52,7 @@ src/
     CameraRig.ts           piloto / seguimiento / superior / TV / libre
   input/                   actions.ts, InputManager.ts, keyboard, gamepad, TouchControls.ts
   ai/                      RobotAI.ts, HumanPlayerAI.ts, NavGraph.ts
-  auto/                    AutoRoutine.ts (tipos + ejecutor), rutinas default
+  auto/                    AutoRoutine.ts (tipos, rutinas default), AutoExecutor.ts, Trajectory.ts (rutas suaves)
   referee/Referee.ts       detección de violaciones
   audio/Audio.ts           Web Audio: cues del FMS, efectos, música, voz (SpeechSynthesis)
   ui/                      i18n.ts, styles.css, Menu, Hud, Results, Settings, AutoDesigner, RobotEditor, Tournament
@@ -95,6 +95,16 @@ scripts/screenshot.mjs     verificación con Playwright
 - **AUTO a prueba de choques**: el navegador detecta falta de progreso (mínimo local atracción /
   repulsión), el ejecutor tiene vigilante por waypoint y, al terminar, juego libre sin cruzar la
   CENTER LINE (pared virtual, G403).
+- **Autónomo programable tipo PathPlanner** (`auto/Trajectory.ts`, puro): rutas suaves con Bézier
+  cúbicas por tramo (manijas automáticas Catmull-Rom al pasar y en esquina en las paradas, o las
+  del usuario), rumbo holonómico por waypoint y perfil de velocidad (vel. máx., aceleración y
+  aceleración lateral por tracción, giro máximo, más lento sobre el BUMP). El robot se detiene solo
+  en waypoints con acción o "detenerse"; los demás son de paso (sus cambios de INTAKE son "event
+  markers"). En el match cada tramo se genera desde la pose real del robot y se sigue con
+  velocidad de referencia + corrección P; si se atrasa, la referencia espera. El diseñador usa el
+  mismo perfil (vista previa con línea de tiempo, choques con HUB/TRENCH/pared/TOWER, G403) e
+  importa/exporta JSON (`sanitizeRoutine`). Las rutinas viejas (punto a punto) siguen con el
+  navegador.
 - **Estratega del torneo** (`Strategist.ts`, puro): pros y contras, predicción, roles, AUTO sin
   choques, si conviene ganar el AUTO (ventana final de 55 s), END GAME / TRAVERSAL y RP. El
   dashboard aplica el plan como estrategia `coach-plan` (se rehace para cada match).
