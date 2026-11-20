@@ -18,6 +18,11 @@ export interface AutoWaypoint {
   shoot?: boolean;
   wait?: number;
   climb?: boolean;
+  /**
+   * Retroceder hacia este waypoint: con rumbo automático el chasis queda de espaldas a donde
+   * avanza (intake atrás: come Muestras sin girar). Sin esto, el comportamiento es el de siempre.
+   */
+  reverse?: boolean;
   /** Rutas suaves: detenerse aquí aunque no haya acción (si no, pasa sin frenar). */
   stop?: boolean;
   /** Rutas suaves: manijas de la curva Bézier (offset en m desde el punto); sin ellas, automáticas. */
@@ -250,6 +255,7 @@ export function sanitizeRoutine(o: unknown): AutoRoutine | null {
     if (q.shoot === true) wp.shoot = true;
     if (q.climb === true) wp.climb = true;
     if (q.stop === true) wp.stop = true;
+    if (q.reverse === true) wp.reverse = true;
     const wait = num(q.wait, 0, 15);
     if (wait) wp.wait = wait;
     const hin = vec(q.hin);
