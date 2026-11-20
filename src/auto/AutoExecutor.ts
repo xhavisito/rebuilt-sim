@@ -133,7 +133,7 @@ export class AutoExecutor {
         this.nav.plan({ x: p.x, z: p.z });
         // Tirar no necesita precisión: llega con más tolerancia; trepar, menos estricto también
         const tol = w.climb ? 0.5 : w.shoot ? 0.45 : 0.25;
-        const res = this.nav.follow(dt, others, { speed: 0.9, heading: p.h, tol });
+        const res = this.nav.follow(dt, others, { speed: 0.9, heading: p.h, tol, reverse: w.reverse });
         cmd.drive = res.cmd;
         // Turret: tira la precarga (y lo que junte) mientras avanza, si está en su zona
         if (r.spec.shooter.type === 'turret' && n > 0 && this.inZone()) cmd.shoot = true;
@@ -326,7 +326,7 @@ export class AutoExecutor {
     let want = ref.heading;
     let ff = (Math.atan2(Math.sin(ahead.heading - ref.heading), Math.cos(ahead.heading - ref.heading)) / 0.1) * k;
     if (r.spec.drivetrain === 'tank') {
-      want = Math.hypot(vx, vz) > 0.3 ? headingOf(vx, vz) : me.heading;
+      want = Math.hypot(vx, vz) > 0.3 ? headingOf(vx, vz) + (this.wps[i].reverse ? Math.PI : 0) : me.heading;
       ff = 0;
       const e = Math.abs(Math.atan2(Math.sin(want - me.heading), Math.cos(want - me.heading)));
       if (e > 0.6) {

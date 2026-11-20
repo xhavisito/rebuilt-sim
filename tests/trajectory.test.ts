@@ -114,4 +114,13 @@ describe('Ruta suave de ejemplo', () => {
       expect(tr.duration + 2).toBeLessThan(20);
     }
   });
+
+  it('reverse: el chasis queda de espaldas al avance y sin él todo sigue igual', () => {
+    const s0 = { x: -4, z: 0, heading: Math.PI };
+    const far = (extra: Partial<AutoWaypoint>) => buildTrajectory(s0, [wp(-6, 0, extra)], C).samples.at(-1)!.heading;
+    const norm = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    expect(Math.abs(norm(far({}) - Math.PI))).toBeLessThan(1e-6);
+    expect(Math.abs(norm(far({ reverse: true }) - 0))).toBeLessThan(1e-6);
+    expect(sanitizeRoutine({ name: 'x', waypoints: [{ x: -3, z: 0, heading: null, reverse: true }] })!.waypoints[0].reverse).toBe(true);
+  });
 });

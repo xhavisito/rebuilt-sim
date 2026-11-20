@@ -190,7 +190,7 @@ export function buildTrajectory(
     const segLen = Math.max(1e-6, (segs.length ? lastOfSeg(raw, q.seg).s : 0) - raw[segStart].s);
     const f = Math.min(1, Math.max(0, (q.s - raw[segStart].s) / segLen));
     const w = wps[q.seg];
-    const travel = headingOf(q.tx, q.tz);
+    const travel = headingOf(q.tx, q.tz) + (w?.reverse ? Math.PI : 0);
     let h: number;
     if (c.tank || !w || w.heading === null) h = h0 + angDiff(travel, h0) * Math.min(1, f / 0.2);
     else {

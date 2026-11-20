@@ -125,7 +125,7 @@ export class Navigator {
   follow(
     dt: number,
     others: Robot[],
-    opts: { speed: number; heading: number | null | 'keep'; tol?: number; avoidRobots?: boolean },
+    opts: { speed: number; heading: number | null | 'keep'; tol?: number; avoidRobots?: boolean; reverse?: boolean },
   ): { cmd: DriveCommand; arrived: boolean } {
     const out = this.followRaw(dt, others, opts);
     // Suavizado: velocidad con constante de ~0.15 s y giro con ~0.12 s
@@ -140,7 +140,7 @@ export class Navigator {
   private followRaw(
     dt: number,
     others: Robot[],
-    opts: { speed: number; heading: number | null | 'keep'; tol?: number; avoidRobots?: boolean },
+    opts: { speed: number; heading: number | null | 'keep'; tol?: number; avoidRobots?: boolean; reverse?: boolean },
   ): { cmd: DriveCommand; arrived: boolean } {
     const r = this.r;
     const p = r.phys.curPos;
@@ -274,7 +274,7 @@ export class Navigator {
     // (a poca velocidad o pegado a otro robot no gira: así no "baila" con los empujones)
     let crowded = false;
     for (const o of others) if (o !== r && Math.hypot(o.phys.curPos.x - p.x, o.phys.curPos.z - p.z) < o.phys.outerW + r.phys.outerW + 0.25) crowded = true;
-    if (want === null || r.spec.drivetrain === 'tank') want = Math.hypot(vx, vz) > 0.9 && !crowded ? Math.atan2(-vz, vx) : r.phys.heading();
+    if (want === null || r.spec.drivetrain === 'tank') want = Math.hypot(vx, vz) > 0.9 && !crowded ? Math.atan2(-vz, vx) + (opts.reverse ? Math.PI : 0) : r.phys.heading();
     else if (crowded && opts.heading === null) want = r.phys.heading();
     // Por el TRENCH pasa derecho: en diagonal, la intake desplegada choca con el poste o el
     // barandal. Se alinea ANTES de entrar (mientras, avanza despacio); si ya está debajo y chueco

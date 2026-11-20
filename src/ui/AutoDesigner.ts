@@ -224,6 +224,7 @@ export class AutoDesigner {
         <label>INTAKE</label>${seg('intake', [{ value: 'keep', label: '—' }, { value: 'on', label: t('on') }, { value: 'off', label: t('off') }], w.intake === undefined ? 'keep' : w.intake ? 'on' : 'off')}
         <label>${t('a_shoot')}</label>${seg('shoot', yn, onoff(w.shoot))}
         <label>${t('wait')}</label>${seg('wait', ['0', '0.5', '1', '2', '3'].map((v) => ({ value: v, label: `${v} s` })), String(w.wait ?? 0))}
+        <label>${t('reverse')}</label>${seg('reverse', yn, onoff(w.reverse))}
         <label>${t('climbL1')}</label>${seg('climb', yn, onoff(w.climb))}
         ${spline ? `<label>${t('stopHere')}</label>${seg('stop', yn, onoff(isStop(w, this.sel === this.cur.waypoints.length - 1)))}` : ''}
         <label></label><div class="row">
@@ -278,8 +279,9 @@ export class AutoDesigner {
         if (name === 'shoot') wp.shoot = v === '1';
         if (name === 'wait') wp.wait = Number(v) || undefined;
         if (name === 'climb') wp.climb = v === '1';
+        if (name === 'reverse') wp.reverse = v === '1' || undefined;
         if (name === 'stop') wp.stop = v === '1' || undefined;
-        if (name === 'heading' || name === 'stop' || name === 'shoot' || name === 'wait' || name === 'climb') this.renderSide();
+        if (name === 'heading' || name === 'reverse' || name === 'stop' || name === 'shoot' || name === 'wait' || name === 'climb') this.renderSide();
       }
       this.changed();
     });
